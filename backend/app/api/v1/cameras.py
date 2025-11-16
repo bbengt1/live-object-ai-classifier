@@ -11,7 +11,7 @@ Provides REST API for camera configuration management:
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import logging
 import cv2
 import base64
@@ -20,7 +20,13 @@ import numpy as np
 from app.core.database import get_db
 from app.models.camera import Camera
 from app.schemas.camera import CameraCreate, CameraUpdate, CameraResponse, CameraTestResponse
+from app.schemas.motion import (
+    MotionConfigUpdate, MotionConfigResponse, MotionTestRequest, MotionTestResponse,
+    DetectionZone, DetectionSchedule
+)
 from app.services.camera_service import CameraService
+from app.services.motion_detection_service import motion_detection_service
+from app.services.detection_zone_manager import detection_zone_manager
 
 logger = logging.getLogger(__name__)
 
@@ -449,3 +455,654 @@ def test_camera_connection(
             success=False,
             message=message
         )
+
+
+# ============================================================================
+# Motion Configuration Endpoints (F2.1)
+# ============================================================================
+
+@router.put("/{camera_id}/motion/config", response_model=CameraResponse)
+def update_motion_config(
+    camera_id: str,
+    config: MotionConfigUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update motion detection configuration for camera
+
+    Args:
+        camera_id: UUID of camera
+        config: Motion configuration updates
+        db: Database session
+
+    Returns:
+        Updated camera object with new motion config
+
+    Raises:
+        404: Camera not found
+        422: Validation error
+
+    Side Effects:
+        - Reloads motion detector if algorithm changed
+        - Configuration persists across restarts (AC-12)
+    """
+    try:
+        camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {camera_id} not found"
+            )
+
+        # Track if algorithm changed
+        algorithm_changed = False
+        old_algorithm = camera.motion_algorithm
+
+        # Update fields
+        update_data = config.model_dump(exclude_unset=True)
+
+        for field, value in update_data.items():
+            setattr(camera, field, value)
+
+            if field == 'motion_algorithm' and value != old_algorithm:
+                algorithm_changed = True
+
+        # Save changes
+        db.commit()
+        db.refresh(camera)
+
+        # Reload motion detector if algorithm changed
+        if algorithm_changed:
+            motion_detection_service.reload_config(camera_id, camera.motion_algorithm)
+            logger.info(f"Motion detector reloaded for camera {camera_id}: {old_algorithm} -> {camera.motion_algorithm}")
+
+        logger.info(f"Motion configuration updated for camera {camera_id}")
+
+        return camera
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update motion config for camera {camera_id}: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update motion configuration"
+        )
+
+
+@router.get("/{camera_id}/motion/config", response_model=MotionConfigResponse)
+def get_motion_config(
+    camera_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get current motion detection configuration for camera
+
+    Args:
+        camera_id: UUID of camera
+        db: Database session
+
+    Returns:
+        Motion configuration (enabled, sensitivity, cooldown, algorithm)
+
+    Raises:
+        404: Camera not found
+    """
+    try:
+        camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {camera_id} not found"
+            )
+
+        return MotionConfigResponse(
+            motion_enabled=camera.motion_enabled,
+            motion_sensitivity=camera.motion_sensitivity,
+            motion_cooldown=camera.motion_cooldown,
+            motion_algorithm=camera.motion_algorithm
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get motion config for camera {camera_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get motion configuration"
+        )
+
+
+@router.post("/{camera_id}/motion/test", response_model=MotionTestResponse)
+def test_motion_detection(
+    camera_id: str,
+    test_request: MotionTestRequest = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Test motion detection on current frame (ephemeral, not saved to database)
+
+    Args:
+        camera_id: UUID of camera
+        test_request: Optional overrides for sensitivity and algorithm
+        db: Database session
+
+    Returns:
+        Motion test results with preview image
+
+    Raises:
+        404: Camera not found
+        400: Camera not running or failed to capture frame
+
+    Note:
+        - Ephemeral: Results NOT saved to database (DECISION-4)
+        - Rate limit: 10 requests/minute per camera (TODO: implement rate limiting)
+    """
+    try:
+        camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {camera_id} not found"
+            )
+
+        # Check if camera is running
+        camera_status = camera_service.get_camera_status(camera_id)
+        if not camera_status or camera_status.get('status') != 'connected':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Camera {camera_id} is not currently running. Start camera first."
+            )
+
+        # Get current frame from camera service
+        # NOTE: This is a simplified implementation
+        # Real implementation would need to add a method to CameraService to get latest frame
+        # For now, we'll attempt to capture a frame directly
+        if camera.type == "rtsp":
+            connection_str = camera_service._build_rtsp_url(camera)
+        else:
+            connection_str = camera.device_index
+
+        cap = cv2.VideoCapture(connection_str)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+
+        if not cap.isOpened():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to capture frame from camera"
+            )
+
+        ret, frame = cap.read()
+        cap.release()
+
+        if not ret or frame is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to read frame from camera"
+            )
+
+        # Use test overrides or camera defaults
+        sensitivity = test_request.sensitivity if test_request and test_request.sensitivity else camera.motion_sensitivity
+        algorithm = test_request.algorithm if test_request and test_request.algorithm else camera.motion_algorithm
+
+        # Create temporary detector for test
+        from app.services.motion_detector import MotionDetector
+        temp_detector = MotionDetector(algorithm=algorithm)
+
+        # Run motion detection
+        motion_detected, confidence, bounding_box = temp_detector.detect_motion(frame, sensitivity)
+
+        # Generate preview image with bounding box overlay
+        preview_frame = frame.copy()
+
+        if motion_detected and bounding_box:
+            x, y, w, h = bounding_box
+            cv2.rectangle(preview_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(
+                preview_frame,
+                f"Motion: {confidence:.2f}",
+                (x, y - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2
+            )
+
+        # Encode as JPEG and convert to base64
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 85]
+        ret, buffer = cv2.imencode('.jpg', preview_frame, encode_param)
+        preview_b64 = base64.b64encode(buffer).decode('utf-8')
+
+        logger.info(f"Motion test for camera {camera_id}: detected={motion_detected}, confidence={confidence:.3f}")
+
+        return MotionTestResponse(
+            motion_detected=motion_detected,
+            confidence=confidence,
+            bounding_box={
+                "x": bounding_box[0],
+                "y": bounding_box[1],
+                "width": bounding_box[2],
+                "height": bounding_box[3]
+            } if bounding_box else None,
+            preview_image=f"data:image/jpeg;base64,{preview_b64}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Motion test failed for camera {camera_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Motion test failed: {str(e)}"
+        )
+
+
+# ==================== Detection Zone Endpoints (F2.2) ====================
+
+
+@router.get("/{camera_id}/zones", response_model=List[DetectionZone])
+def get_camera_zones(
+    camera_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get detection zones for a camera
+
+    Args:
+        camera_id: UUID of camera
+        db: Database session
+
+    Returns:
+        List of DetectionZone objects (empty list if no zones configured)
+
+    Raises:
+        404: Camera not found
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    # Parse detection zones JSON (return empty list if None)
+    if not camera.detection_zones:
+        return []
+
+    try:
+        import json
+        zones = json.loads(camera.detection_zones)
+        return zones
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.error(f"Invalid detection_zones JSON for camera {camera_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid zone configuration in database"
+        )
+
+
+@router.put("/{camera_id}/zones", response_model=CameraResponse)
+def update_camera_zones(
+    camera_id: str,
+    zones: List[DetectionZone],
+    db: Session = Depends(get_db)
+):
+    """
+    Update detection zones for a camera
+
+    Args:
+        camera_id: UUID of camera
+        zones: List of DetectionZone objects
+        db: Database session
+
+    Returns:
+        Updated camera object with new zones
+
+    Raises:
+        404: Camera not found
+        422: Invalid zone configuration
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    # Validate zones (Pydantic already validated, but double-check)
+    if len(zones) > 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Maximum 10 zones allowed per camera"
+        )
+
+    # Serialize zones to JSON
+    try:
+        import json
+        zones_dict = [zone.model_dump() for zone in zones]
+        camera.detection_zones = json.dumps(zones_dict)
+
+        db.commit()
+        db.refresh(camera)
+
+        logger.info(
+            f"Updated detection zones for camera {camera_id}: "
+            f"{len(zones)} zones configured"
+        )
+
+        return camera
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update zones for camera {camera_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update zones: {str(e)}"
+        )
+
+
+@router.post("/{camera_id}/zones/test")
+def test_camera_zones(
+    camera_id: str,
+    test_zones: List[DetectionZone] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Test detection zones with current camera frame
+
+    Args:
+        camera_id: UUID of camera
+        test_zones: Optional zones to test (uses camera's zones if not provided)
+        db: Database session
+
+    Returns:
+        Preview image with zones overlay and motion detection result
+
+    Raises:
+        404: Camera not found
+        500: No frame available or capture error
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    # Get camera's active capture if running
+    active_capture = camera_service._active_captures.get(camera_id)
+
+    if not active_capture or not active_capture.isOpened():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Camera not running or no frame available. Start camera first."
+        )
+
+    # Capture current frame
+    ret, frame = active_capture.read()
+
+    if not ret or frame is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to capture frame from camera"
+        )
+
+    # Use test zones or camera's configured zones
+    zones_to_test = test_zones if test_zones else []
+    if not zones_to_test and camera.detection_zones:
+        try:
+            import json
+            zones_dict = json.loads(camera.detection_zones)
+            zones_to_test = [DetectionZone(**z) for z in zones_dict]
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            logger.warning(f"Failed to parse camera zones: {e}")
+
+    # Draw zones on frame
+    frame_with_zones = frame.copy()
+
+    for zone in zones_to_test:
+        vertices = zone.vertices
+        if len(vertices) < 3:
+            continue
+
+        # Convert to numpy array
+        points = np.array([[v['x'], v['y']] for v in vertices], dtype=np.int32)
+
+        # Draw polygon
+        color = (0, 255, 0) if zone.enabled else (128, 128, 128)  # Green if enabled, gray if disabled
+        cv2.polylines(frame_with_zones, [points], isClosed=True, color=color, thickness=2)
+
+        # Add zone name
+        if len(vertices) > 0:
+            text_pos = (vertices[0]['x'], vertices[0]['y'] - 10)
+            cv2.putText(
+                frame_with_zones,
+                zone.name,
+                text_pos,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                1
+            )
+
+    # Encode preview
+    _, buffer = cv2.imencode('.jpg', frame_with_zones, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    preview_b64 = base64.b64encode(buffer).decode('utf-8')
+
+    # Run motion detection test (if enabled)
+    motion_detected = False
+    if camera.motion_enabled:
+        try:
+            detector = motion_detection_service._get_or_create_detector(camera_id, camera.motion_algorithm)
+            motion_detected, confidence, bounding_box = detector.detect_motion(
+                frame,
+                sensitivity=camera.motion_sensitivity
+            )
+        except Exception as e:
+            logger.warning(f"Motion detection test failed: {e}")
+
+    return {
+        "motion_detected": motion_detected,
+        "zones_count": len(zones_to_test),
+        "enabled_zones_count": sum(1 for z in zones_to_test if z.enabled),
+        "preview_image": f"data:image/jpeg;base64,{preview_b64}"
+    }
+
+
+# ============================================================================
+# Detection Schedule Endpoints (F2.3)
+# ============================================================================
+
+@router.put("/{camera_id}/schedule", response_model=CameraResponse)
+def update_camera_schedule(
+    camera_id: str,
+    schedule: DetectionSchedule,
+    db: Session = Depends(get_db)
+):
+    """
+    Update detection schedule for camera
+
+    Args:
+        camera_id: Camera UUID
+        schedule: DetectionSchedule schema with time/day configuration
+
+    Returns:
+        Updated camera with new detection_schedule
+
+    Raises:
+        404: Camera not found
+        422: Invalid schedule format
+
+    Example Request:
+        PUT /api/v1/cameras/{id}/schedule
+        {
+            "id": "schedule-1",
+            "name": "Weekday Nights",
+            "days_of_week": [0, 1, 2, 3, 4],
+            "start_time": "22:00",
+            "end_time": "06:00",
+            "enabled": true
+        }
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    # Serialize schedule to JSON
+    try:
+        import json
+        schedule_json = json.dumps(schedule.model_dump())
+    except Exception as e:
+        logger.error(f"Failed to serialize schedule: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid schedule format"
+        )
+
+    # Update camera
+    camera.detection_schedule = schedule_json
+
+    try:
+        db.commit()
+        db.refresh(camera)
+        logger.info(f"Updated detection schedule for camera {camera_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update camera schedule: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update schedule"
+        )
+
+    return camera
+
+
+@router.get("/{camera_id}/schedule", response_model=Optional[DetectionSchedule])
+def get_camera_schedule(
+    camera_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get detection schedule for camera
+
+    Args:
+        camera_id: Camera UUID
+
+    Returns:
+        DetectionSchedule or null if not configured
+
+    Raises:
+        404: Camera not found
+
+    Example Response:
+        {
+            "id": "schedule-1",
+            "name": "Weekday Nights",
+            "days_of_week": [0, 1, 2, 3, 4],
+            "start_time": "22:00",
+            "end_time": "06:00",
+            "enabled": true
+        }
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    if not camera.detection_schedule:
+        return None
+
+    # Parse JSON schedule
+    try:
+        import json
+        schedule_dict = json.loads(camera.detection_schedule)
+        return DetectionSchedule(**schedule_dict)
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        logger.error(f"Failed to parse camera schedule: {e}")
+        return None
+
+
+@router.get("/{camera_id}/schedule/status")
+def get_camera_schedule_status(
+    camera_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get current schedule status for camera
+
+    Args:
+        camera_id: Camera UUID
+
+    Returns:
+        Current schedule active state with reason
+
+    Raises:
+        404: Camera not found
+
+    Example Response:
+        {
+            "active": true,
+            "reason": "Within scheduled time and day",
+            "current_time": "22:30:00",
+            "current_day": 1,
+            "schedule_enabled": true
+        }
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    # Import schedule manager
+    from app.services.schedule_manager import schedule_manager
+    from datetime import datetime
+
+    # Check if detection is currently active
+    is_active = schedule_manager.is_detection_active(camera_id, camera.detection_schedule)
+
+    # Determine reason
+    if not camera.detection_schedule:
+        reason = "No schedule configured (always active)"
+        schedule_enabled = None
+    else:
+        try:
+            import json
+            schedule_dict = json.loads(camera.detection_schedule)
+            schedule_enabled = schedule_dict.get('enabled', False)
+
+            if not schedule_enabled:
+                reason = "Schedule disabled (always active)"
+            elif is_active:
+                reason = "Within scheduled time and day"
+            else:
+                reason = "Outside scheduled time or day"
+        except (json.JSONDecodeError, TypeError, ValueError):
+            reason = "Invalid schedule format (always active)"
+            schedule_enabled = None
+
+    # Get current time and day
+    now = datetime.now()
+    current_time = now.strftime('%H:%M:%S')
+    current_day = now.weekday()  # 0=Monday, 6=Sunday
+
+    return {
+        "active": is_active,
+        "reason": reason,
+        "current_time": current_time,
+        "current_day": current_day,
+        "schedule_enabled": schedule_enabled
+    }
