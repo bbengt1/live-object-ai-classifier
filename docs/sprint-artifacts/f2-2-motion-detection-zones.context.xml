@@ -1,0 +1,498 @@
+<story-context id="f2-2-motion-detection-zones" v="1.0">
+  <metadata>
+    <epicId>F2</epicId>
+    <storyId>f2-2-motion-detection-zones</storyId>
+    <title>Motion Detection Zones</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-16</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/f2-2-motion-detection-zones.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system user</asA>
+    <iWant>to define active detection zones on my camera feeds</iWant>
+    <soThat>motion detection only triggers for specific areas of interest and ignores irrelevant motion outside those zones</soThat>
+
+    <tasks>
+      **Task 1: Extend Data Models for Zone Storage** (AC: #2, #4)
+      - [ ] Update Camera model to include `detection_zones` JSON field (already exists in tech-spec)
+      - [ ] Create Alembic migration to add `detection_zones` column to cameras table
+      - [ ] Verify DetectionZone Pydantic schema from F2-1 (reuse existing schema)
+      - [ ] Add validation for zone coordinates (within camera resolution bounds)
+      - [ ] Test zone serialization/deserialization to/from database
+
+      **Task 2: Implement Zone Filtering Logic** (AC: #3)
+      - [ ] Create `DetectionZoneManager` class in `app/services/detection_zone_manager.py`
+      - [ ] Implement `is_motion_in_zones()` method to check if bounding box intersects any enabled zone
+      - [ ] Integrate zone filtering into `MotionDetectionService.process_frame()` method
+      - [ ] Add zone filtering before cooldown check (performance optimization)
+      - [ ] Handle case where no zones are defined (detect motion anywhere)
+      - [ ] Add logging for zone-filtered motion events
+
+      **Task 3: API Endpoints for Zone Management** (AC: #1, #2, #5)
+      - [ ] Add PUT endpoint `/cameras/{id}/zones` to update detection zones
+      - [ ] Add GET endpoint `/cameras/{id}/zones` to retrieve current zones
+      - [ ] Add POST endpoint `/cameras/{id}/zones/test` to test zone filtering with current frame
+      - [ ] Implement Pydantic request/response schemas for zone operations
+      - [ ] Add validation for zone coordinates (x, y, width, height within bounds)
+      - [ ] Return zone configuration in existing `/cameras/{id}` endpoint response
+
+      **Task 4: Frontend Zone Drawing UI** (AC: #1, #5)
+      - [ ] Create `ZoneDrawer` React component with canvas overlay on camera preview
+      - [ ] Implement rectangle drawing interaction (click and drag)
+      - [ ] Add zone name input and enable/disable toggle per zone
+      - [ ] Display all existing zones on preview with visual indicators
+      - [ ] Implement zone edit/delete functionality
+      - [ ] Add "Save Zones" button to persist changes via API
+      - [ ] Show visual feedback for enabled vs disabled zones (different colors)
+
+      **Task 5: Integration and Testing** (AC: #3, #4, #5)
+      - [ ] Write unit tests for `DetectionZoneManager.is_motion_in_zones()`
+      - [ ] Write integration tests for zone filtering in motion detection flow
+      - [ ] Test zone persistence across camera restarts
+      - [ ] Test enabling/disabling zones dynamically
+      - [ ] Verify performance impact of zone filtering (<5ms overhead)
+      - [ ] Test edge cases (motion partially in zone, multiple zones, no zones)
+      - [ ] Manual testing with real camera feed and drawn zones
+
+      **Task 6: Documentation** (AC: All)
+      - [ ] Update API documentation for new zone endpoints
+      - [ ] Add zone configuration examples to API docs
+      - [ ] Document zone coordinate system (pixels, origin top-left)
+      - [ ] Add user guide section for drawing detection zones
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    **AC #1: Zone Drawing UI**
+    - **Given** a user is viewing a camera's configuration page
+    - **When** they access the detection zones section
+    - **Then** they can draw rectangular zones on the camera preview image
+    - **And** each zone can be named and enabled/disabled independently
+
+    **AC #2: Multiple Zones Per Camera**
+    - **Given** a camera is configured
+    - **When** the user creates detection zones
+    - **Then** they can create multiple non-overlapping zones per camera
+    - **And** each zone is stored with unique identifiers
+
+    **AC #3: Zone-Filtered Motion Detection**
+    - **Given** a camera has detection zones configured and enabled
+    - **When** motion is detected by the algorithm
+    - **Then** the system only triggers motion events for motion occurring within defined zones
+    - **And** motion outside all zones is ignored
+
+    **AC #4: Zone Persistence**
+    - **Given** detection zones have been configured for a camera
+    - **When** the system restarts or the camera reconnects
+    - **Then** the zones are preserved and active
+    - **And** zone filtering continues to work correctly
+
+    **AC #5: Zone Enable/Disable**
+    - **Given** multiple zones exist for a camera
+    - **When** a user disables a specific zone
+    - **Then** motion within that zone is ignored
+    - **And** motion in other enabled zones still triggers events
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <!-- PRD F2.2 Section -->
+      <doc path="docs/prd.md" section="F2.2: Motion Detection Zones" lines="270-275">
+        - **Requirement:** User should define active detection zones
+        - **Details:**
+          - Draw rectangle zones on camera preview
+          - Multiple zones per camera
+          - Enable/disable zones independently
+          - Ignore motion outside defined zones
+      </doc>
+
+      <!-- Tech Spec Epic F2 - DetectionZone Schema -->
+      <doc path="docs/sprint-artifacts/tech-spec-epic-f2.md" section="DetectionZone Pydantic Schema" lines="139-154">
+        Schema definition for polygon detection zones (supports rectangles):
+        - Fields: id, name, vertices (polygon), enabled
+        - Polygon validation: min 3 vertices, auto-close
+        - Already implemented in app/schemas/motion.py (lines 173-214)
+        - **CRITICAL: REUSE this schema, do NOT recreate**
+      </doc>
+
+      <!-- Tech Spec Epic F2 - Camera Model Extensions -->
+      <doc path="docs/sprint-artifacts/tech-spec-epic-f2.md" section="Camera Model Extensions" lines="80-98">
+        Camera model needs new field:
+        - detection_zones: Text column (JSON storage)
+        - Stores array of DetectionZone objects
+        - Pattern: [{"id": "zone1", "name": "Front Door", "vertices": [...], "enabled": true}, ...]
+      </doc>
+
+      <!-- Tech Spec Epic F2 - Service Interaction Flow -->
+      <doc path="docs/sprint-artifacts/tech-spec-epic-f2.md" section="Service Interaction Flow" lines="70-77">
+        Zone filtering integration point:
+        1. CameraService captures frame → Passes to MotionDetectionService
+        2. MotionDetectionService → MotionDetector (run algorithm on frame)
+        3. MotionDetector → **DetectionZoneManager (filter by zones)** ← NEW
+        4. MotionDetectionService → MotionEventStore (save event if motion detected)
+      </doc>
+
+      <!-- Architecture - Testing Standards -->
+      <doc path="docs/architecture.md" section="Testing Standards">
+        - pytest 7.4.3 testing framework
+        - Maintain 100% test pass rate (currently 78/78 tests)
+        - Unit tests for all service methods
+        - Integration tests for API endpoints
+        - Follow pytest patterns from F2-1 tests
+      </doc>
+
+      <!-- Previous Story F2-1 Learnings -->
+      <doc path="docs/sprint-artifacts/f2-1-motion-detection-algorithm.md" section="Key Accomplishments">
+        **Files to REUSE (do not recreate):**
+        - app/schemas/motion.py - DetectionZone schema exists (lines 173-214)
+        - app/services/motion_detection_service.py - Extend process_frame()
+        - app/models/camera.py - Add detection_zones field
+
+        **Integration Points:**
+        - MotionDetectionService.process_frame() - Add zone filtering after line 108 (motion detected)
+        - CameraService._capture_loop() - No changes needed (calls process_frame)
+        - Database migrations - Follow pattern from migration 002
+
+        **Performance Requirements:**
+        - Zone filtering must add <5ms overhead
+        - Total motion processing budget: 100ms per frame
+        - MOG2 algorithm baseline: ~30-50ms
+      </doc>
+    </docs>
+
+    <code>
+      <!-- Existing Code to REUSE -->
+      <file path="backend/app/schemas/motion.py" lines="173-214" status="REUSE">
+        **DetectionZone Pydantic Schema (DO NOT RECREATE)**
+
+        Already implemented with:
+        - id: str (Zone UUID)
+        - name: str (Zone name, 1-100 chars)
+        - vertices: List[Dict[str, int]] (Polygon vertices, min 3)
+        - enabled: bool (Zone active flag)
+        - Polygon validation: @field_validator ensures min 3 vertices, auto-closes polygon
+
+        Usage: Import and use this schema for zone operations
+      </file>
+
+      <file path="backend/app/models/camera.py" lines="1-117" status="MODIFY">
+        **Camera Model - Add detection_zones Column**
+
+        Current state:
+        - Has motion detection fields: motion_enabled, motion_sensitivity, motion_cooldown, motion_algorithm
+        - Uses SQLAlchemy Column types
+        - Pattern: Text column with JSON storage for complex data
+
+        Required change:
+        - Add: detection_zones = Column(Text, nullable=True)
+        - Will store JSON array of DetectionZone objects
+        - Migration needed: alembic revision "Add detection_zones to cameras table"
+      </file>
+
+      <file path="backend/app/services/motion_detection_service.py" lines="70-152" status="MODIFY">
+        **MotionDetectionService.process_frame() - Integration Point**
+
+        Current flow (lines 96-152):
+        1. Line 96: Check if motion_enabled
+        2. Line 101: Get or create detector
+        3. Line 104: Check cooldown period (RETURN if in cooldown)
+        4. Line 109: Run motion detection algorithm
+        5. Line 114: If no motion, return None
+        6. Line 127: Create motion event
+        7. Line 139: Save to database
+
+        **Required integration (AFTER line 108, BEFORE cooldown):**
+        ```python
+        # NEW: Zone filtering logic (add after line 108)
+        if motion_detected:
+            # Check if motion is within any enabled detection zone
+            from app.services.detection_zone_manager import detection_zone_manager
+            if not detection_zone_manager.is_motion_in_zones(
+                camera_id=camera_id,
+                bounding_box=bounding_box,
+                detection_zones=camera.detection_zones
+            ):
+                logger.debug(f"Motion detected outside zones for camera {camera_id}, ignoring")
+                return None
+        ```
+
+        Note: Zone filtering should happen AFTER motion detection but BEFORE cooldown check
+        (optimization: don't waste cooldown on out-of-zone motion)
+      </file>
+
+      <file path="backend/app/services/detection_zone_manager.py" status="NEW">
+        **DetectionZoneManager Service - Zone Filtering Logic**
+
+        Required class:
+        - Singleton pattern (like MotionDetectionService)
+        - Method: is_motion_in_zones(camera_id, bounding_box, detection_zones)
+        - Returns: bool (True if motion in any enabled zone, True if no zones defined)
+        - Logic: Bounding box rectangle intersection with zone polygons
+        - Performance target: <5ms overhead
+
+        Algorithm:
+        1. Parse detection_zones JSON (or return True if None/empty)
+        2. Filter for enabled zones only
+        3. For each enabled zone:
+           a. Convert polygon vertices to numpy array
+           b. Check if bounding box center point is inside polygon (cv2.pointPolygonTest)
+           c. Return True on first match (short-circuit optimization)
+        4. Return False if no zones matched
+      </file>
+
+      <file path="backend/app/api/v1/cameras.py" status="MODIFY">
+        **Camera API Endpoints - Add Zone Management**
+
+        New endpoints needed:
+        1. PUT /cameras/{id}/zones - Update detection zones
+           - Request: List[DetectionZone]
+           - Response: CameraResponse (with updated zones)
+           - Validation: Zone coordinates within camera resolution
+
+        2. GET /cameras/{id}/zones - Retrieve current zones
+           - Response: List[DetectionZone]
+
+        3. POST /cameras/{id}/zones/test - Test zone with current frame
+           - Request: Optional[List[DetectionZone]] (test zones)
+           - Response: Preview image with zones overlay + motion detection result
+
+        Modify existing:
+        - GET /cameras/{id} - Include detection_zones in response
+      </file>
+
+      <file path="frontend/components/camera/ZoneDrawer.tsx" status="NEW">
+        **React Component - Zone Drawing UI**
+
+        Requirements:
+        - Canvas overlay on camera preview image (HTML5 Canvas API)
+        - Rectangle drawing: mousedown → drag → mouseup
+        - Display all zones with different colors (green=enabled, gray=disabled)
+        - Zone controls: name input, enable/disable toggle, delete button
+        - "Save Zones" button → PUT /cameras/{id}/zones API call
+        - Responsive design (mobile-friendly)
+
+        Libraries:
+        - React hooks: useState, useEffect, useRef
+        - Canvas API for drawing
+        - Fetch API for zone persistence
+      </file>
+
+      <file path="backend/alembic/versions/003_add_detection_zones.py" status="NEW">
+        **Database Migration - Add detection_zones Column**
+
+        Follow pattern from migration 002 (motion detection fields):
+        - Upgrade: op.add_column('cameras', sa.Column('detection_zones', sa.Text(), nullable=True))
+        - Downgrade: op.drop_column('cameras', 'detection_zones')
+        - Revision ID: Auto-generated by alembic revision -m "Add detection_zones to cameras table"
+      </file>
+    </code>
+
+    <dependencies>
+      **Backend Dependencies (from requirements.txt):**
+      - fastapi[standard]==0.115.0 (API framework)
+      - sqlalchemy>=2.0.36 (ORM)
+      - alembic>=1.14.0 (Migrations)
+      - opencv-python>=4.12.0 (Zone polygon intersection)
+      - pydantic>=2.10.0 (Schema validation)
+      - pytest==7.4.3 (Testing)
+
+      **Frontend Dependencies:**
+      - React 18+ (Component framework)
+      - Next.js 15+ (App Router)
+      - TypeScript 5.x (Type safety)
+      - Tailwind CSS 3.x (Styling)
+      - Canvas API (Built-in, zone drawing)
+
+      **External Services:**
+      - None (all processing local)
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    **Performance Constraints:**
+    - Zone filtering overhead: <5ms per frame (CRITICAL)
+    - Total motion processing: <100ms per frame (50-80ms typical)
+    - No frame drops at 5 FPS capture rate
+    - Base64 thumbnail generation: ~50KB per event
+
+    **Technical Constraints:**
+    - SQLite database (JSON column for zone storage, no complex queries)
+    - Thread-safe implementation (multiple cameras may call zone filtering concurrently)
+    - Backward compatible: No zones defined = detect motion anywhere (don't break F2-1 cameras)
+    - Python 3.11+ (datetime.now(timezone.utc) pattern from deprecation fixes)
+    - FastAPI lifespan pattern (from deprecation fixes)
+
+    **Business Constraints:**
+    - Rectangles only for MVP (polygon support exists in schema for future, but UI is rectangles)
+    - Non-overlapping zones recommended (not enforced, but UX guidance)
+    - Maximum 10 zones per camera (UI/UX limit, not enforced in backend)
+
+    **Testing Constraints:**
+    - Maintain 100% test pass rate (currently 78 tests, all passing)
+    - All new services require unit tests
+    - All new API endpoints require integration tests
+    - Edge cases must be tested: no zones, disabled zones, motion partially in zone
+
+    **Code Quality Constraints:**
+    - Snake_case for Python (models, services, functions)
+    - PascalCase for React components
+    - Type hints for all Python functions
+    - Docstrings for all public methods
+    - Follow patterns from F2-1 (consistency)
+  </constraints>
+
+  <interfaces>
+    **DetectionZoneManager Interface:**
+    ```python
+    class DetectionZoneManager:
+        def is_motion_in_zones(
+            self,
+            camera_id: str,
+            bounding_box: Optional[Dict[str, int]],
+            detection_zones: Optional[str]  # JSON string from database
+        ) -> bool:
+            """
+            Check if motion bounding box intersects any enabled detection zone
+
+            Args:
+                camera_id: Camera UUID (for logging)
+                bounding_box: Motion bounding box {"x": int, "y": int, "width": int, "height": int}
+                detection_zones: JSON array of DetectionZone objects
+
+            Returns:
+                True if motion is in any enabled zone OR no zones defined
+                False if zones exist but motion is outside all enabled zones
+
+            Performance: <5ms overhead
+            """
+    ```
+
+    **API Endpoints Interface:**
+    ```
+    PUT /api/v1/cameras/{camera_id}/zones
+    Request Body: List[DetectionZone]
+    Response: 200 OK + CameraResponse (with updated zones)
+    Errors: 404 (camera not found), 422 (validation error)
+
+    GET /api/v1/cameras/{camera_id}/zones
+    Response: 200 OK + List[DetectionZone]
+    Errors: 404 (camera not found)
+
+    POST /api/v1/cameras/{camera_id}/zones/test
+    Request Body: Optional[List[DetectionZone]] (test zones)
+    Response: 200 OK + {motion_detected: bool, preview_image: base64, zones_overlay: bool}
+    Errors: 404 (camera not found), 500 (no frame available)
+    ```
+
+    **Database Schema Interface:**
+    ```sql
+    -- cameras table (modify)
+    ALTER TABLE cameras ADD COLUMN detection_zones TEXT NULL;
+
+    -- JSON format stored in detection_zones:
+    [
+      {
+        "id": "zone-uuid-1",
+        "name": "Front Door",
+        "vertices": [
+          {"x": 100, "y": 100},
+          {"x": 500, "y": 100},
+          {"x": 500, "y": 400},
+          {"x": 100, "y": 400}
+        ],
+        "enabled": true
+      }
+    ]
+    ```
+
+    **React Component Props Interface:**
+    ```typescript
+    interface ZoneDrawerProps {
+      cameraId: string;
+      previewImageUrl: string;
+      existingZones: DetectionZone[];
+      onZonesSaved: (zones: DetectionZone[]) => void;
+    }
+
+    interface DetectionZone {
+      id: string;
+      name: string;
+      vertices: Array<{x: number, y: number}>;
+      enabled: boolean;
+    }
+    ```
+  </interfaces>
+
+  <tests>
+    <standards>
+      **Testing Framework:**
+      - pytest 7.4.3 with pytest-asyncio 0.21.1
+      - Test discovery: tests/test_*/test_*.py
+      - Fixtures: tests/conftest.py (shared fixtures)
+      - Coverage: pytest-cov 4.1.0 (aim for >80% coverage)
+
+      **Test Patterns from F2-1:**
+      - Unit tests: Mock external dependencies (database, OpenCV)
+      - Integration tests: Use in-memory SQLite database
+      - Fixtures: Reuse camera_factory, db_session from conftest.py
+      - Assertions: Clear error messages, test one thing per test
+      - Edge cases: Test boundary conditions, null values, empty lists
+
+      **Quality Standards:**
+      - All tests must pass (100% pass rate)
+      - No flaky tests (deterministic)
+      - Fast tests (<1s per test, <30s total suite)
+      - Clear test names (test_function_name_when_condition_then_expected_result)
+    </standards>
+
+    <locations>
+      **New Test Files:**
+      - tests/test_services/test_detection_zone_manager.py (zone filtering unit tests)
+      - tests/test_api/test_camera_zones.py (zone API endpoint integration tests)
+
+      **Modified Test Files:**
+      - tests/test_services/test_motion_detection_service.py (add zone filtering tests)
+      - tests/test_models/test_camera.py (add detection_zones field tests)
+      - tests/test_api/test_cameras.py (verify zones in camera response)
+
+      **Existing Test Files (reference):**
+      - tests/test_services/test_motion_detector.py (motion algorithm tests, 13 tests)
+      - tests/test_models/test_motion_event.py (event model tests, 4 tests)
+      - tests/conftest.py (shared fixtures)
+    </locations>
+
+    <ideas>
+      **Unit Test Ideas for DetectionZoneManager:**
+      1. test_is_motion_in_zones_returns_true_when_no_zones_defined
+      2. test_is_motion_in_zones_returns_true_when_bounding_box_center_in_enabled_zone
+      3. test_is_motion_in_zones_returns_false_when_bounding_box_outside_all_zones
+      4. test_is_motion_in_zones_ignores_disabled_zones
+      5. test_is_motion_in_zones_handles_multiple_zones_returns_true_on_first_match
+      6. test_is_motion_in_zones_handles_rectangular_zone_as_polygon
+      7. test_is_motion_in_zones_handles_none_bounding_box (edge case)
+      8. test_is_motion_in_zones_parses_json_detection_zones_from_database
+      9. test_is_motion_in_zones_performance_under_5ms (benchmark test)
+
+      **Integration Test Ideas for Zone API:**
+      1. test_put_camera_zones_updates_detection_zones
+      2. test_put_camera_zones_validates_zone_coordinates_within_bounds
+      3. test_put_camera_zones_returns_404_for_nonexistent_camera
+      4. test_get_camera_zones_returns_empty_list_when_no_zones
+      5. test_get_camera_zones_returns_all_zones_for_camera
+      6. test_zones_persist_across_camera_restart (restart camera service)
+      7. test_zone_filtering_in_motion_detection_flow (end-to-end)
+      8. test_disabled_zone_does_not_trigger_motion_event
+      9. test_motion_outside_zones_does_not_create_event
+      10. test_motion_inside_zone_creates_event_with_correct_bounding_box
+
+      **Edge Case Tests:**
+      1. test_zone_with_single_pixel_bounding_box
+      2. test_overlapping_zones_both_enabled
+      3. test_zone_larger_than_camera_resolution
+      4. test_concurrent_zone_filtering_from_multiple_cameras (thread safety)
+      5. test_invalid_json_in_detection_zones_column (graceful error handling)
+    </ideas>
+  </tests>
+</story-context>

@@ -19,6 +19,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 
 from app.services.motion_detector import MotionDetector
+from app.services.detection_zone_manager import detection_zone_manager
 from app.models.motion_event import MotionEvent
 from app.models.camera import Camera
 from app.core.database import get_db
@@ -114,7 +115,17 @@ class MotionDetectionService:
         if not motion_detected:
             return None
 
-        # Motion detected! Create event
+        # Zone filtering: Check if motion is within enabled zones (BEFORE consuming cooldown)
+        # This optimization avoids wasting cooldown on out-of-zone motion
+        if not detection_zone_manager.is_motion_in_zones(
+            camera_id=camera_id,
+            bounding_box=bounding_box,
+            detection_zones=camera.detection_zones
+        ):
+            logger.debug(f"Camera {camera_id}: Motion detected outside zones, ignoring")
+            return None
+
+        # Motion detected within zones! Create event
         logger.info(
             f"Motion detected on camera {camera_id}: "
             f"confidence={confidence:.3f}, algorithm={camera.motion_algorithm}"

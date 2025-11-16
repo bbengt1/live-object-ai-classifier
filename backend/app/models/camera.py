@@ -1,5 +1,5 @@
 """Camera SQLAlchemy ORM model"""
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, CheckConstraint
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, CheckConstraint
 from sqlalchemy.orm import validates, relationship
 from app.core.database import Base
 from app.utils.encryption import encrypt_password, decrypt_password
@@ -28,6 +28,7 @@ class Camera(Base):
         motion_sensitivity: Motion detection sensitivity ('low', 'medium', 'high')
         motion_cooldown: Seconds between motion triggers (0-300)
         motion_algorithm: Motion detection algorithm ('mog2', 'knn', 'frame_diff')
+        detection_zones: JSON array of detection zone objects (nullable)
         created_at: Record creation timestamp (UTC)
         updated_at: Last modification timestamp (UTC)
     """
@@ -47,6 +48,7 @@ class Camera(Base):
     motion_sensitivity = Column(String(20), default='medium', nullable=False)
     motion_cooldown = Column(Integer, default=60, nullable=False)
     motion_algorithm = Column(String(20), default='mog2', nullable=False)
+    detection_zones = Column(Text, nullable=True)  # JSON array of DetectionZone objects
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 

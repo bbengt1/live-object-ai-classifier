@@ -1,5 +1,6 @@
 """Integration tests for camera API endpoints"""
 import pytest
+import json
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 from sqlalchemy import create_engine
@@ -485,3 +486,250 @@ class TestCameraAPI:
         assert data["success"] is False
         assert "in use" in data["message"].lower()
         assert "another application" in data["message"].lower()
+
+
+# ==================== Detection Zone Tests (F2.2) ====================
+
+
+def test_get_camera_zones_returns_empty_list_when_no_zones():
+    """Test GET /cameras/{id}/zones returns empty list for camera with no zones"""
+    # Create camera without zones
+    create_response = client.post("/api/v1/cameras", json={
+        "name": "Camera No Zones",
+        "type": "usb",
+        "device_index": 0,
+        "is_enabled": False
+    })
+    camera_id = create_response.json()["id"]
+
+    # Get zones
+    response = client.get(f"/api/v1/cameras/{camera_id}/zones")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_put_camera_zones_updates_detection_zones():
+    """Test PUT /cameras/{id}/zones updates zones successfully"""
+    # Create camera
+    create_response = client.post("/api/v1/cameras", json={
+        "name": "Camera With Zones",
+        "type": "usb",
+        "device_index": 0,
+        "is_enabled": False
+    })
+    camera_id = create_response.json()["id"]
+
+    # Define zones
+    zones = [
+        {
+            "id": "zone-1",
+            "name": "Front Door",
+            "vertices": [
+                {"x": 100, "y": 100},
+                {"x": 200, "y": 100},
+                {"x": 200, "y": 200},
+                {"x": 100, "y": 200}
+            ],
+            "enabled": True
+        },
+        {
+            "id": "zone-2",
+            "name": "Driveway",
+            "vertices": [
+                {"x": 300, "y": 300},
+                {"x": 400, "y": 300},
+                {"x": 400, "y": 400},
+                {"x": 300, "y": 400}
+            ],
+            "enabled": False
+        }
+    ]
+
+    # Update zones
+    response = client.put(f"/api/v1/cameras/{camera_id}/zones", json=zones)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == camera_id
+    assert data["detection_zones"] is not None
+
+    # Verify zones persisted
+    get_response = client.get(f"/api/v1/cameras/{camera_id}/zones")
+    assert get_response.status_code == 200
+    saved_zones = get_response.json()
+    assert len(saved_zones) == 2
+    assert saved_zones[0]["name"] == "Front Door"
+    assert saved_zones[1]["name"] == "Driveway"
+
+
+def test_put_camera_zones_validates_zone_limit():
+    """Test PUT /cameras/{id}/zones enforces maximum 10 zones"""
+    # Create camera
+    create_response = client.post("/api/v1/cameras", json={
+        "name": "Camera Too Many Zones",
+        "type": "usb",
+        "device_index": 0,
+        "is_enabled": False
+    })
+    camera_id = create_response.json()["id"]
+
+    # Create 11 zones (over limit)
+    zones = []
+    for i in range(11):
+        zones.append({
+            "id": f"zone-{i}",
+            "name": f"Zone {i}",
+            "vertices": [
+                {"x": i * 10, "y": i * 10},
+                {"x": i * 10 + 50, "y": i * 10},
+                {"x": i * 10 + 50, "y": i * 10 + 50},
+                {"x": i * 10, "y": i * 10 + 50}
+            ],
+            "enabled": True
+        })
+
+    # Attempt to update zones
+    response = client.put(f"/api/v1/cameras/{camera_id}/zones", json=zones)
+
+    assert response.status_code == 422
+    assert "Maximum 10 zones" in response.json()["detail"]
+
+
+def test_put_camera_zones_returns_404_for_nonexistent_camera():
+    """Test PUT /cameras/{id}/zones returns 404 for non-existent camera"""
+    zones = [
+        {
+            "id": "zone-1",
+            "name": "Test Zone",
+            "vertices": [
+                {"x": 0, "y": 0},
+                {"x": 100, "y": 0},
+                {"x": 100, "y": 100},
+                {"x": 0, "y": 100}
+            ],
+            "enabled": True
+        }
+    ]
+
+    response = client.put("/api/v1/cameras/nonexistent-id/zones", json=zones)
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_get_camera_zones_returns_404_for_nonexistent_camera():
+    """Test GET /cameras/{id}/zones returns 404 for non-existent camera"""
+    response = client.get("/api/v1/cameras/nonexistent-id/zones")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_zones_persist_across_camera_updates():
+    """Test that zones persist when camera is updated"""
+    # Create camera with zones
+    create_response = client.post("/api/v1/cameras", json={
+        "name": "Persistence Test Camera",
+        "type": "usb",
+        "device_index": 0,
+        "is_enabled": False
+    })
+    camera_id = create_response.json()["id"]
+
+    # Set zones
+    zones = [
+        {
+            "id": "persistent-zone",
+            "name": "Persistent Zone",
+            "vertices": [
+                {"x": 50, "y": 50},
+                {"x": 150, "y": 50},
+                {"x": 150, "y": 150},
+                {"x": 50, "y": 150}
+            ],
+            "enabled": True
+        }
+    ]
+    client.put(f"/api/v1/cameras/{camera_id}/zones", json=zones)
+
+    # Update camera name (non-zone field)
+    update_response = client.put(f"/api/v1/cameras/{camera_id}", json={
+        "name": "Updated Camera Name"
+    })
+    assert update_response.status_code == 200
+
+    # Verify zones still exist
+    get_response = client.get(f"/api/v1/cameras/{camera_id}/zones")
+    assert get_response.status_code == 200
+    saved_zones = get_response.json()
+    assert len(saved_zones) == 1
+    assert saved_zones[0]["name"] == "Persistent Zone"
+
+
+def test_detection_zone_schema_validates_vertices():
+    """Test that DetectionZone schema validates minimum vertices"""
+    # Create camera
+    create_response = client.post("/api/v1/cameras", json={
+        "name": "Validation Test Camera",
+        "type": "usb",
+        "device_index": 0,
+        "is_enabled": False
+    })
+    camera_id = create_response.json()["id"]
+
+    # Invalid zone with only 2 vertices (need at least 3 for polygon)
+    invalid_zones = [
+        {
+            "id": "invalid-zone",
+            "name": "Invalid",
+            "vertices": [
+                {"x": 0, "y": 0},
+                {"x": 100, "y": 100}
+            ],
+            "enabled": True
+        }
+    ]
+
+    # Attempt to update zones
+    response = client.put(f"/api/v1/cameras/{camera_id}/zones", json=invalid_zones)
+
+    # Should fail validation (422)
+    assert response.status_code == 422
+
+
+def test_zone_auto_close_polygon():
+    """Test that DetectionZone schema auto-closes polygon if needed"""
+    # Create camera
+    create_response = client.post("/api/v1/cameras", json={
+        "name": "Auto-close Test",
+        "type": "usb",
+        "device_index": 0,
+        "is_enabled": False
+    })
+    camera_id = create_response.json()["id"]
+
+    # Zone with unclosed polygon (first != last)
+    zones = [
+        {
+            "id": "autoclosed-zone",
+            "name": "Auto-closed",
+            "vertices": [
+                {"x": 0, "y": 0},
+                {"x": 100, "y": 0},
+                {"x": 100, "y": 100},
+                {"x": 0, "y": 100}
+                # Missing closing vertex (0, 0) - should be auto-added
+            ],
+            "enabled": True
+        }
+    ]
+
+    response = client.put(f"/api/v1/cameras/{camera_id}/zones", json=zones)
+    assert response.status_code == 200
+
+    # Verify polygon was auto-closed
+    get_response = client.get(f"/api/v1/cameras/{camera_id}/zones")
+    saved_zones = get_response.json()
+    assert len(saved_zones[0]["vertices"]) == 5  # Original 4 + auto-closed vertex
+    assert saved_zones[0]["vertices"][0] == saved_zones[0]["vertices"][-1]

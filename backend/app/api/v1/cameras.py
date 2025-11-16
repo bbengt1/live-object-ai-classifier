@@ -20,9 +20,13 @@ import numpy as np
 from app.core.database import get_db
 from app.models.camera import Camera
 from app.schemas.camera import CameraCreate, CameraUpdate, CameraResponse, CameraTestResponse
-from app.schemas.motion import MotionConfigUpdate, MotionConfigResponse, MotionTestRequest, MotionTestResponse
+from app.schemas.motion import (
+    MotionConfigUpdate, MotionConfigResponse, MotionTestRequest, MotionTestResponse,
+    DetectionZone
+)
 from app.services.camera_service import CameraService
 from app.services.motion_detection_service import motion_detection_service
+from app.services.detection_zone_manager import detection_zone_manager
 
 logger = logging.getLogger(__name__)
 
@@ -695,3 +699,218 @@ def test_motion_detection(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Motion test failed: {str(e)}"
         )
+
+
+# ==================== Detection Zone Endpoints (F2.2) ====================
+
+
+@router.get("/{camera_id}/zones", response_model=List[DetectionZone])
+def get_camera_zones(
+    camera_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get detection zones for a camera
+
+    Args:
+        camera_id: UUID of camera
+        db: Database session
+
+    Returns:
+        List of DetectionZone objects (empty list if no zones configured)
+
+    Raises:
+        404: Camera not found
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    # Parse detection zones JSON (return empty list if None)
+    if not camera.detection_zones:
+        return []
+
+    try:
+        import json
+        zones = json.loads(camera.detection_zones)
+        return zones
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.error(f"Invalid detection_zones JSON for camera {camera_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid zone configuration in database"
+        )
+
+
+@router.put("/{camera_id}/zones", response_model=CameraResponse)
+def update_camera_zones(
+    camera_id: str,
+    zones: List[DetectionZone],
+    db: Session = Depends(get_db)
+):
+    """
+    Update detection zones for a camera
+
+    Args:
+        camera_id: UUID of camera
+        zones: List of DetectionZone objects
+        db: Database session
+
+    Returns:
+        Updated camera object with new zones
+
+    Raises:
+        404: Camera not found
+        422: Invalid zone configuration
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    # Validate zones (Pydantic already validated, but double-check)
+    if len(zones) > 10:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Maximum 10 zones allowed per camera"
+        )
+
+    # Serialize zones to JSON
+    try:
+        import json
+        zones_dict = [zone.model_dump() for zone in zones]
+        camera.detection_zones = json.dumps(zones_dict)
+
+        db.commit()
+        db.refresh(camera)
+
+        logger.info(
+            f"Updated detection zones for camera {camera_id}: "
+            f"{len(zones)} zones configured"
+        )
+
+        return camera
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update zones for camera {camera_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update zones: {str(e)}"
+        )
+
+
+@router.post("/{camera_id}/zones/test")
+def test_camera_zones(
+    camera_id: str,
+    test_zones: List[DetectionZone] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Test detection zones with current camera frame
+
+    Args:
+        camera_id: UUID of camera
+        test_zones: Optional zones to test (uses camera's zones if not provided)
+        db: Database session
+
+    Returns:
+        Preview image with zones overlay and motion detection result
+
+    Raises:
+        404: Camera not found
+        500: No frame available or capture error
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {camera_id} not found"
+        )
+
+    # Get camera's active capture if running
+    active_capture = camera_service._active_captures.get(camera_id)
+
+    if not active_capture or not active_capture.isOpened():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Camera not running or no frame available. Start camera first."
+        )
+
+    # Capture current frame
+    ret, frame = active_capture.read()
+
+    if not ret or frame is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to capture frame from camera"
+        )
+
+    # Use test zones or camera's configured zones
+    zones_to_test = test_zones if test_zones else []
+    if not zones_to_test and camera.detection_zones:
+        try:
+            import json
+            zones_dict = json.loads(camera.detection_zones)
+            zones_to_test = [DetectionZone(**z) for z in zones_dict]
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            logger.warning(f"Failed to parse camera zones: {e}")
+
+    # Draw zones on frame
+    frame_with_zones = frame.copy()
+
+    for zone in zones_to_test:
+        vertices = zone.vertices
+        if len(vertices) < 3:
+            continue
+
+        # Convert to numpy array
+        points = np.array([[v['x'], v['y']] for v in vertices], dtype=np.int32)
+
+        # Draw polygon
+        color = (0, 255, 0) if zone.enabled else (128, 128, 128)  # Green if enabled, gray if disabled
+        cv2.polylines(frame_with_zones, [points], isClosed=True, color=color, thickness=2)
+
+        # Add zone name
+        if len(vertices) > 0:
+            text_pos = (vertices[0]['x'], vertices[0]['y'] - 10)
+            cv2.putText(
+                frame_with_zones,
+                zone.name,
+                text_pos,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                1
+            )
+
+    # Encode preview
+    _, buffer = cv2.imencode('.jpg', frame_with_zones, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    preview_b64 = base64.b64encode(buffer).decode('utf-8')
+
+    # Run motion detection test (if enabled)
+    motion_detected = False
+    if camera.motion_enabled:
+        try:
+            detector = motion_detection_service._get_or_create_detector(camera_id, camera.motion_algorithm)
+            motion_detected, confidence, bounding_box = detector.detect_motion(
+                frame,
+                sensitivity=camera.motion_sensitivity
+            )
+        except Exception as e:
+            logger.warning(f"Motion detection test failed: {e}")
+
+    return {
+        "motion_detected": motion_detected,
+        "zones_count": len(zones_to_test),
+        "enabled_zones_count": sum(1 for z in zones_to_test if z.enabled),
+        "preview_image": f"data:image/jpeg;base64,{preview_b64}"
+    }
