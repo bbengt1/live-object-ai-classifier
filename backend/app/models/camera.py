@@ -4,7 +4,7 @@ from sqlalchemy.orm import validates, relationship
 from app.core.database import Base
 from app.utils.encryption import encrypt_password, decrypt_password
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -47,8 +47,8 @@ class Camera(Base):
     motion_sensitivity = Column(String(20), default='medium', nullable=False)
     motion_cooldown = Column(Integer, default=60, nullable=False)
     motion_algorithm = Column(String(20), default='mog2', nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships
     motion_events = relationship("MotionEvent", back_populates="camera", cascade="all, delete-orphan")

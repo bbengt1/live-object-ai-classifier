@@ -3,6 +3,7 @@ FastAPI application entry point for Live Object AI Classifier
 
 Initializes the FastAPI app, registers routers, and sets up startup/shutdown events.
 """
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
@@ -20,38 +21,17 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
-app = FastAPI(
-    title="Live Object AI Classifier API",
-    description="API for camera-based motion detection and AI-powered object description",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Register API routers
-# Note: Register motion_events before cameras to ensure proper route precedence
-app.include_router(motion_events_router, prefix=settings.API_V1_PREFIX)
-app.include_router(cameras_router, prefix=settings.API_V1_PREFIX)
-
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-    Application startup event handler
+    Application lifespan handler for startup and shutdown events.
 
-    - Creates database tables if they don't exist
-    - Loads enabled cameras and starts capture threads
+    Manages the application lifecycle:
+    - Startup: Creates database tables and initializes resources
+    - Shutdown: Stops camera threads and cleans up resources
     """
+    # Startup logic
     logger.info("Application starting up...")
 
     # Create database tables
@@ -73,21 +53,40 @@ async def startup_event():
 
     logger.info("Application startup complete")
 
+    yield  # Application runs here
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    Application shutdown event handler
-
-    - Stops all running camera capture threads
-    - Cleans up resources
-    """
+    # Shutdown logic
     logger.info("Application shutting down...")
 
     # Stop all camera threads
     camera_service.stop_all_cameras(timeout=5.0)
 
     logger.info("Application shutdown complete")
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="Live Object AI Classifier API",
+    description="API for camera-based motion detection and AI-powered object description",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Register API routers
+# Note: Register motion_events before cameras to ensure proper route precedence
+app.include_router(motion_events_router, prefix=settings.API_V1_PREFIX)
+app.include_router(cameras_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")

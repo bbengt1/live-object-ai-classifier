@@ -45,7 +45,7 @@ development_status:
 
   # F2: Motion Detection
   epic-f2: contexted
-  f2-1-motion-detection-algorithm: review
+  f2-1-motion-detection-algorithm: done
   f2-2-motion-detection-zones: backlog
   f2-3-detection-schedule: backlog
   epic-f2-retrospective: optional
@@ -105,3 +105,6 @@ development_status:
   f9-2-webhook-testing: backlog
   f9-3-webhook-logs: backlog
   epic-f9-retrospective: optional
+
+  # Tech Debt & Maintenance
+  deprecation-fixes-1: done

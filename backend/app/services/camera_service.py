@@ -9,7 +9,7 @@ import threading
 import time
 import logging
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import numpy as np
 
 from app.models.camera import Camera
@@ -416,7 +416,7 @@ class CameraService:
         with self._status_lock:
             self._camera_status[camera_id] = {
                 "status": status,
-                "last_frame_time": datetime.utcnow() if status == "connected" else None,
+                "last_frame_time": datetime.now(timezone.utc) if status == "connected" else None,
                 "error": error
             }
 
