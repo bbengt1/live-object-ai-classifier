@@ -73,6 +73,43 @@ export function MotionSettingsSection({ form }: MotionSettingsSectionProps) {
         </p>
       </div>
 
+      {/* Motion Enabled Toggle */}
+      <FormField
+        control={form.control}
+        name="motion_enabled"
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <FormLabel className="text-base">
+                Enable Motion Detection
+              </FormLabel>
+              <FormDescription>
+                Turn motion detection on or off for this camera
+              </FormDescription>
+            </div>
+            <FormControl>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={field.value}
+                onClick={() => field.onChange(!field.value)}
+                className={`
+                  relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50
+                  ${field.value ? 'bg-blue-600' : 'bg-gray-300'}
+                `}
+              >
+                <span
+                  className={`
+                    inline-block h-5 w-5 transform rounded-full bg-white transition-transform
+                    ${field.value ? 'translate-x-6' : 'translate-x-0.5'}
+                  `}
+                />
+              </button>
+            </FormControl>
+          </FormItem>
+        )}
+      />
+
       {/* Motion Sensitivity */}
       <FormField
         control={form.control}
