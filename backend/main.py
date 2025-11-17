@@ -12,12 +12,35 @@ from app.core.config import settings
 from app.core.database import engine, Base
 from app.api.v1.cameras import router as cameras_router, camera_service
 from app.api.v1.motion_events import router as motion_events_router
+from app.api.v1.ai import router as ai_router
+from app.api.v1.events import router as events_router
 
 # Configure logging
+import os
+from logging.handlers import RotatingFileHandler
+
+# Ensure log directory exists
+log_dir = os.path.join(os.path.dirname(__file__), 'data', 'logs')
+os.makedirs(log_dir, exist_ok=True)
+
+# Configure root logger
 logging.basicConfig(
     level=settings.LOG_LEVEL,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+# Add file handler for AI service logs
+ai_service_logger = logging.getLogger('app.services.ai_service')
+ai_service_log_file = os.path.join(log_dir, 'ai_service.log')
+ai_file_handler = RotatingFileHandler(
+    ai_service_log_file,
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
+)
+ai_file_handler.setFormatter(
+    logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+)
+ai_service_logger.addHandler(ai_file_handler)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +60,11 @@ async def lifespan(app: FastAPI):
     # Create database tables
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified")
+
+    # Create thumbnails directory
+    thumbnail_dir = os.path.join(os.path.dirname(__file__), 'data', 'thumbnails')
+    os.makedirs(thumbnail_dir, exist_ok=True)
+    logger.info(f"Thumbnails directory: {thumbnail_dir}")
 
     # TODO: Load enabled cameras and start capture threads
     # from app.core.database import SessionLocal
@@ -87,6 +115,8 @@ app.add_middleware(
 # Note: Register motion_events before cameras to ensure proper route precedence
 app.include_router(motion_events_router, prefix=settings.API_V1_PREFIX)
 app.include_router(cameras_router, prefix=settings.API_V1_PREFIX)
+app.include_router(ai_router, prefix=settings.API_V1_PREFIX)
+app.include_router(events_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")
