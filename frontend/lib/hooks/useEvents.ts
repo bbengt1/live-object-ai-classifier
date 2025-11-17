@@ -22,8 +22,8 @@ export function useEvents(filters: IEventFilters = {}) {
       });
     },
     getNextPageParam: (lastPage) => {
-      const nextSkip = lastPage.skip + lastPage.items.length;
-      return nextSkip < lastPage.total ? nextSkip : undefined;
+      const nextOffset = lastPage.offset + lastPage.events.length;
+      return nextOffset < lastPage.total_count ? nextOffset : undefined;
     },
     initialPageParam: 0,
     staleTime: 30 * 1000, // 30 seconds
@@ -56,8 +56,8 @@ export function useDeleteEvent() {
             ...data,
             pages: data.pages.map((page) => ({
               ...page,
-              items: page.items.filter((event: IEvent) => event.id !== eventId),
-              total: page.total - 1,
+              events: page.events.filter((event: IEvent) => event.id !== eventId),
+              total_count: page.total_count - 1,
             })),
           };
         }

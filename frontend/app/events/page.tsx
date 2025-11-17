@@ -139,8 +139,8 @@ export default function EventsPage() {
   };
 
   // Flatten all pages into single array
-  const allEvents = data?.pages.flatMap((page) => page.items) ?? [];
-  const totalEvents = data?.pages[0]?.total ?? 0;
+  const allEvents = data?.pages.flatMap((page) => page.events) ?? [];
+  const totalEvents = data?.pages[0]?.total_count ?? 0;
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -32,12 +32,15 @@ export interface IEventFilters {
 
 /**
  * Paginated events response from API
+ * Matches backend EventListResponse schema
  */
 export interface IEventsResponse {
-  items: IEvent[];
-  total: number;
-  skip: number;
+  events: IEvent[];
+  total_count: number;
+  has_more: boolean;
+  next_offset: number | null;
   limit: number;
+  offset: number;
 }
 
 /**
