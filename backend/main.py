@@ -14,6 +14,8 @@ from app.api.v1.cameras import router as cameras_router, camera_service
 from app.api.v1.motion_events import router as motion_events_router
 from app.api.v1.ai import router as ai_router
 from app.api.v1.events import router as events_router
+from app.api.v1.metrics import router as metrics_router
+from app.services.event_processor import initialize_event_processor, shutdown_event_processor
 
 # Configure logging
 import os
@@ -66,18 +68,9 @@ async def lifespan(app: FastAPI):
     os.makedirs(thumbnail_dir, exist_ok=True)
     logger.info(f"Thumbnails directory: {thumbnail_dir}")
 
-    # TODO: Load enabled cameras and start capture threads
-    # from app.core.database import SessionLocal
-    # from app.models.camera import Camera
-    #
-    # db = SessionLocal()
-    # try:
-    #     enabled_cameras = db.query(Camera).filter(Camera.is_enabled == True).all()
-    #     for camera in enabled_cameras:
-    #         camera_service.start_camera(camera)
-    #     logger.info(f"Started {len(enabled_cameras)} enabled cameras")
-    # finally:
-    #     db.close()
+    # Initialize Event Processor (Story 3.3)
+    await initialize_event_processor()
+    logger.info("Event processor initialized and started")
 
     logger.info("Application startup complete")
 
@@ -85,6 +78,10 @@ async def lifespan(app: FastAPI):
 
     # Shutdown logic
     logger.info("Application shutting down...")
+
+    # Stop Event Processor (Story 3.3)
+    await shutdown_event_processor(timeout=30.0)
+    logger.info("Event processor stopped")
 
     # Stop all camera threads
     camera_service.stop_all_cameras(timeout=5.0)
@@ -117,6 +114,7 @@ app.include_router(motion_events_router, prefix=settings.API_V1_PREFIX)
 app.include_router(cameras_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ai_router, prefix=settings.API_V1_PREFIX)
 app.include_router(events_router, prefix=settings.API_V1_PREFIX)
+app.include_router(metrics_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")

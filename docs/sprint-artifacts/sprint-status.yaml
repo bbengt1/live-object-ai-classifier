@@ -54,7 +54,7 @@ development_status:
   epic-3: backlog
   3-1-integrate-ai-vision-api-for-description-generation: done
   3-2-implement-event-storage-and-retrieval-system: done
-  3-3-build-event-driven-processing-pipeline: drafted
+  3-3-build-event-driven-processing-pipeline: done
   3-4-implement-data-retention-and-cleanup: backlog
   epic-3-retrospective: optional
 
