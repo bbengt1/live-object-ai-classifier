@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
@@ -28,9 +28,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cameraFormSchema, type CameraFormValues } from '@/lib/validations/camera';
-import type { ICamera, ICameraTestResponse } from '@/types/camera';
+import type { ICamera, ICameraTestResponse, IDetectionZone, IZoneVertex } from '@/types/camera';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { MotionSettingsSection } from './MotionSettingsSection';
+import { DetectionZoneDrawer } from './DetectionZoneDrawer';
+import { DetectionZoneList } from './DetectionZoneList';
+import { ZonePresetTemplates } from './ZonePresetTemplates';
+import { DetectionScheduleEditor } from './DetectionScheduleEditor';
 
 interface CameraFormProps {
   /**
@@ -68,6 +72,10 @@ export function CameraForm({
     result: ICameraTestResponse | null;
   }>({ loading: false, result: null });
 
+  // Zone drawing state
+  const [isDrawingZone, setIsDrawingZone] = useState(false);
+  const [zones, setZones] = useState<IDetectionZone[]>(initialData?.detection_zones || []);
+
   // Form setup with React Hook Form + Zod
   const form = useForm<CameraFormValues>({
     resolver: zodResolver(cameraFormSchema),
@@ -80,18 +88,34 @@ export function CameraForm({
           device_index: initialData.device_index,
           frame_rate: initialData.frame_rate,
           is_enabled: initialData.is_enabled,
+          motion_enabled: initialData.motion_enabled,
           motion_sensitivity: initialData.motion_sensitivity,
           motion_cooldown: initialData.motion_cooldown,
           motion_algorithm: initialData.motion_algorithm,
+          detection_zones: initialData.detection_zones || [],
+          detection_schedule: initialData.detection_schedule || {
+            enabled: false,
+            start_time: '09:00',
+            end_time: '17:00',
+            days: [0, 1, 2, 3, 4],
+          },
         }
       : {
           name: '',
           type: 'rtsp',
           frame_rate: 5,
           is_enabled: true,
+          motion_enabled: true,
           motion_sensitivity: 'medium',
           motion_cooldown: 30,
           motion_algorithm: 'mog2',
+          detection_zones: [],
+          detection_schedule: {
+            enabled: false,
+            start_time: '09:00',
+            end_time: '17:00',
+            days: [0, 1, 2, 3, 4],
+          },
         },
   });
 
@@ -134,6 +158,60 @@ export function CameraForm({
       });
     }
   };
+
+  /**
+   * Handle zone drawing completion
+   */
+  const handleZoneComplete = (vertices: IZoneVertex[]) => {
+    const newZone: IDetectionZone = {
+      id: `zone-${Date.now()}`,
+      name: `Zone ${zones.length + 1}`,
+      vertices,
+      enabled: true,
+    };
+
+    const updatedZones = [...zones, newZone];
+    setZones(updatedZones);
+    form.setValue('detection_zones', updatedZones);
+    setIsDrawingZone(false);
+  };
+
+  /**
+   * Handle preset template selection
+   */
+  const handleTemplateSelect = (vertices: IZoneVertex[]) => {
+    handleZoneComplete(vertices);
+  };
+
+  /**
+   * Handle zone update (name, enabled)
+   */
+  const handleZoneUpdate = (zoneId: string, updates: Partial<IDetectionZone>) => {
+    const updatedZones = zones.map((zone) =>
+      zone.id === zoneId ? { ...zone, ...updates } : zone
+    );
+    setZones(updatedZones);
+    form.setValue('detection_zones', updatedZones);
+  };
+
+  /**
+   * Handle zone deletion
+   */
+  const handleZoneDelete = (zoneId: string) => {
+    const updatedZones = zones.filter((zone) => zone.id !== zoneId);
+    setZones(updatedZones);
+    form.setValue('detection_zones', updatedZones);
+  };
+
+  // Debug form state
+  React.useEffect(() => {
+    console.log('Form state:', {
+      isValid: form.formState.isValid,
+      isDirty: form.formState.isDirty,
+      errors: form.formState.errors,
+      values: form.getValues(),
+    });
+  }, [form.formState, form]);
 
   return (
     <Form {...form}>
@@ -198,6 +276,7 @@ export function CameraForm({
                     <Input
                       placeholder="rtsp://192.168.1.50:554/stream1"
                       {...field}
+                      value={field.value ?? ''}
                     />
                   </FormControl>
                   <FormDescription>
@@ -216,7 +295,7 @@ export function CameraForm({
                   <FormItem>
                     <FormLabel>Username (Optional)</FormLabel>
                     <FormControl>
-                      <Input placeholder="admin" {...field} />
+                      <Input placeholder="admin" {...field} value={field.value ?? ''} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -230,7 +309,7 @@ export function CameraForm({
                   <FormItem>
                     <FormLabel>Password (Optional)</FormLabel>
                     <FormControl>
-                      <Input type="password" {...field} />
+                      <Input type="password" {...field} value={field.value ?? ''} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -298,6 +377,57 @@ export function CameraForm({
 
         {/* Motion Detection Settings */}
         <MotionSettingsSection form={form} />
+
+        {/* Detection Zones */}
+        <div className="border rounded-lg p-6 bg-muted/10 space-y-4">
+          <div>
+            <h3 className="font-medium text-lg">Detection Zones</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Define specific areas where motion detection should be active (max 10 zones)
+            </p>
+          </div>
+
+          {/* Zone List */}
+          <DetectionZoneList
+            zones={zones}
+            onZoneUpdate={handleZoneUpdate}
+            onZoneDelete={handleZoneDelete}
+          />
+
+          {/* Draw Zone Section */}
+          {!isDrawingZone && zones.length < 10 && (
+            <div className="space-y-3">
+              <ZonePresetTemplates onTemplateSelect={handleTemplateSelect} />
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDrawingZone(true)}
+                >
+                  Draw Custom Polygon
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {isDrawingZone && (
+            <DetectionZoneDrawer
+              zones={zones}
+              onZoneComplete={handleZoneComplete}
+              onCancel={() => setIsDrawingZone(false)}
+              previewImage={testState.result?.thumbnail}
+            />
+          )}
+
+          {zones.length >= 10 && (
+            <p className="text-sm text-amber-600 font-medium text-center">
+              Maximum of 10 zones reached
+            </p>
+          )}
+        </div>
+
+        {/* Detection Schedule */}
+        <DetectionScheduleEditor form={form} />
 
         {/* Test Connection Button (edit mode only) */}
         {isEditMode && (

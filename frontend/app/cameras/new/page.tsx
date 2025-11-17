@@ -29,15 +29,17 @@ export default function NewCameraPage() {
 
     try {
       await apiClient.cameras.create(data);
-      showSuccess('Camera added successfully');
-      router.push('/cameras');
+      showSuccess('Camera added successfully!');
+      // Small delay to let user see the success toast before redirecting
+      setTimeout(() => {
+        router.push('/cameras');
+      }, 1000);
     } catch (err) {
       if (err instanceof ApiError) {
         showError(err.message);
       } else {
         showError('Failed to add camera');
       }
-    } finally {
       setIsSubmitting(false);
     }
   };
