@@ -14,6 +14,13 @@ import type {
   IEventFilters,
   IEventsResponse,
 } from '@/types/event';
+import type {
+  SystemSettings,
+  StorageStats,
+  AIKeyTestRequest,
+  AIKeyTestResponse,
+  DeleteDataResponse,
+} from '@/types/settings';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_V1_PREFIX = '/api/v1';
@@ -254,6 +261,75 @@ export const apiClient = {
      */
     delete: async (id: string): Promise<void> => {
       await apiFetch<void>(`/events/${id}`, {
+        method: 'DELETE',
+      });
+    },
+  },
+
+  /**
+   * Settings API client
+   */
+  settings: {
+    /**
+     * Get all system settings
+     * @returns System settings object
+     */
+    get: async (): Promise<SystemSettings> => {
+      return apiFetch<SystemSettings>('/system/settings');
+    },
+
+    /**
+     * Update system settings (partial update)
+     * @param data Partial settings update payload
+     * @returns Updated settings object
+     */
+    update: async (data: Partial<SystemSettings>): Promise<SystemSettings> => {
+      return apiFetch<SystemSettings>('/system/settings', {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    },
+
+    /**
+     * Test AI API key
+     * @param data Model and API key to test
+     * @returns Test result with validation status
+     */
+    testApiKey: async (data: AIKeyTestRequest): Promise<AIKeyTestResponse> => {
+      return apiFetch<AIKeyTestResponse>('/ai/test-key', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    /**
+     * Get storage statistics
+     * @returns Storage usage information
+     */
+    getStorageStats: async (): Promise<StorageStats> => {
+      return apiFetch<StorageStats>('/system/storage');
+    },
+
+    /**
+     * Export all events
+     * @param format Export format (json or csv)
+     * @returns Blob for download
+     */
+    exportData: async (format: 'json' | 'csv' = 'json'): Promise<Blob> => {
+      const url = `${API_BASE_URL}${API_V1_PREFIX}/events/export?format=${format}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new ApiError(`Failed to export data`, response.status);
+      }
+      return response.blob();
+    },
+
+    /**
+     * Delete all event data
+     * @returns Deletion result
+     */
+    deleteAllData: async (): Promise<DeleteDataResponse> => {
+      return apiFetch<DeleteDataResponse>('/events', {
         method: 'DELETE',
       });
     },

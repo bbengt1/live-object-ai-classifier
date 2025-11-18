@@ -14,7 +14,9 @@ import logging
 from app.schemas.system import (
     RetentionPolicyUpdate,
     RetentionPolicyResponse,
-    StorageResponse
+    StorageResponse,
+    SystemSettings,
+    SystemSettingsUpdate
 )
 from app.services.cleanup_service import get_cleanup_service
 from app.core.database import get_db, SessionLocal
@@ -271,4 +273,127 @@ async def get_storage_info():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve storage information"
+        )
+
+
+# Settings key prefix for all system settings
+SETTINGS_PREFIX = "settings_"
+
+
+def _get_setting_from_db(db: Session, key: str, default: any = None) -> any:
+    """Get a single setting value from database"""
+    setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    return setting.value if setting else default
+
+
+def _set_setting_in_db(db: Session, key: str, value: any):
+    """Set a single setting value in database"""
+    setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    if setting:
+        setting.value = str(value) if not isinstance(value, str) else value
+    else:
+        setting = SystemSetting(key=key, value=str(value) if not isinstance(value, str) else value)
+        db.add(setting)
+    db.commit()
+
+
+@router.get("/settings", response_model=SystemSettings)
+async def get_settings(db: Session = Depends(get_db)):
+    """
+    Get all system settings
+
+    Returns complete system configuration including general settings,
+    AI model configuration, motion detection parameters, and data retention settings.
+
+    **Response:**
+    ```json
+    {
+        "system_name": "Live Object AI Classifier",
+        "timezone": "America/Los_Angeles",
+        ...
+    }
+    ```
+
+    **Status Codes:**
+    - 200: Success
+    - 500: Internal server error
+    """
+    try:
+        # Load all settings from database, use defaults if not set
+        settings_dict = {}
+
+        # Get all settings fields from the schema
+        for field_name, field_info in SystemSettings.model_fields.items():
+            db_value = _get_setting_from_db(db, f"{SETTINGS_PREFIX}{field_name}")
+
+            if db_value is not None:
+                # Convert string back to appropriate type
+                if field_info.annotation == bool:
+                    settings_dict[field_name] = db_value.lower() in ('true', '1', 'yes')
+                elif field_info.annotation == int:
+                    settings_dict[field_name] = int(db_value)
+                elif field_info.annotation == float:
+                    settings_dict[field_name] = float(db_value)
+                else:
+                    settings_dict[field_name] = db_value
+            else:
+                # Use default from schema
+                if field_info.default is not None:
+                    settings_dict[field_name] = field_info.default
+
+        return SystemSettings(**settings_dict)
+
+    except Exception as e:
+        logger.error(f"Error getting settings: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve settings"
+        )
+
+
+@router.put("/settings", response_model=SystemSettings)
+async def update_settings(
+    settings_update: SystemSettingsUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Update system settings (partial update)
+
+    Accepts partial updates - only provided fields will be updated.
+    Automatically handles type conversion and validation.
+
+    **Request Body:**
+    ```json
+    {
+        "system_name": "My Custom Name",
+        "motion_sensitivity": 75
+    }
+    ```
+
+    **Response:**
+    Returns complete updated settings object.
+
+    **Status Codes:**
+    - 200: Success
+    - 400: Validation error
+    - 500: Internal server error
+    """
+    try:
+        # Update only provided fields
+        update_data = settings_update.model_dump(exclude_unset=True)
+
+        for field_name, value in update_data.items():
+            if value is not None:  # Only update non-None values
+                _set_setting_in_db(db, f"{SETTINGS_PREFIX}{field_name}", value)
+
+        # Return complete updated settings
+        return await get_settings(db)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating settings: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update settings"
         )

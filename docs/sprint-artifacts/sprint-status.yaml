@@ -71,12 +71,12 @@ development_status:
   4-1-build-nextjs-dashboard-foundation-and-layout: done
   4-2-create-event-timeline-view-with-filtering: done
   4-3-implement-live-camera-preview-grid: done
-  4-4-build-system-settings-page: backlog
+  4-4-build-system-settings-page: done
   epic-4-retrospective: optional
 
   # Epic 5: Alert Rules & Notifications
   epic-5: backlog
-  5-1-implement-alert-rule-engine: backlog
+  5-1-implement-alert-rule-engine: ready-for-dev
   5-2-build-alert-rule-configuration-ui: backlog
   5-3-implement-webhook-integration: backlog
   5-4-build-in-dashboard-notification-center: backlog
