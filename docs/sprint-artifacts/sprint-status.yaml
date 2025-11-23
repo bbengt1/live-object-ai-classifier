@@ -78,7 +78,7 @@ development_status:
   epic-5: backlog
   5-1-implement-alert-rule-engine: done
   5-2-build-alert-rule-configuration-ui: done
-  5-3-implement-webhook-integration: backlog
+  5-3-implement-webhook-integration: done
   5-4-build-in-dashboard-notification-center: backlog
   epic-5-retrospective: optional
 

@@ -95,3 +95,54 @@ export const DAYS_OF_WEEK = [
   { value: 6, label: 'Sat', fullLabel: 'Saturday' },
   { value: 7, label: 'Sun', fullLabel: 'Sunday' },
 ] as const;
+
+// ============================================================================
+// Webhook Types (Story 5.3)
+// ============================================================================
+
+// Webhook test request
+export interface IWebhookTestRequest {
+  url: string;
+  headers?: Record<string, string>;
+  payload?: Record<string, unknown>;
+}
+
+// Webhook test response
+export interface IWebhookTestResponse {
+  success: boolean;
+  status_code: number;
+  response_body: string;
+  response_time_ms: number;
+  error?: string;
+}
+
+// Single webhook log entry
+export interface IWebhookLog {
+  id: number;
+  alert_rule_id: string;
+  rule_name?: string;
+  event_id: string;
+  url: string;
+  status_code: number;
+  response_time_ms: number;
+  retry_count: number;
+  success: boolean;
+  error_message?: string;
+  created_at: string;
+}
+
+// Webhook logs list response
+export interface IWebhookLogsResponse {
+  data: IWebhookLog[];
+  total_count: number;
+}
+
+// Webhook logs filter parameters
+export interface IWebhookLogsFilter {
+  rule_id?: string;
+  success?: boolean;
+  start_date?: string;
+  end_date?: string;
+  limit?: number;
+  offset?: number;
+}

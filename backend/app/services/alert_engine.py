@@ -562,11 +562,13 @@ class AlertEngine:
         webhook_config: Dict[str, Any]
     ) -> bool:
         """
-        Execute webhook action with retry logic.
+        Execute webhook action using WebhookService.
 
-        Sends HTTP POST to webhook URL with event data.
-        Retries up to 3 times with exponential backoff (1s, 2s, 4s).
-        Logs execution to webhook_logs table.
+        Delegates to webhook_service.py which provides:
+        - Exponential backoff retry (1s, 2s, 4s)
+        - SSRF prevention (blocks localhost, private IPs)
+        - Rate limiting (100/min per rule)
+        - Comprehensive logging to webhook_logs table
 
         Args:
             event: Event that triggered the alert
@@ -576,149 +578,26 @@ class AlertEngine:
         Returns:
             True if webhook succeeded (2xx status)
         """
-        url = webhook_config.get("url")
-        custom_headers = webhook_config.get("headers", {}) or {}
+        from app.services.webhook_service import WebhookService
 
+        url = webhook_config.get("url")
         if not url:
             logger.warning(f"Rule '{rule.name}' has no webhook URL configured")
             return False
 
-        # Build webhook payload
-        payload = {
-            "event_id": event.id,
-            "timestamp": event.timestamp.isoformat() if event.timestamp else datetime.now(timezone.utc).isoformat(),
-            "camera_id": event.camera_id,
-            "camera_name": "",  # Would need to join with camera table
-            "description": event.description,
-            "confidence": event.confidence,
-            "objects_detected": json.loads(event.objects_detected) if isinstance(event.objects_detected, str) else event.objects_detected,
-            "rule_id": rule.id,
-            "rule_name": rule.name
-        }
+        # Use WebhookService for execution with security features
+        webhook_service = WebhookService(
+            db=self.db,
+            http_client=self.http_client,
+            allow_http=True  # Allow http for local development
+        )
 
-        # Request headers
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "LiveObjectAI-AlertEngine/1.0",
-            **custom_headers
-        }
+        result = await webhook_service.execute_rule_webhook(event, rule)
 
-        # Retry parameters
-        max_retries = 3
-        backoff_times = [1, 2, 4]  # seconds
-        timeout = 5.0  # seconds
+        if result is None:
+            return False
 
-        # Create or reuse HTTP client
-        if self.http_client is None:
-            self.http_client = httpx.AsyncClient(timeout=timeout)
-
-        success = False
-        status_code = 0
-        response_time_ms = 0
-        error_message = None
-        retry_count = 0
-
-        for attempt in range(max_retries):
-            start_time = time.time()
-            retry_count = attempt
-
-            try:
-                response = await self.http_client.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    timeout=timeout
-                )
-
-                response_time_ms = int((time.time() - start_time) * 1000)
-                status_code = response.status_code
-
-                if 200 <= status_code < 300:
-                    success = True
-                    logger.info(
-                        f"Webhook succeeded for rule '{rule.name}'",
-                        extra={
-                            "rule_id": rule.id,
-                            "event_id": event.id,
-                            "url": url,
-                            "status_code": status_code,
-                            "response_time_ms": response_time_ms,
-                            "attempt": attempt + 1
-                        }
-                    )
-                    break
-                else:
-                    error_message = f"HTTP {status_code}: {response.text[:200]}"
-                    logger.warning(
-                        f"Webhook returned non-2xx status: {status_code}",
-                        extra={
-                            "rule_id": rule.id,
-                            "url": url,
-                            "status_code": status_code,
-                            "attempt": attempt + 1
-                        }
-                    )
-
-            except httpx.TimeoutException as e:
-                response_time_ms = int((time.time() - start_time) * 1000)
-                error_message = f"Timeout after {timeout}s"
-                logger.warning(
-                    f"Webhook timeout for rule '{rule.name}'",
-                    extra={
-                        "rule_id": rule.id,
-                        "url": url,
-                        "timeout": timeout,
-                        "attempt": attempt + 1
-                    }
-                )
-
-            except httpx.RequestError as e:
-                response_time_ms = int((time.time() - start_time) * 1000)
-                error_message = str(e)
-                logger.warning(
-                    f"Webhook request error for rule '{rule.name}': {e}",
-                    extra={
-                        "rule_id": rule.id,
-                        "url": url,
-                        "error": str(e),
-                        "attempt": attempt + 1
-                    }
-                )
-
-            except Exception as e:
-                response_time_ms = int((time.time() - start_time) * 1000)
-                error_message = str(e)
-                logger.error(
-                    f"Webhook unexpected error for rule '{rule.name}': {e}",
-                    exc_info=True,
-                    extra={"rule_id": rule.id, "url": url, "attempt": attempt + 1}
-                )
-
-            # Wait before retry (if not last attempt)
-            if attempt < max_retries - 1:
-                wait_time = backoff_times[attempt]
-                logger.debug(f"Retrying webhook in {wait_time}s...")
-                await asyncio.sleep(wait_time)
-
-        # Log to webhook_logs table
-        try:
-            webhook_log = WebhookLog(
-                alert_rule_id=rule.id,
-                event_id=event.id,
-                url=url,
-                status_code=status_code,
-                response_time_ms=response_time_ms,
-                retry_count=retry_count,
-                success=success,
-                error_message=error_message if not success else None
-            )
-            self.db.add(webhook_log)
-            self.db.commit()
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"Failed to log webhook execution: {e}", exc_info=True)
-
-        return success
+        return result.success
 
     async def execute_actions(
         self,

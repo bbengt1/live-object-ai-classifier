@@ -28,6 +28,10 @@ import type {
   IAlertRuleListResponse,
   IAlertRuleTestRequest,
   IAlertRuleTestResponse,
+  IWebhookTestRequest,
+  IWebhookTestResponse,
+  IWebhookLogsFilter,
+  IWebhookLogsResponse,
 } from '@/types/alert-rule';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -424,6 +428,68 @@ export const apiClient = {
         method: 'POST',
         body: JSON.stringify(data || {}),
       });
+    },
+  },
+
+  /**
+   * Webhooks API namespace (Story 5.3)
+   */
+  webhooks: {
+    /**
+     * Test a webhook URL
+     * @param data Test request with URL, optional headers and payload
+     * @returns Test result with status code and response details
+     */
+    test: async (data: IWebhookTestRequest): Promise<IWebhookTestResponse> => {
+      return apiFetch<IWebhookTestResponse>('/webhooks/test', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    /**
+     * Get webhook logs with filtering
+     * @param filters Optional filters
+     * @returns Paginated list of webhook logs
+     */
+    getLogs: async (filters?: IWebhookLogsFilter): Promise<IWebhookLogsResponse> => {
+      const params = new URLSearchParams();
+      if (filters?.rule_id) params.append('rule_id', filters.rule_id);
+      if (filters?.success !== undefined) params.append('success', String(filters.success));
+      if (filters?.start_date) params.append('start_date', filters.start_date);
+      if (filters?.end_date) params.append('end_date', filters.end_date);
+      if (filters?.limit) params.append('limit', String(filters.limit));
+      if (filters?.offset) params.append('offset', String(filters.offset));
+
+      const queryString = params.toString();
+      return apiFetch<IWebhookLogsResponse>(`/webhooks/logs${queryString ? `?${queryString}` : ''}`);
+    },
+
+    /**
+     * Export webhook logs as CSV
+     * @param filters Optional filters
+     * @returns CSV file blob
+     */
+    exportLogs: async (filters?: IWebhookLogsFilter): Promise<Blob> => {
+      const params = new URLSearchParams();
+      if (filters?.rule_id) params.append('rule_id', filters.rule_id);
+      if (filters?.success !== undefined) params.append('success', String(filters.success));
+      if (filters?.start_date) params.append('start_date', filters.start_date);
+      if (filters?.end_date) params.append('end_date', filters.end_date);
+
+      const queryString = params.toString();
+      const response = await fetch(`${API_BASE_URL}/webhooks/logs/export${queryString ? `?${queryString}` : ''}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/csv',
+        },
+      });
+
+      if (!response.ok) {
+        throw new ApiError(`Failed to export logs: ${response.statusText}`, response.status);
+      }
+
+      return response.blob();
     },
   },
 };

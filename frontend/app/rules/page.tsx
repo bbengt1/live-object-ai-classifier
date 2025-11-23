@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * Alert Rules page - Epic 5, Story 5.2
- * Manage alert rules and notifications
+ * Alert Rules page - Epic 5, Stories 5.2 & 5.3
+ * Manage alert rules, notifications, and webhook delivery logs
  */
 
 import { useState } from 'react';
@@ -10,6 +10,7 @@ import type { IAlertRule } from '@/types/alert-rule';
 import { RulesList } from '@/components/rules/RulesList';
 import { RuleFormDialog } from '@/components/rules/RuleFormDialog';
 import { DeleteRuleDialog } from '@/components/rules/DeleteRuleDialog';
+import { WebhookLogs } from '@/components/rules/WebhookLogs';
 
 export default function RulesPage() {
   // Modal states
@@ -54,6 +55,12 @@ export default function RulesPage() {
         onEditRule={handleEditRule}
         onDeleteRule={handleDeleteRule}
       />
+
+      {/* Webhook Delivery Logs Section - Story 5.3 */}
+      <div className="mt-8">
+        <h2 className="text-xl font-semibold mb-4">Webhook Delivery Logs</h2>
+        <WebhookLogs />
+      </div>
 
       {/* Create/Edit Rule Dialog */}
       <RuleFormDialog
