@@ -138,8 +138,11 @@ export default function EventsPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Flatten all pages into single array
-  const allEvents = data?.pages.flatMap((page) => page.events) ?? [];
+  // Flatten all pages into single array and deduplicate by id
+  // (new events can arrive while scrolling, causing duplicates across pages)
+  const allEvents = data?.pages.flatMap((page) => page.events).filter(
+    (event, index, self) => self.findIndex((e) => e.id === event.id) === index
+  ) ?? [];
   const totalEvents = data?.pages[0]?.total_count ?? 0;
 
   return (

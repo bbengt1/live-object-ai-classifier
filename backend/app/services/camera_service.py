@@ -185,7 +185,8 @@ class CameraService:
             # Clean up resources
             if camera_id in self._active_captures:
                 cap = self._active_captures[camera_id]
-                cap.release()
+                if cap is not None:
+                    cap.release()
                 del self._active_captures[camera_id]
 
             # Remove from tracking
