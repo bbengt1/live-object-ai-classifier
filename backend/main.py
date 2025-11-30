@@ -369,6 +369,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Custom exception handler to ensure CORS headers on HTTPException responses
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(HTTPException)
+async def cors_http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Custom HTTPException handler that ensures CORS headers are included.
+    This is needed because HTTPException responses bypass CORS middleware.
+    """
+    # Get origin from request
+    origin = request.headers.get("origin", "")
+
+    # Build CORS headers if origin is allowed
+    cors_headers = {}
+    if origin in settings.CORS_ORIGINS or "*" in settings.CORS_ORIGINS:
+        cors_headers = {
+            "Access-Control-Allow-Origin": origin or settings.CORS_ORIGINS[0],
+            "Access-Control-Allow-Credentials": "true",
+        }
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=cors_headers,
+    )
+
 # Add request logging middleware (Story 6.2, AC: #2)
 app.add_middleware(RequestLoggingMiddleware)
 

@@ -966,4 +966,157 @@ export const apiClient = {
       }
     },
   },
+
+  // ============================================================================
+  // UniFi Protect Controllers (Story P2-1.3)
+  // ============================================================================
+  protect: {
+    /**
+     * Test connection to a UniFi Protect controller
+     * Does NOT save credentials - test only
+     * @param data Connection parameters
+     */
+    testConnection: async (data: {
+      host: string;
+      port?: number;
+      username: string;
+      password: string;
+      verify_ssl?: boolean;
+    }): Promise<{
+      data: {
+        success: boolean;
+        message: string;
+        firmware_version?: string;
+        camera_count?: number;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/test`, {
+        method: 'POST',
+        body: JSON.stringify({
+          host: data.host,
+          port: data.port ?? 443,
+          username: data.username,
+          password: data.password,
+          verify_ssl: data.verify_ssl ?? false,
+        }),
+      });
+    },
+
+    /**
+     * Create a new UniFi Protect controller
+     * @param data Controller configuration
+     */
+    createController: async (data: {
+      name: string;
+      host: string;
+      port?: number;
+      username: string;
+      password: string;
+      verify_ssl?: boolean;
+    }): Promise<{
+      data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        username: string;
+        verify_ssl: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        created_at: string;
+        updated_at: string;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: data.name,
+          host: data.host,
+          port: data.port ?? 443,
+          username: data.username,
+          password: data.password,
+          verify_ssl: data.verify_ssl ?? false,
+        }),
+      });
+    },
+
+    /**
+     * List all UniFi Protect controllers
+     */
+    listControllers: async (): Promise<{
+      data: Array<{
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        username: string;
+        verify_ssl: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        created_at: string;
+        updated_at: string;
+      }>;
+      meta: { request_id: string; timestamp: string; count?: number };
+    }> => {
+      return apiFetch(`/protect/controllers`);
+    },
+
+    /**
+     * Get a single UniFi Protect controller by ID
+     * @param id Controller UUID
+     */
+    getController: async (id: string): Promise<{
+      data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        username: string;
+        verify_ssl: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        created_at: string;
+        updated_at: string;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}`);
+    },
+
+    /**
+     * Test connection to an existing controller using stored credentials
+     * @param id Controller UUID
+     */
+    testExistingController: async (id: string): Promise<{
+      data: {
+        success: boolean;
+        message: string;
+        firmware_version?: string;
+        camera_count?: number;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}/test`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Delete a UniFi Protect controller
+     * @param id Controller UUID
+     */
+    deleteController: async (id: string): Promise<{
+      data: { deleted: boolean };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}`, {
+        method: 'DELETE',
+      });
+    },
+  },
 };

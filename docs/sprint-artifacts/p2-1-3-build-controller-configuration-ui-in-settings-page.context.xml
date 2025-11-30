@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Story Context Document
+  Auto-generated for Story P2-1.3: Build Controller Configuration UI in Settings Page
+  Generated: 2025-11-30
+-->
+<story-context>
+  <metadata>
+    <story-id>p2-1-3</story-id>
+    <epic-id>P2-1</epic-id>
+    <title>Build Controller Configuration UI in Settings Page</title>
+    <generated>2025-11-30</generated>
+    <status>ready-for-dev</status>
+  </metadata>
+
+  <user-story>
+    <as-a>user</as-a>
+    <i-want>a form in Settings to add and configure my UniFi Protect controller</i-want>
+    <so-that>I can connect my Protect system through the dashboard</so-that>
+  </user-story>
+
+  <acceptance-criteria-summary>
+    <criteria id="AC1">Settings page has a "UniFi Protect" section/tab</criteria>
+    <criteria id="AC2">Empty state with "Add Controller" button when no controller configured</criteria>
+    <criteria id="AC3">Controller form with Name, Host/IP, Username, Password, Verify SSL fields</criteria>
+    <criteria id="AC4">"Test Connection" button calls POST /api/v1/protect/controllers/test</criteria>
+    <criteria id="AC5">"Save" button calls POST /api/v1/protect/controllers with success toast</criteria>
+    <criteria id="AC6">Connection status indicator (green/yellow/red/gray)</criteria>
+    <criteria id="AC7">Form validation with real-time validation on blur</criteria>
+    <criteria id="AC8">Responsive layout (full width mobile, two-column desktop)</criteria>
+    <criteria id="AC9">Toast notifications for success/error</criteria>
+    <criteria id="AC10">TanStack Query mutation handles loading/error states</criteria>
+  </acceptance-criteria-summary>
+
+  <documentation-artifacts>
+    <artifact type="prd" path="docs/PRD-phase2.md">
+      <relevant-sections>
+        <section id="FR1">Users can add a UniFi Protect controller by providing hostname/IP and credentials</section>
+        <section id="FR6">Users can test controller connectivity from the UI</section>
+        <section id="FR7">System displays controller connection status (connected/disconnected/error)</section>
+      </relevant-sections>
+    </artifact>
+
+    <artifact type="architecture" path="docs/architecture.md">
+      <relevant-sections>
+        <section id="api-contracts">
+          POST /api/v1/protect/controllers - Create controller
+          POST /api/v1/protect/controllers/test - Test connection (no persistence)
+          Response format: { data: {...}, meta: { request_id, timestamp } }
+        </section>
+        <section id="frontend-patterns">
+          - Components in frontend/components/ organized by feature
+          - Use shadcn/ui for form components (Input, Button, Switch, Card)
+          - TanStack Query for server state management
+          - Zod validation with React Hook Form
+        </section>
+      </relevant-sections>
+    </artifact>
+
+    <artifact type="ux-design" path="docs/ux-design-specification.md">
+      <relevant-sections>
+        <section id="section-10.2">UniFi Protect Settings UI wireframes</section>
+        <section id="button-hierarchy">
+          - Primary (Save): Slate background (#475569), white text
+          - Accent (Test Connection): Cyan background (#0ea5e9), white text
+          - Secondary (Cancel): White background, slate border/text
+        </section>
+        <section id="form-patterns">
+          - Label position: Above input field
+          - Required indicator: Asterisk (*) next to label
+          - Validation timing: onBlur for fields
+          - Error display: Inline below field (red text + red border)
+        </section>
+        <section id="connection-status">
+          - Connected: Green dot (#22c55e) + "Connected" text
+          - Connecting: Yellow dot (#f97316) + "Connecting..." + spinner
+          - Error: Red dot (#ef4444) + "Connection Error" + tooltip
+          - Not configured: Gray dot (#94a3b8) + "Not configured"
+        </section>
+      </relevant-sections>
+    </artifact>
+
+    <artifact type="epics" path="docs/epics-phase2.md">
+      <relevant-sections>
+        <section id="story-1.3">Full story acceptance criteria and technical notes</section>
+      </relevant-sections>
+    </artifact>
+  </documentation-artifacts>
+
+  <existing-code-artifacts>
+    <artifact type="settings-page" path="frontend/app/settings/page.tsx">
+      <description>Existing Settings page with tabbed interface (General, AI Models, Motion, Data)</description>
+      <patterns>
+        - useForm with zodResolver for validation
+        - Tabbed interface using TabsList, TabsTrigger, TabsContent
+        - Card components for section grouping
+        - Toast notifications via sonner
+        - isDirty state tracking for save button enablement
+        - handleSave, handleCancel patterns
+      </patterns>
+      <integration-point>Add new tab "UniFi Protect" with Shield icon</integration-point>
+    </artifact>
+
+    <artifact type="api-client" path="frontend/lib/api-client.ts">
+      <description>Centralized API client with typed methods</description>
+      <patterns>
+        - apiFetch wrapper with error handling
+        - ApiError class for structured errors
+        - Namespace organization (cameras, events, settings, etc.)
+        - Response type definitions
+      </patterns>
+      <needed-additions>
+        - Add protect namespace with:
+          - testConnection(data: ProtectControllerTest): Promise&lt;ProtectTestResponse&gt;
+          - createController(data: ProtectControllerCreate): Promise&lt;ProtectControllerSingleResponse&gt;
+          - listControllers(): Promise&lt;ProtectControllerListResponse&gt;
+      </needed-additions>
+    </artifact>
+
+    <artifact type="form-component" path="frontend/components/cameras/CameraForm.tsx">
+      <description>Example form with validation, test connection, and conditional fields</description>
+      <patterns>
+        - React Hook Form + Zod validation
+        - FormField, FormControl, FormLabel, FormMessage from @/components/ui/form
+        - Test connection with loading state and result display
+        - CheckCircle2, XCircle icons for success/error states
+        - Loader2 with animate-spin for loading
+      </patterns>
+    </artifact>
+
+    <artifact type="backend-api" path="backend/app/api/v1/protect.py">
+      <description>Backend REST API for Protect controllers (Story P2-1.1, P2-1.2)</description>
+      <endpoints>
+        <endpoint method="POST" path="/api/v1/protect/controllers/test">
+          <description>Test connection with new credentials (no persistence)</description>
+          <request-body>{ host, port, username, password, verify_ssl }</request-body>
+          <success-response>{ data: { success, message, firmware_version, camera_count }, meta }</success-response>
+          <error-responses>
+            <error code="401">Authentication failed</error>
+            <error code="502">SSL certificate error</error>
+            <error code="503">Host unreachable</error>
+            <error code="504">Connection timed out</error>
+          </error-responses>
+        </endpoint>
+        <endpoint method="POST" path="/api/v1/protect/controllers">
+          <description>Create new controller</description>
+          <request-body>{ name, host, port, username, password, verify_ssl }</request-body>
+          <success-response>{ data: ProtectController, meta }</success-response>
+          <error-responses>
+            <error code="409">Controller with same name exists</error>
+          </error-responses>
+        </endpoint>
+        <endpoint method="GET" path="/api/v1/protect/controllers">
+          <description>List all controllers</description>
+          <success-response>{ data: ProtectController[], meta: { count } }</success-response>
+        </endpoint>
+      </endpoints>
+    </artifact>
+
+    <artifact type="backend-schemas" path="backend/app/schemas/protect.py">
+      <description>Pydantic schemas for Protect API</description>
+      <schemas>
+        <schema name="ProtectControllerCreate">name, host, port, username, password, verify_ssl</schema>
+        <schema name="ProtectControllerResponse">id, name, host, port, username, verify_ssl, is_connected, last_connected_at, last_error, created_at, updated_at</schema>
+        <schema name="ProtectControllerTest">host, port, username, password, verify_ssl</schema>
+        <schema name="ProtectTestResultData">success, message, firmware_version?, camera_count?</schema>
+        <schema name="MetaResponse">request_id, timestamp, count?</schema>
+      </schemas>
+    </artifact>
+  </existing-code-artifacts>
+
+  <dependencies>
+    <frontend>
+      <dependency name="react" version="19.2.0" />
+      <dependency name="next" version="16.0.3" />
+      <dependency name="@tanstack/react-query" version="5.90.10" />
+      <dependency name="react-hook-form" version="7.66.0" />
+      <dependency name="@hookform/resolvers" version="5.2.2" />
+      <dependency name="zod" version="4.1.12" />
+      <dependency name="sonner" version="2.0.7" for="toast notifications" />
+      <dependency name="lucide-react" version="0.553.0" for="icons" />
+      <dependency name="tailwindcss" version="4" />
+    </frontend>
+    <shadcn-ui-components>
+      <component name="Button" path="@/components/ui/button" />
+      <component name="Card" path="@/components/ui/card" />
+      <component name="Input" path="@/components/ui/input" />
+      <component name="Label" path="@/components/ui/label" />
+      <component name="Switch" path="@/components/ui/switch" />
+      <component name="Tabs" path="@/components/ui/tabs" />
+      <component name="Form" path="@/components/ui/form" />
+      <component name="Tooltip" path="@/components/ui/tooltip" />
+    </shadcn-ui-components>
+  </dependencies>
+
+  <files-to-create>
+    <file path="frontend/components/protect/ControllerForm.tsx">
+      <description>Form component for adding/editing Protect controller</description>
+      <exports>ControllerForm component</exports>
+    </file>
+    <file path="frontend/components/protect/ConnectionStatus.tsx">
+      <description>Connection status indicator component</description>
+      <exports>ConnectionStatus component</exports>
+    </file>
+    <file path="frontend/components/protect/index.ts">
+      <description>Barrel exports for protect components</description>
+    </file>
+    <file path="frontend/types/protect.ts">
+      <description>TypeScript types for Protect controller</description>
+      <types>
+        - IProtectController
+        - IProtectControllerCreate
+        - IProtectControllerTest
+        - IProtectTestResult
+        - IProtectTestResponse
+        - IProtectControllerResponse
+        - IProtectControllerListResponse
+      </types>
+    </file>
+  </files-to-create>
+
+  <files-to-modify>
+    <file path="frontend/app/settings/page.tsx">
+      <changes>
+        - Add Shield icon import from lucide-react
+        - Add new "UniFi Protect" tab after existing tabs
+        - Import ControllerForm and ConnectionStatus
+        - Add TabsContent for protect tab with form
+      </changes>
+    </file>
+    <file path="frontend/lib/api-client.ts">
+      <changes>
+        - Add protect namespace with testConnection, createController, listControllers methods
+        - Import Protect types
+      </changes>
+    </file>
+  </files-to-modify>
+
+  <testing-strategy>
+    <note>Frontend has no test framework configured (no Jest, Vitest, or React Testing Library found)</note>
+    <approach>Manual testing with development server</approach>
+    <test-scenarios>
+      <scenario id="1">Form validation - verify required fields show errors on blur</scenario>
+      <scenario id="2">Test connection success - mock or real controller returns firmware version</scenario>
+      <scenario id="3">Test connection failure - handle 401, 502, 503, 504 errors with appropriate messages</scenario>
+      <scenario id="4">Save controller - verify toast notification and data persistence</scenario>
+      <scenario id="5">Responsive layout - test on mobile and desktop viewports</scenario>
+      <scenario id="6">Empty state - verify "Add Controller" button appears when no controller exists</scenario>
+      <scenario id="7">Loading states - verify spinner during API calls</scenario>
+    </test-scenarios>
+  </testing-strategy>
+
+  <implementation-guidance>
+    <pattern name="form-validation">
+      Use Zod schema matching backend validation:
+      - name: string, min 1, max 100
+      - host: string, min 1, max 255 (IP or hostname)
+      - port: number, 1-65535, default 443
+      - username: string, min 1, max 100
+      - password: string, min 1, max 100
+      - verify_ssl: boolean, default false
+    </pattern>
+
+    <pattern name="tanstack-query">
+      Use useMutation for test connection and save operations:
+      - mutationFn: apiClient.protect.testConnection or createController
+      - onSuccess: show toast, update UI state
+      - onError: show error toast with message from ApiError
+    </pattern>
+
+    <pattern name="connection-status">
+      State machine for connection status:
+      - not_configured: No controller saved (gray)
+      - connecting: API call in progress (yellow + spinner)
+      - connected: Test successful (green)
+      - error: Test failed (red + error tooltip)
+    </pattern>
+
+    <pattern name="responsive-layout">
+      Use Tailwind responsive classes:
+      - Mobile: flex-col, w-full
+      - Desktop: grid grid-cols-2 gap-6 (form left, status right)
+      - Breakpoint: sm: (640px)
+    </pattern>
+  </implementation-guidance>
+
+  <learnings-from-previous-stories>
+    <story id="p2-1-1" status="done">
+      <learnings>
+        - ProtectController model at backend/app/models/protect_controller.py
+        - CRUD endpoints at backend/app/api/v1/protect.py
+        - Response schemas use { data, meta } format
+        - Password is write-only (not returned in API responses)
+        - Encryption via Fernet (existing pattern)
+      </learnings>
+    </story>
+    <story id="p2-1-2" status="done">
+      <learnings>
+        - Test endpoint at POST /api/v1/protect/controllers/test
+        - Returns { success, message, firmware_version, camera_count }
+        - Error types: auth_error (401), ssl_error (502), connection_error (503), timeout (504)
+        - 10-second timeout for connection test
+        - ProtectService class handles connection logic
+      </learnings>
+    </story>
+  </learnings-from-previous-stories>
+</story-context>

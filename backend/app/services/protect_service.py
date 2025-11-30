@@ -90,9 +90,12 @@ class ProtectService:
                 verify_ssl=verify_ssl
             )
 
-            # Attempt connection with timeout
+            # Attempt login and update with timeout
+            async def connect_and_update():
+                await client.update()  # uiprotect handles login internally in update()
+
             await asyncio.wait_for(
-                client.update(),
+                connect_and_update(),
                 timeout=CONNECTION_TIMEOUT
             )
 
@@ -102,7 +105,8 @@ class ProtectService:
 
             if client.bootstrap:
                 if client.bootstrap.nvr:
-                    firmware_version = client.bootstrap.nvr.version
+                    # Convert Version object to string
+                    firmware_version = str(client.bootstrap.nvr.version)
                 camera_count = len(client.bootstrap.cameras) if client.bootstrap.cameras else 0
 
             logger.info(
