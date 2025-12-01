@@ -12,6 +12,8 @@ Provides REST API for Protect controller configuration management:
 - POST /protect/controllers/{id}/connect - Connect to controller (Story P2-1.4)
 - POST /protect/controllers/{id}/disconnect - Disconnect from controller (Story P2-1.4)
 - GET /protect/controllers/{id}/cameras - Discover cameras from controller (Story P2-2.1)
+- POST /protect/controllers/{id}/cameras/{camera_id}/enable - Enable camera for AI (Story P2-2.2)
+- POST /protect/controllers/{id}/cameras/{camera_id}/disable - Disable camera for AI (Story P2-2.2)
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -38,6 +40,11 @@ from app.schemas.protect import (
     ProtectDiscoveredCamera,
     ProtectCameraDiscoveryMeta,
     ProtectCamerasResponse,
+    ProtectCameraEnableRequest,
+    ProtectCameraEnableData,
+    ProtectCameraEnableResponse,
+    ProtectCameraDisableData,
+    ProtectCameraDisableResponse,
     MetaResponse,
 )
 from app.services.protect_service import get_protect_service
@@ -758,3 +765,228 @@ async def discover_cameras(
     )
 
     return response
+
+
+# Story P2-2.2: Camera Enable/Disable Endpoints
+
+@router.post(
+    "/controllers/{controller_id}/cameras/{camera_id}/enable",
+    response_model=ProtectCameraEnableResponse,
+    status_code=status.HTTP_201_CREATED
+)
+async def enable_camera(
+    controller_id: str,
+    camera_id: str,
+    request: ProtectCameraEnableRequest = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Enable a discovered camera for AI analysis (Story P2-2.2, AC6)
+
+    Creates a camera record in the database with source_type='protect'.
+    If the camera already exists, updates it to enabled.
+
+    Args:
+        controller_id: The controller UUID
+        camera_id: The Protect camera ID (protect_camera_id)
+        request: Optional request body with name override and smart detection types
+        db: Database session
+
+    Returns:
+        ProtectCameraEnableResponse with camera data and meta
+
+    Raises:
+        404: Controller not found
+        400: Camera not found in discovered cameras
+    """
+    # Default request if none provided
+    if request is None:
+        request = ProtectCameraEnableRequest()
+
+    logger.info(
+        f"Enabling camera {camera_id} for controller {controller_id}",
+        extra={
+            "event_type": "protect_camera_enable_start",
+            "controller_id": controller_id,
+            "protect_camera_id": camera_id
+        }
+    )
+
+    # Verify controller exists
+    controller = db.query(ProtectController).filter(ProtectController.id == controller_id).first()
+    if not controller:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Controller with id '{controller_id}' not found"
+        )
+
+    # Get discovered cameras to validate camera_id and get camera info
+    protect_service = get_protect_service()
+    discovery_result = await protect_service.discover_cameras(controller_id)
+
+    # Find the camera in discovered list
+    discovered_camera = None
+    for cam in discovery_result.cameras:
+        if cam.protect_camera_id == camera_id:
+            discovered_camera = cam
+            break
+
+    if not discovered_camera:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Camera with id '{camera_id}' not found in discovered cameras"
+        )
+
+    # Check if camera already exists in database
+    existing_camera = db.query(Camera).filter(
+        Camera.protect_controller_id == controller_id,
+        Camera.protect_camera_id == camera_id
+    ).first()
+
+    import json
+
+    if existing_camera:
+        # Update existing camera to enabled
+        existing_camera.is_enabled = True
+        existing_camera.smart_detection_types = json.dumps(request.smart_detection_types)
+        if request.name:
+            existing_camera.name = request.name
+        db.commit()
+        db.refresh(existing_camera)
+        camera_record = existing_camera
+
+        logger.info(
+            f"Updated existing camera {camera_id} to enabled",
+            extra={
+                "event_type": "protect_camera_enable_updated",
+                "controller_id": controller_id,
+                "protect_camera_id": camera_id,
+                "camera_id": existing_camera.id
+            }
+        )
+    else:
+        # Create new camera record (AC6)
+        camera_name = request.name or discovered_camera.name
+        camera_record = Camera(
+            name=camera_name,
+            type='rtsp',  # Required field - Protect cameras are effectively RTSP
+            source_type='protect',
+            protect_controller_id=controller_id,
+            protect_camera_id=camera_id,
+            protect_camera_type=discovered_camera.type,
+            is_doorbell=discovered_camera.is_doorbell,
+            smart_detection_types=json.dumps(request.smart_detection_types),
+            is_enabled=True,
+            motion_enabled=True,  # Default to motion enabled
+        )
+        db.add(camera_record)
+        db.commit()
+        db.refresh(camera_record)
+
+        logger.info(
+            f"Created new camera record for {camera_id}",
+            extra={
+                "event_type": "protect_camera_enable_created",
+                "controller_id": controller_id,
+                "protect_camera_id": camera_id,
+                "camera_id": camera_record.id
+            }
+        )
+
+    # Clear discovery cache to reflect new is_enabled_for_ai state
+    protect_service.clear_camera_cache(controller_id)
+
+    # Build response
+    return ProtectCameraEnableResponse(
+        data=ProtectCameraEnableData(
+            camera_id=camera_record.id,
+            protect_camera_id=camera_id,
+            name=camera_record.name,
+            is_enabled_for_ai=True,
+            smart_detection_types=request.smart_detection_types
+        ),
+        meta=create_meta()
+    )
+
+
+@router.post(
+    "/controllers/{controller_id}/cameras/{camera_id}/disable",
+    response_model=ProtectCameraDisableResponse
+)
+async def disable_camera(
+    controller_id: str,
+    camera_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Disable a camera from AI analysis (Story P2-2.2, AC7)
+
+    Sets the camera record to disabled without deleting it.
+    This preserves settings for future re-enabling.
+
+    Args:
+        controller_id: The controller UUID
+        camera_id: The Protect camera ID (protect_camera_id)
+        db: Database session
+
+    Returns:
+        ProtectCameraDisableResponse with camera data and meta
+
+    Raises:
+        404: Controller or camera not found
+    """
+    logger.info(
+        f"Disabling camera {camera_id} for controller {controller_id}",
+        extra={
+            "event_type": "protect_camera_disable_start",
+            "controller_id": controller_id,
+            "protect_camera_id": camera_id
+        }
+    )
+
+    # Verify controller exists
+    controller = db.query(ProtectController).filter(ProtectController.id == controller_id).first()
+    if not controller:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Controller with id '{controller_id}' not found"
+        )
+
+    # Find camera in database
+    camera = db.query(Camera).filter(
+        Camera.protect_controller_id == controller_id,
+        Camera.protect_camera_id == camera_id
+    ).first()
+
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera with id '{camera_id}' not found or not enabled"
+        )
+
+    # Disable camera (AC7 - keep record, just mark disabled)
+    camera.is_enabled = False
+    db.commit()
+
+    logger.info(
+        f"Disabled camera {camera_id}",
+        extra={
+            "event_type": "protect_camera_disable_complete",
+            "controller_id": controller_id,
+            "protect_camera_id": camera_id,
+            "camera_id": camera.id
+        }
+    )
+
+    # Clear discovery cache to reflect new is_enabled_for_ai state
+    protect_service = get_protect_service()
+    protect_service.clear_camera_cache(controller_id)
+
+    # Build response
+    return ProtectCameraDisableResponse(
+        data=ProtectCameraDisableData(
+            protect_camera_id=camera_id,
+            is_enabled_for_ai=False
+        ),
+        meta=create_meta()
+    )

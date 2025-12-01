@@ -1583,3 +1583,135 @@ class TestCameraDiscoverySchemas:
         assert len(response.data) == 1
         assert response.meta.count == 1
         assert response.meta.controller_id == "ctrl-1"
+
+
+# Story P2-2.2: Camera Enable/Disable Endpoint Tests
+
+class TestCameraEnableDisable:
+    """Tests for POST /protect/controllers/{id}/cameras/{camera_id}/enable and /disable endpoints"""
+
+    def test_enable_camera_controller_not_found(self):
+        """AC6: Enable should return 404 for non-existent controller"""
+        response = client.post("/api/v1/protect/controllers/nonexistent-id/cameras/cam-123/enable")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+
+    def test_disable_camera_controller_not_found(self):
+        """AC7: Disable should return 404 for non-existent controller"""
+        response = client.post("/api/v1/protect/controllers/nonexistent-id/cameras/cam-123/disable")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+
+    def test_disable_camera_not_enabled(self):
+        """AC7: Disable should return 404 if camera not in database"""
+        # Create a controller first
+        db = TestingSessionLocal()
+        try:
+            controller = ProtectController(
+                name="Test Controller",
+                host="192.168.1.100",
+                port=443,
+                username="admin",
+                password="test123",
+                verify_ssl=False
+            )
+            db.add(controller)
+            db.commit()
+            db.refresh(controller)
+            controller_id = controller.id
+        finally:
+            db.close()
+
+        response = client.post(f"/api/v1/protect/controllers/{controller_id}/cameras/nonexistent-cam/disable")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower() or "not enabled" in response.json()["detail"].lower()
+
+
+class TestCameraEnableDisableSchemas:
+    """Tests for enable/disable Pydantic schemas"""
+
+    def test_enable_request_schema_defaults(self):
+        """Test ProtectCameraEnableRequest has correct defaults"""
+        from app.schemas.protect import ProtectCameraEnableRequest
+
+        request = ProtectCameraEnableRequest()
+
+        assert request.name is None
+        assert "person" in request.smart_detection_types
+        assert "vehicle" in request.smart_detection_types
+        assert "package" in request.smart_detection_types
+
+    def test_enable_request_schema_custom_values(self):
+        """Test ProtectCameraEnableRequest accepts custom values"""
+        from app.schemas.protect import ProtectCameraEnableRequest
+
+        request = ProtectCameraEnableRequest(
+            name="Custom Name",
+            smart_detection_types=["person", "animal"]
+        )
+
+        assert request.name == "Custom Name"
+        assert request.smart_detection_types == ["person", "animal"]
+
+    def test_enable_data_schema(self):
+        """Test ProtectCameraEnableData schema"""
+        from app.schemas.protect import ProtectCameraEnableData
+
+        data = ProtectCameraEnableData(
+            camera_id="db-cam-id",
+            protect_camera_id="protect-cam-id",
+            name="Test Camera",
+            is_enabled_for_ai=True,
+            smart_detection_types=["person", "vehicle"]
+        )
+
+        assert data.camera_id == "db-cam-id"
+        assert data.protect_camera_id == "protect-cam-id"
+        assert data.name == "Test Camera"
+        assert data.is_enabled_for_ai == True
+        assert data.smart_detection_types == ["person", "vehicle"]
+
+    def test_disable_data_schema(self):
+        """Test ProtectCameraDisableData schema"""
+        from app.schemas.protect import ProtectCameraDisableData
+
+        data = ProtectCameraDisableData(
+            protect_camera_id="protect-cam-id",
+            is_enabled_for_ai=False
+        )
+
+        assert data.protect_camera_id == "protect-cam-id"
+        assert data.is_enabled_for_ai == False
+
+    def test_enable_response_schema(self):
+        """Test ProtectCameraEnableResponse schema"""
+        from app.schemas.protect import ProtectCameraEnableResponse, ProtectCameraEnableData, MetaResponse
+
+        response = ProtectCameraEnableResponse(
+            data=ProtectCameraEnableData(
+                camera_id="cam-1",
+                protect_camera_id="protect-1",
+                name="Test",
+                is_enabled_for_ai=True,
+                smart_detection_types=["person"]
+            ),
+            meta=MetaResponse()
+        )
+
+        assert response.data.is_enabled_for_ai == True
+        assert response.meta is not None
+
+    def test_disable_response_schema(self):
+        """Test ProtectCameraDisableResponse schema"""
+        from app.schemas.protect import ProtectCameraDisableResponse, ProtectCameraDisableData, MetaResponse
+
+        response = ProtectCameraDisableResponse(
+            data=ProtectCameraDisableData(
+                protect_camera_id="protect-1",
+                is_enabled_for_ai=False
+            ),
+            meta=MetaResponse()
+        )
+
+        assert response.data.is_enabled_for_ai == False
+        assert response.meta is not None

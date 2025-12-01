@@ -1,0 +1,275 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>P2-2</epicId>
+    <storyId>P2-2.2</storyId>
+    <title>Build Discovered Camera List UI with Enable/Disable</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-11-30</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p2-2-2-build-discovered-camera-list-ui-with-enable-disable.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>user</asA>
+    <iWant>to see all cameras discovered from my Protect controller and choose which to enable for AI analysis</iWant>
+    <soThat>I can control which cameras generate events</soThat>
+    <tasks>
+      <task id="1" ac="2,4,5">Create DiscoveredCameraCard component
+        <subtask id="1.1">Create frontend/components/protect/DiscoveredCameraCard.tsx</subtask>
+        <subtask id="1.2">Implement enable checkbox with onChange handler</subtask>
+        <subtask id="1.3">Add camera icon (Doorbell icon for is_doorbell: true, Camera icon otherwise)</subtask>
+        <subtask id="1.4">Display camera name (bold) and type/model (muted text)</subtask>
+        <subtask id="1.5">Add status indicator dot (green for online, red for offline)</subtask>
+        <subtask id="1.6">Add "Configure Filters" button placeholder (Story P2-2.3 will implement)</subtask>
+        <subtask id="1.7">Style disabled cameras at 50% opacity with "(Disabled)" label</subtask>
+        <subtask id="1.8">Add "Offline" badge for offline cameras</subtask>
+      </task>
+      <task id="2" ac="1,3,10,11,12">Create DiscoveredCameraList component
+        <subtask id="2.1">Create frontend/components/protect/DiscoveredCameraList.tsx</subtask>
+        <subtask id="2.2">Use TanStack Query to fetch cameras via apiClient.protect.discoverCameras(controllerId)</subtask>
+        <subtask id="2.3">Implement sorting: enabled cameras first, then alphabetical by name</subtask>
+        <subtask id="2.4">Add "Discovered Cameras (N found)" header with refresh button</subtask>
+        <subtask id="2.5">Implement loading state with 3 skeleton placeholder cards</subtask>
+        <subtask id="2.6">Add empty state for no cameras found</subtask>
+        <subtask id="2.7">Add disconnected state message when controller not connected</subtask>
+        <subtask id="2.8">Implement responsive grid: 1 column mobile, 2 columns tablet/desktop</subtask>
+      </task>
+      <task id="3" ac="6,7,8">Implement camera enable/disable API endpoint
+        <subtask id="3.1">Create POST /protect/controllers/{id}/cameras/{camera_id}/enable endpoint</subtask>
+        <subtask id="3.2">Create POST /protect/controllers/{id}/cameras/{camera_id}/disable endpoint</subtask>
+        <subtask id="3.3">Enable: Create camera record in cameras table with source_type: 'protect'</subtask>
+        <subtask id="3.4">Disable: Set camera as disabled while preserving settings</subtask>
+        <subtask id="3.5">Return updated camera state in response</subtask>
+        <subtask id="3.6">Add Pydantic schemas: ProtectCameraEnableRequest, ProtectCameraEnableResponse</subtask>
+      </task>
+      <task id="4" ac="8,9">Add frontend enable/disable mutations
+        <subtask id="4.1">Add enableCamera(controllerId, cameraId) to apiClient.protect</subtask>
+        <subtask id="4.2">Add disableCamera(controllerId, cameraId) to apiClient.protect</subtask>
+        <subtask id="4.3">Create TanStack Query mutation with optimistic update</subtask>
+        <subtask id="4.4">Implement rollback on error</subtask>
+        <subtask id="4.5">Add toast notifications for success/error states</subtask>
+      </task>
+      <task id="5" ac="1">Integrate with Settings page
+        <subtask id="5.1">Add DiscoveredCameraList to UniFi Protect settings section</subtask>
+        <subtask id="5.2">Pass controllerId from parent context/state</subtask>
+        <subtask id="5.3">Only show camera list when controller is connected</subtask>
+        <subtask id="5.4">Handle refresh button click to invalidate query cache</subtask>
+      </task>
+      <task id="6" ac="all">Testing
+        <subtask id="6.1">Write unit tests for DiscoveredCameraCard component</subtask>
+        <subtask id="6.2">Write unit tests for DiscoveredCameraList sorting logic</subtask>
+        <subtask id="6.3">Write API tests for enable/disable endpoints</subtask>
+        <subtask id="6.4">Write unit tests for optimistic update and rollback</subtask>
+        <subtask id="6.5">Verify responsive layout on multiple screen sizes</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <ac id="AC1">Given I'm on Settings → UniFi Protect with a connected controller, when the controller connects, I see "Discovered Cameras (N found)" section with a list of cameras</ac>
+    <ac id="AC2">Each camera card displays: enable checkbox, camera icon (doorbell/camera), name (bold), type/model (muted), status indicator (online/offline), "Configure Filters" button</ac>
+    <ac id="AC3">Camera list is sorted with enabled cameras first, then alphabetical by name</ac>
+    <ac id="AC4">Disabled cameras shown at 50% opacity with "(Disabled)" label</ac>
+    <ac id="AC5">Offline cameras show red status dot with "Offline" badge regardless of enabled state</ac>
+    <ac id="AC6">Toggling enable ON creates camera record in database with source_type: 'protect'</ac>
+    <ac id="AC7">Toggling enable OFF marks camera as disabled (keeps record for settings persistence)</ac>
+    <ac id="AC8">Toggle persists immediately with optimistic update and rollback on error</ac>
+    <ac id="AC9">Toast confirmation shows "Camera enabled" / "Camera disabled" on toggle</ac>
+    <ac id="AC10">Empty state shows "No cameras found" if no cameras discovered or "Connect your controller" if disconnected</ac>
+    <ac id="AC11">Loading state shows skeleton cards while fetching camera list</ac>
+    <ac id="AC12">Responsive layout: single column on mobile, two columns on tablet/desktop</ac>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epics-phase2.md</path>
+        <title>Phase 2 Epic Breakdown</title>
+        <section>Story 2.2: Build Discovered Camera List UI with Enable/Disable</section>
+        <snippet>Enable/disable cameras for AI analysis. Create camera record with source_type: 'protect' when enabled. Use optimistic updates with rollback. Sorted list: enabled first, then alphabetical.</snippet>
+      </doc>
+      <doc>
+        <path>docs/ux-design-specification.md</path>
+        <title>UX Design Specification</title>
+        <section>Section 10.2: Settings Page - UniFi Protect</section>
+        <snippet>DiscoveredCameraList displays cameras with enable checkbox, name, type badge, status dot, Configure Filters button. Sorting: enabled first, then alphabetical. States: loading (skeleton), empty, populated.</snippet>
+      </doc>
+      <doc>
+        <path>docs/ux-design-specification.md</path>
+        <title>UX Design Specification</title>
+        <section>Section 10.2: DiscoveredCameraCard Component</section>
+        <snippet>Enable checkbox (left), camera icon (type-based), name (bold), type badge (muted), status dot, Configure Filters button (right). Enabled: full opacity. Disabled: 50% opacity with "(Disabled)" label. Offline: red status dot.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p2-2-1-implement-camera-auto-discovery-from-protect-controller.md</path>
+        <title>Previous Story P2-2.1</title>
+        <section>Senior Developer Review - Code Quality Notes</section>
+        <snippet>Discovery API available via apiClient.protect.discoverCameras(). ProtectDiscoveredCamera interface with all fields. 60-second cache. is_enabled_for_ai field cross-referenced with cameras table. Use { data, meta } response format.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD-phase2.md</path>
+        <title>Phase 2 PRD</title>
+        <section>FR10: Enable/Disable Cameras</section>
+        <snippet>Users can enable or disable individual cameras for AI analysis. Settings persist across restarts. Camera enable/disable and filter settings stored in database.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <file>
+        <path>frontend/lib/api-client.ts</path>
+        <kind>API client</kind>
+        <symbol>discoverCameras, ProtectDiscoveredCamera</symbol>
+        <lines>1164-1194</lines>
+        <reason>Existing discovery API method and TypeScript interface to use for fetching cameras. Already includes is_enabled_for_ai, is_doorbell, smart_detection_capabilities fields.</reason>
+      </file>
+      <file>
+        <path>frontend/components/protect/ControllerForm.tsx</path>
+        <kind>React component</kind>
+        <symbol>ControllerForm, ControllerData</symbol>
+        <lines>1-50</lines>
+        <reason>Existing Protect component pattern to follow. Uses react-hook-form, zod, TanStack Query mutations, toast notifications.</reason>
+      </file>
+      <file>
+        <path>frontend/components/protect/ConnectionStatus.tsx</path>
+        <kind>React component</kind>
+        <symbol>ConnectionStatus, ConnectionStatusType</symbol>
+        <lines>all</lines>
+        <reason>Existing status indicator pattern. Similar dot + text pattern needed for camera online/offline status.</reason>
+      </file>
+      <file>
+        <path>frontend/app/settings/page.tsx</path>
+        <kind>Page component</kind>
+        <symbol>SettingsPage</symbol>
+        <lines>862-961</lines>
+        <reason>UniFi Protect tab location where DiscoveredCameraList must be integrated. Uses controllersQuery, hasController state, ControllerForm integration pattern.</reason>
+      </file>
+      <file>
+        <path>backend/app/models/camera.py</path>
+        <kind>SQLAlchemy model</kind>
+        <symbol>Camera</symbol>
+        <lines>13-136</lines>
+        <reason>Camera model with Phase 2 fields: source_type, protect_controller_id, protect_camera_id, is_doorbell, smart_detection_types. Enable endpoint creates records here.</reason>
+      </file>
+      <file>
+        <path>backend/app/schemas/protect.py</path>
+        <kind>Pydantic schemas</kind>
+        <symbol>ProtectDiscoveredCamera, ProtectCamerasResponse</symbol>
+        <lines>200-289</lines>
+        <reason>Existing discovery schemas. Enable/disable response schemas should follow same pattern.</reason>
+      </file>
+      <file>
+        <path>backend/app/api/v1/protect.py</path>
+        <kind>API router</kind>
+        <symbol>router, discover_cameras</symbol>
+        <lines>635-760</lines>
+        <reason>Existing discovery endpoint. Enable/disable endpoints should be added in same router following { data, meta } pattern.</reason>
+      </file>
+      <file>
+        <path>frontend/components/ui/skeleton.tsx</path>
+        <kind>UI component</kind>
+        <symbol>Skeleton</symbol>
+        <lines>all</lines>
+        <reason>shadcn/ui Skeleton component for loading state placeholders.</reason>
+      </file>
+      <file>
+        <path>frontend/components/ui/checkbox.tsx</path>
+        <kind>UI component</kind>
+        <symbol>Checkbox</symbol>
+        <lines>all</lines>
+        <reason>shadcn/ui Checkbox component for enable/disable toggle.</reason>
+      </file>
+      <file>
+        <path>frontend/components/ui/badge.tsx</path>
+        <kind>UI component</kind>
+        <symbol>Badge</symbol>
+        <lines>all</lines>
+        <reason>shadcn/ui Badge component for camera type and "Offline" badges.</reason>
+      </file>
+    </code>
+    <dependencies>
+      <frontend>
+        <package name="@tanstack/react-query" version="^5.90.10">Server state management with optimistic updates</package>
+        <package name="react-hook-form" version="^7.66.0">Form state management</package>
+        <package name="zod" version="^4.1.12">Schema validation</package>
+        <package name="sonner" version="^2.0.7">Toast notifications</package>
+        <package name="lucide-react" version="^0.553.0">Icons (Camera, Doorbell, RefreshCw)</package>
+        <package name="@radix-ui/react-checkbox" version="^1.3.3">Checkbox primitive</package>
+        <package name="tailwindcss" version="^4">Styling with responsive utilities</package>
+        <package name="next" version="16.0.3">Framework with App Router</package>
+        <package name="react" version="19.2.0">UI library</package>
+      </frontend>
+      <backend>
+        <package name="fastapi">API framework</package>
+        <package name="sqlalchemy">ORM for Camera model</package>
+        <package name="pydantic">Schema validation</package>
+      </backend>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="architecture">Use TanStack Query for server state with 60-second stale time matching backend cache TTL</constraint>
+    <constraint source="architecture">Follow existing { data, meta } response format for API endpoints</constraint>
+    <constraint source="architecture">Use optimistic updates for enable/disable toggle with rollback on error</constraint>
+    <constraint source="ux-spec">Enabled cameras sorted first, then alphabetical by name</constraint>
+    <constraint source="ux-spec">Disabled cameras at 50% opacity with "(Disabled)" label</constraint>
+    <constraint source="ux-spec">Responsive grid: 1 column mobile, 2 columns tablet/desktop</constraint>
+    <constraint source="previous-story">Use existing discoverCameras() API - do not recreate discovery logic</constraint>
+    <constraint source="previous-story">Use ProtectDiscoveredCamera interface - is_enabled_for_ai field already cross-referenced</constraint>
+    <constraint source="code-pattern">Follow ControllerForm component pattern for mutations and toast notifications</constraint>
+    <constraint source="code-pattern">Export new components from frontend/components/protect/index.ts</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>discoverCameras</name>
+      <kind>REST API client method</kind>
+      <signature>discoverCameras(controllerId: string, forceRefresh?: boolean): Promise&lt;{ data: ProtectDiscoveredCamera[]; meta: { count, controller_id, cached, warning } }&gt;</signature>
+      <path>frontend/lib/api-client.ts:1164-1178</path>
+    </interface>
+    <interface>
+      <name>ProtectDiscoveredCamera</name>
+      <kind>TypeScript interface</kind>
+      <signature>{ protect_camera_id: string; name: string; type: 'camera' | 'doorbell'; model: string; is_online: boolean; is_doorbell: boolean; is_enabled_for_ai: boolean; smart_detection_capabilities: string[] }</signature>
+      <path>frontend/lib/api-client.ts:1185-1194</path>
+    </interface>
+    <interface>
+      <name>Camera model</name>
+      <kind>SQLAlchemy model</kind>
+      <signature>Camera(name, source_type='protect', protect_controller_id, protect_camera_id, is_doorbell, smart_detection_types, is_enabled)</signature>
+      <path>backend/app/models/camera.py:13-80</path>
+    </interface>
+    <interface>
+      <name>POST /protect/controllers/{id}/cameras/{camera_id}/enable</name>
+      <kind>REST endpoint (to create)</kind>
+      <signature>Request: { name?, smart_detection_types? }. Response: { data: ProtectCameraEnableResponse, meta }</signature>
+      <path>backend/app/api/v1/protect.py (to add)</path>
+    </interface>
+    <interface>
+      <name>POST /protect/controllers/{id}/cameras/{camera_id}/disable</name>
+      <kind>REST endpoint (to create)</kind>
+      <signature>Request: {}. Response: { data: { camera_id, is_enabled_for_ai: false }, meta }</signature>
+      <path>backend/app/api/v1/protect.py (to add)</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend tests use pytest with TestClient for API endpoints. Tests are located in backend/tests/test_api/. Frontend currently lacks formal testing framework - focus on API tests. Follow existing test patterns in test_protect.py which uses fixtures, mocking, and class-based test organization.
+    </standards>
+    <locations>
+      <location>backend/tests/test_api/test_protect.py</location>
+      <location>frontend/__tests__/ (if tests added)</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1,AC2">Test DiscoveredCameraCard renders all required elements: checkbox, icon, name, type, status, button</idea>
+      <idea ac="AC3">Test sorting function: enabled cameras first, then alphabetical</idea>
+      <idea ac="AC4,AC5">Test visual states: disabled opacity, offline badge</idea>
+      <idea ac="AC6">Test enable endpoint creates Camera record with correct source_type and protect fields</idea>
+      <idea ac="AC7">Test disable endpoint sets is_enabled=false without deleting record</idea>
+      <idea ac="AC8">Test optimistic update: UI updates immediately, rollback on API error</idea>
+      <idea ac="AC9">Test toast notifications appear on enable/disable success</idea>
+      <idea ac="AC10">Test empty states: no cameras found, controller not connected</idea>
+      <idea ac="AC11">Test loading state renders skeleton cards</idea>
+      <idea ac="AC12">Test responsive grid classes applied correctly</idea>
+    </ideas>
+  </tests>
+</story-context>

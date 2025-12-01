@@ -1176,6 +1176,45 @@ export const apiClient = {
       const params = forceRefresh ? '?force_refresh=true' : '';
       return apiFetch(`/protect/controllers/${controllerId}/cameras${params}`);
     },
+
+    /**
+     * Enable a discovered camera for AI analysis (Story P2-2.2)
+     * Creates or updates camera record in database with source_type='protect'
+     * @param controllerId Controller UUID
+     * @param cameraId Protect camera ID
+     * @param options Optional name override and smart detection types
+     */
+    enableCamera: async (
+      controllerId: string,
+      cameraId: string,
+      options?: { name?: string; smart_detection_types?: string[] }
+    ): Promise<{
+      data: ProtectCameraEnableData;
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${controllerId}/cameras/${cameraId}/enable`, {
+        method: 'POST',
+        body: options ? JSON.stringify(options) : undefined,
+      });
+    },
+
+    /**
+     * Disable a camera from AI analysis (Story P2-2.2)
+     * Keeps camera record but marks as disabled for settings persistence
+     * @param controllerId Controller UUID
+     * @param cameraId Protect camera ID
+     */
+    disableCamera: async (
+      controllerId: string,
+      cameraId: string
+    ): Promise<{
+      data: ProtectCameraDisableData;
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${controllerId}/cameras/${cameraId}/disable`, {
+        method: 'POST',
+      });
+    },
   },
 };
 
@@ -1191,4 +1230,21 @@ export interface ProtectDiscoveredCamera {
   is_doorbell: boolean;
   is_enabled_for_ai: boolean;
   smart_detection_capabilities: string[];
+}
+
+// Story P2-2.2: Camera Enable/Disable Types
+
+/** Response data when camera is enabled for AI */
+export interface ProtectCameraEnableData {
+  camera_id: string;
+  protect_camera_id: string;
+  name: string;
+  is_enabled_for_ai: boolean;
+  smart_detection_types: string[];
+}
+
+/** Response data when camera is disabled */
+export interface ProtectCameraDisableData {
+  protect_camera_id: string;
+  is_enabled_for_ai: boolean;
 }

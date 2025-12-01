@@ -42,7 +42,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConfirmDialog } from '@/components/settings/ConfirmDialog';
 import { BackupRestore } from '@/components/settings/BackupRestore';
-import { ControllerForm, type ControllerData, DeleteControllerDialog } from '@/components/protect';
+import { ControllerForm, type ControllerData, DeleteControllerDialog, DiscoveredCameraList } from '@/components/protect';
 import { useQuery } from '@tanstack/react-query';
 
 const DEFAULT_PROMPT = 'Describe what you see in this image in one concise sentence. Focus on objects, people, and actions.';
@@ -922,6 +922,14 @@ export default function SettingsPage() {
                           Remove
                         </Button>
                       </div>
+
+                      {/* Discovered Cameras List (Story P2-2.2) */}
+                      {controller && (
+                        <DiscoveredCameraList
+                          controllerId={controller.id}
+                          isControllerConnected={controller.is_connected}
+                        />
+                      )}
                     </div>
                   ) : showControllerForm ? (
                     /* Controller Form */

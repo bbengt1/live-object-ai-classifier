@@ -287,3 +287,56 @@ class ProtectCamerasResponse(BaseModel):
             ]
         }
     }
+
+
+# Story P2-2.2: Camera Enable/Disable Schemas
+
+class ProtectCameraEnableRequest(BaseModel):
+    """Request body for enabling a camera for AI analysis (AC6)"""
+
+    name: Optional[str] = Field(None, description="Override camera name (optional)")
+    smart_detection_types: List[str] = Field(
+        default_factory=lambda: ["person", "vehicle", "package"],
+        description="Smart detection types to filter (default: person, vehicle, package)"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "smart_detection_types": ["person", "vehicle", "package"]
+                }
+            ]
+        }
+    }
+
+
+class ProtectCameraEnableData(BaseModel):
+    """Data returned when camera is enabled (AC6)"""
+
+    camera_id: str = Field(..., description="Database camera ID")
+    protect_camera_id: str = Field(..., description="Native Protect camera ID")
+    name: str = Field(..., description="Camera name")
+    is_enabled_for_ai: bool = Field(True, description="Always true for enable response")
+    smart_detection_types: List[str] = Field(..., description="Configured smart detection types")
+
+
+class ProtectCameraEnableResponse(BaseModel):
+    """Response for camera enable endpoint (AC6)"""
+
+    data: ProtectCameraEnableData
+    meta: MetaResponse
+
+
+class ProtectCameraDisableData(BaseModel):
+    """Data returned when camera is disabled (AC7)"""
+
+    protect_camera_id: str = Field(..., description="Native Protect camera ID")
+    is_enabled_for_ai: bool = Field(False, description="Always false for disable response")
+
+
+class ProtectCameraDisableResponse(BaseModel):
+    """Response for camera disable endpoint (AC7)"""
+
+    data: ProtectCameraDisableData
+    meta: MetaResponse
