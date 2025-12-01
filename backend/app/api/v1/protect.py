@@ -9,6 +9,8 @@ Provides REST API for Protect controller configuration management:
 - DELETE /protect/controllers/{id} - Delete controller
 - POST /protect/controllers/test - Test connection with new credentials (Story P2-1.2)
 - POST /protect/controllers/{id}/test - Test connection with existing controller (Story P2-1.2)
+- POST /protect/controllers/{id}/connect - Connect to controller (Story P2-1.4)
+- POST /protect/controllers/{id}/disconnect - Disconnect from controller (Story P2-1.4)
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -19,6 +21,7 @@ from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.models.protect_controller import ProtectController
+from app.models.camera import Camera
 from app.schemas.protect import (
     ProtectControllerCreate,
     ProtectControllerUpdate,
@@ -29,6 +32,8 @@ from app.schemas.protect import (
     ProtectControllerTest,
     ProtectTestResultData,
     ProtectTestResponse,
+    ProtectConnectionStatusData,
+    ProtectConnectionResponse,
     MetaResponse,
 )
 from app.services.protect_service import get_protect_service
@@ -171,17 +176,21 @@ def get_controller(controller_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/controllers/{controller_id}", response_model=ProtectControllerSingleResponse)
-def update_controller(
+async def update_controller(
     controller_id: str,
     controller_data: ProtectControllerUpdate,
     db: Session = Depends(get_db)
 ):
     """
-    Update an existing UniFi Protect controller
+    Update an existing UniFi Protect controller (Story P2-1.5)
+
+    Supports partial updates - only provided fields are modified.
+    If connection-related fields change (host, port, username, password, verify_ssl),
+    the WebSocket connection is automatically reconnected.
 
     Args:
         controller_id: Controller UUID
-        controller_data: Partial controller data to update
+        controller_data: Partial controller data to update (all fields optional)
         db: Database session
 
     Returns:
@@ -212,15 +221,41 @@ def update_controller(
                     detail=f"Controller with name '{controller_data.name}' already exists"
                 )
 
-        # Update only provided fields
+        # Track if reconnection needed (connection-related fields changed)
+        connection_fields = {"host", "port", "username", "password", "verify_ssl"}
+        needs_reconnect = False
+        was_connected = controller.is_connected
+
+        # Update only provided fields (exclude_unset=True means None fields not in request are ignored)
         update_data = controller_data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
+            # Check if this is a connection field that changed
+            if field in connection_fields:
+                current_value = getattr(controller, field)
+                # For password, we need special handling since stored value is encrypted
+                if field == "password":
+                    # Password is provided - always trigger reconnect
+                    needs_reconnect = True
+                elif current_value != value:
+                    needs_reconnect = True
             setattr(controller, field, value)
 
         db.commit()
         db.refresh(controller)
 
         logger.info(f"Protect controller updated: {controller.id} ({controller.name})")
+
+        # Reconnect if connection-related fields changed and was previously connected
+        if needs_reconnect and was_connected:
+            logger.info(f"Connection fields changed, reconnecting controller {controller_id}")
+            protect_service = get_protect_service()
+            try:
+                await protect_service.disconnect(controller_id)
+                await protect_service.connect(controller)
+            except Exception as e:
+                logger.error(f"Failed to reconnect controller {controller_id}: {e}")
+                # Update succeeded, but reconnect failed - don't fail the request
+                # The connection status will reflect the error
 
         return ProtectControllerSingleResponse(
             data=ProtectControllerResponse.model_validate(controller),
@@ -239,12 +274,17 @@ def update_controller(
 
 
 @router.delete("/controllers/{controller_id}", response_model=ProtectControllerDeleteResponse)
-def delete_controller(controller_id: str, db: Session = Depends(get_db)):
+async def delete_controller(controller_id: str, db: Session = Depends(get_db)):
     """
-    Delete a UniFi Protect controller
+    Delete a UniFi Protect controller (Story P2-1.5)
 
-    This will also remove any cameras associated with this controller
-    via the cascade delete relationship.
+    This will:
+    1. Disconnect the WebSocket connection
+    2. Disassociate Protect cameras (sets protect_controller_id = NULL)
+    3. Delete the controller record
+
+    Note: Cameras are disassociated rather than deleted to preserve historical events,
+    as Event.camera_id has a NOT NULL constraint with CASCADE delete.
 
     Args:
         controller_id: Controller UUID
@@ -266,6 +306,29 @@ def delete_controller(controller_id: str, db: Session = Depends(get_db)):
             )
 
         controller_name = controller.name
+
+        # Step 1: Disconnect WebSocket first
+        protect_service = get_protect_service()
+        try:
+            await protect_service.disconnect(controller_id)
+            logger.info(f"Disconnected controller {controller_id} before deletion")
+        except Exception as e:
+            logger.warning(f"Failed to disconnect controller {controller_id}: {e}")
+            # Continue with deletion even if disconnect fails
+
+        # Step 2: Disassociate cameras from this controller
+        # Note: We disassociate rather than delete to preserve historical events
+        # (Event.camera_id is NOT NULL with CASCADE delete)
+        camera_count = db.query(Camera).filter(
+            Camera.protect_controller_id == controller_id
+        ).update(
+            {Camera.protect_controller_id: None},
+            synchronize_session='fetch'
+        )
+        if camera_count > 0:
+            logger.info(f"Disassociated {camera_count} cameras from controller {controller_id}")
+
+        # Step 3: Delete the controller
         db.delete(controller)
         db.commit()
 
@@ -449,3 +512,115 @@ async def test_existing_controller(controller_id: str, db: Session = Depends(get
         ),
         meta=create_meta()
     )
+
+
+# Story P2-1.4: Connection Management Endpoints
+
+@router.post("/controllers/{controller_id}/connect", response_model=ProtectConnectionResponse)
+async def connect_controller(controller_id: str, db: Session = Depends(get_db)):
+    """
+    Connect to a UniFi Protect controller (AC10).
+
+    Establishes a persistent WebSocket connection to the controller and
+    starts a background listener for real-time events.
+
+    Args:
+        controller_id: Controller UUID
+        db: Database session
+
+    Returns:
+        Connection status with { data: { controller_id, status }, meta } format.
+
+    Raises:
+        404: Controller not found
+        503: Connection failed (unreachable, auth error, SSL error)
+    """
+    # Load controller from database
+    controller = db.query(ProtectController).filter(ProtectController.id == controller_id).first()
+
+    if not controller:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Controller with id '{controller_id}' not found"
+        )
+
+    protect_service = get_protect_service()
+
+    try:
+        success = await protect_service.connect(controller)
+
+        if not success:
+            # Connection failed - get error from database
+            db.refresh(controller)
+            error_msg = controller.last_error or "Connection failed"
+
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=error_msg
+            )
+
+        return ProtectConnectionResponse(
+            data=ProtectConnectionStatusData(
+                controller_id=controller_id,
+                status="connected",
+                error=None
+            ),
+            meta=create_meta()
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to connect controller {controller_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Connection failed: {type(e).__name__}"
+        )
+
+
+@router.post("/controllers/{controller_id}/disconnect", response_model=ProtectConnectionResponse)
+async def disconnect_controller(controller_id: str, db: Session = Depends(get_db)):
+    """
+    Disconnect from a UniFi Protect controller (AC10).
+
+    Closes the WebSocket connection and cancels the background listener task.
+
+    Args:
+        controller_id: Controller UUID
+        db: Database session
+
+    Returns:
+        Disconnection status with { data: { controller_id, status }, meta } format.
+
+    Raises:
+        404: Controller not found
+    """
+    # Verify controller exists
+    controller = db.query(ProtectController).filter(ProtectController.id == controller_id).first()
+
+    if not controller:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Controller with id '{controller_id}' not found"
+        )
+
+    protect_service = get_protect_service()
+
+    try:
+        await protect_service.disconnect(controller_id)
+
+        return ProtectConnectionResponse(
+            data=ProtectConnectionStatusData(
+                controller_id=controller_id,
+                status="disconnected",
+                error=None
+            ),
+            meta=create_meta()
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to disconnect controller {controller_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Disconnect failed: {type(e).__name__}"
+        )

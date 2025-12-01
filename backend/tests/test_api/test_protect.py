@@ -1006,3 +1006,269 @@ class TestProtectService:
 
         # Verify close was called even on error
         mock_client.close.assert_called_once()
+
+
+# Story P2-1.4: Connection Management Tests
+
+class TestConnectEndpoint:
+    """Test suite for POST /protect/controllers/{id}/connect endpoint (Story P2-1.4)"""
+
+    @patch('app.services.protect_service.ProtectApiClient')
+    def test_connect_controller_success(self, mock_client_class):
+        """AC10: Connect endpoint returns success on successful connection"""
+        # Create a controller first
+        create_response = client.post("/api/v1/protect/controllers", json={
+            "name": "Connect Test Controller",
+            "host": "192.168.1.100",
+            "port": 443,
+            "username": "admin",
+            "password": "testpassword",
+            "verify_ssl": False
+        })
+        controller_id = create_response.json()["data"]["id"]
+
+        # Mock successful connection
+        mock_client = MagicMock()
+        mock_client.update = AsyncMock()
+        mock_client.close = AsyncMock()
+        mock_client.bootstrap = MagicMock()
+        mock_client.bootstrap.nvr = MagicMock()
+        mock_client.bootstrap.nvr.version = "3.0.16"
+        mock_client.bootstrap.cameras = []
+        mock_client.subscribe_websocket = MagicMock(return_value=MagicMock())
+        mock_client_class.return_value = mock_client
+
+        response = client.post(f"/api/v1/protect/controllers/{controller_id}/connect")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "data" in data
+        assert "meta" in data
+        assert data["data"]["controller_id"] == controller_id
+        assert data["data"]["status"] == "connected"
+
+    def test_connect_controller_not_found(self):
+        """AC10: Connect endpoint returns 404 for non-existent controller"""
+        response = client.post("/api/v1/protect/controllers/nonexistent-id/connect")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+    @patch('app.services.protect_service.ProtectApiClient')
+    def test_connect_controller_connection_failure(self, mock_client_class):
+        """AC10: Connect endpoint returns 503 on connection failure"""
+        # Create a controller first
+        create_response = client.post("/api/v1/protect/controllers", json={
+            "name": "Fail Connect Controller",
+            "host": "192.168.1.254",
+            "port": 443,
+            "username": "admin",
+            "password": "testpassword",
+            "verify_ssl": False
+        })
+        controller_id = create_response.json()["data"]["id"]
+
+        # Mock connection failure
+        import aiohttp
+        mock_client = MagicMock()
+        mock_client.update = AsyncMock(
+            side_effect=aiohttp.ClientConnectorError(MagicMock(), OSError("Connection refused"))
+        )
+        mock_client.close = AsyncMock()
+        mock_client_class.return_value = mock_client
+
+        response = client.post(f"/api/v1/protect/controllers/{controller_id}/connect")
+        assert response.status_code == 503
+
+
+class TestDisconnectEndpoint:
+    """Test suite for POST /protect/controllers/{id}/disconnect endpoint (Story P2-1.4)"""
+
+    def test_disconnect_controller_success(self):
+        """AC10: Disconnect endpoint returns success"""
+        # Create a controller first
+        create_response = client.post("/api/v1/protect/controllers", json={
+            "name": "Disconnect Test Controller",
+            "host": "192.168.1.100",
+            "port": 443,
+            "username": "admin",
+            "password": "testpassword",
+            "verify_ssl": False
+        })
+        controller_id = create_response.json()["data"]["id"]
+
+        # Disconnect (even if not connected, should return success)
+        response = client.post(f"/api/v1/protect/controllers/{controller_id}/disconnect")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "data" in data
+        assert "meta" in data
+        assert data["data"]["controller_id"] == controller_id
+        assert data["data"]["status"] == "disconnected"
+
+    def test_disconnect_controller_not_found(self):
+        """AC10: Disconnect endpoint returns 404 for non-existent controller"""
+        response = client.post("/api/v1/protect/controllers/nonexistent-id/disconnect")
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"]
+
+
+class TestExponentialBackoff:
+    """Test suite for exponential backoff reconnection (Story P2-1.4, AC3)"""
+
+    def test_backoff_delays_sequence(self):
+        """AC3: Verify backoff delays are 1, 2, 4, 8, 16, 30 (max)"""
+        from app.services.protect_service import BACKOFF_DELAYS
+
+        expected_delays = [1, 2, 4, 8, 16, 30]
+        assert BACKOFF_DELAYS == expected_delays
+
+    def test_backoff_max_delay(self):
+        """AC3: Verify max delay is 30 seconds"""
+        from app.services.protect_service import BACKOFF_DELAYS
+
+        assert max(BACKOFF_DELAYS) == 30
+
+
+class TestConnectionStateManagement:
+    """Test suite for connection state management (Story P2-1.4, AC2, AC7, AC9)"""
+
+    @patch('app.services.protect_service.SessionLocal', TestingSessionLocal)
+    @patch('app.services.protect_service.ProtectApiClient')
+    @pytest.mark.asyncio
+    async def test_database_state_updated_on_connect(self, mock_client_class):
+        """AC2: is_connected and last_connected_at updated on successful connection"""
+        from app.services.protect_service import ProtectService
+        from app.models.protect_controller import ProtectController
+
+        # Create controller in database
+        db = TestingSessionLocal()
+        try:
+            controller = ProtectController(
+                name="State Test Controller",
+                host="192.168.1.100",
+                port=443,
+                username="admin",
+                password="testpassword",
+                verify_ssl=False
+            )
+            db.add(controller)
+            db.commit()
+            db.refresh(controller)
+            controller_id = str(controller.id)
+
+            # Verify initial state
+            assert controller.is_connected == False
+            assert controller.last_connected_at is None
+        finally:
+            db.close()
+
+        # Mock successful connection
+        mock_client = MagicMock()
+        mock_client.update = AsyncMock()
+        mock_client.close = AsyncMock()
+        mock_client.bootstrap = MagicMock()
+        mock_client.bootstrap.nvr = MagicMock()
+        mock_client.bootstrap.nvr.version = "3.0.16"
+        mock_client.bootstrap.cameras = []
+        mock_client.subscribe_websocket = MagicMock(return_value=MagicMock())
+        mock_client_class.return_value = mock_client
+
+        # Get fresh controller for connect
+        db = TestingSessionLocal()
+        try:
+            fresh_controller = db.query(ProtectController).filter(
+                ProtectController.id == controller_id
+            ).first()
+
+            service = ProtectService()
+            await service.connect(fresh_controller)
+        finally:
+            db.close()
+
+        # Verify state was updated
+        db = TestingSessionLocal()
+        try:
+            updated_controller = db.query(ProtectController).filter(
+                ProtectController.id == controller_id
+            ).first()
+            assert updated_controller.is_connected == True
+            assert updated_controller.last_connected_at is not None
+        finally:
+            db.close()
+
+        # Cleanup
+        await service.disconnect(controller_id)
+
+    def test_service_connection_dictionaries_initialized(self):
+        """AC9: Service initializes connection dictionaries"""
+        from app.services.protect_service import ProtectService
+
+        service = ProtectService()
+        assert hasattr(service, '_connections')
+        assert hasattr(service, '_listener_tasks')
+        assert isinstance(service._connections, dict)
+        assert isinstance(service._listener_tasks, dict)
+
+    def test_get_all_connection_statuses(self):
+        """AC9: Service can report all connection statuses"""
+        from app.services.protect_service import ProtectService
+
+        service = ProtectService()
+        statuses = service.get_all_connection_statuses()
+        assert isinstance(statuses, dict)
+
+
+class TestWebSocketBroadcast:
+    """Test suite for WebSocket status broadcasting (Story P2-1.4, AC6)"""
+
+    def test_protect_connection_status_constant_defined(self):
+        """AC6: PROTECT_CONNECTION_STATUS message type is defined"""
+        from app.services.protect_service import PROTECT_CONNECTION_STATUS
+
+        assert PROTECT_CONNECTION_STATUS == "PROTECT_CONNECTION_STATUS"
+
+    @patch('app.services.protect_service.get_websocket_manager')
+    @pytest.mark.asyncio
+    async def test_broadcast_status_called_on_connect(self, mock_get_ws_manager):
+        """AC6: Status is broadcast on connection attempt"""
+        from app.services.protect_service import ProtectService
+
+        mock_ws_manager = MagicMock()
+        mock_ws_manager.broadcast = AsyncMock(return_value=1)
+        mock_get_ws_manager.return_value = mock_ws_manager
+
+        service = ProtectService()
+        await service._broadcast_status("test-id", "connecting")
+
+        mock_ws_manager.broadcast.assert_called_once()
+        call_args = mock_ws_manager.broadcast.call_args[0][0]
+        assert call_args["type"] == "PROTECT_CONNECTION_STATUS"
+        assert call_args["data"]["controller_id"] == "test-id"
+        assert call_args["data"]["status"] == "connecting"
+
+
+class TestResponseFormat:
+    """Test suite for connection endpoint response format (Story P2-1.4)"""
+
+    def test_connect_response_format(self):
+        """Verify connect response follows { data, meta } format"""
+        # Create controller
+        create_response = client.post("/api/v1/protect/controllers", json={
+            "name": "Format Test Controller",
+            "host": "192.168.1.100",
+            "username": "admin",
+            "password": "secret"
+        })
+        controller_id = create_response.json()["data"]["id"]
+
+        # Disconnect endpoint should return proper format even without connection
+        response = client.post(f"/api/v1/protect/controllers/{controller_id}/disconnect")
+        data = response.json()
+
+        assert "data" in data
+        assert "meta" in data
+        assert "request_id" in data["meta"]
+        assert "timestamp" in data["meta"]
+        assert "controller_id" in data["data"]
+        assert "status" in data["data"]

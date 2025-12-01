@@ -164,3 +164,32 @@ class ProtectTestResponse(BaseModel):
 
     data: ProtectTestResultData
     meta: MetaResponse
+
+
+# Story P2-1.4: Connection Management Schemas
+
+class ProtectConnectionStatusData(BaseModel):
+    """Connection status result data (AC10)"""
+
+    controller_id: str = Field(..., description="Controller UUID")
+    status: str = Field(..., description="Connection status: connected, disconnected, connecting, reconnecting, error")
+    error: Optional[str] = Field(None, description="Error message if status is 'error'")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "controller_id": "550e8400-e29b-41d4-a716-446655440000",
+                    "status": "connected",
+                    "error": None
+                }
+            ]
+        }
+    }
+
+
+class ProtectConnectionResponse(BaseModel):
+    """Connection/disconnect response with meta (AC10)"""
+
+    data: ProtectConnectionStatusData
+    meta: MetaResponse

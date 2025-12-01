@@ -1107,7 +1107,43 @@ export const apiClient = {
     },
 
     /**
-     * Delete a UniFi Protect controller
+     * Update a UniFi Protect controller (Story P2-1.5)
+     * Supports partial updates - only provided fields are modified
+     * @param id Controller UUID
+     * @param data Partial controller data to update
+     */
+    updateController: async (id: string, data: {
+      name?: string;
+      host?: string;
+      port?: number;
+      username?: string;
+      password?: string;
+      verify_ssl?: boolean;
+    }): Promise<{
+      data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        username: string;
+        verify_ssl: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        created_at: string;
+        updated_at: string;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    },
+
+    /**
+     * Delete a UniFi Protect controller (Story P2-1.5)
+     * Disconnects WebSocket, disassociates cameras, preserves events
      * @param id Controller UUID
      */
     deleteController: async (id: string): Promise<{

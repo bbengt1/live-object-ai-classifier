@@ -42,7 +42,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConfirmDialog } from '@/components/settings/ConfirmDialog';
 import { BackupRestore } from '@/components/settings/BackupRestore';
-import { ControllerForm } from '@/components/protect';
+import { ControllerForm, type ControllerData, DeleteControllerDialog } from '@/components/protect';
 import { useQuery } from '@tanstack/react-query';
 
 const DEFAULT_PROMPT = 'Describe what you see in this image in one concise sentence. Focus on objects, people, and actions.';
@@ -70,6 +70,8 @@ export default function SettingsPage() {
 
   // UniFi Protect controller state
   const [showControllerForm, setShowControllerForm] = useState(false);
+  const [editingController, setEditingController] = useState<ControllerData | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // Query for existing Protect controllers
   const controllersQuery = useQuery({
@@ -901,20 +903,41 @@ export default function SettingsPage() {
                           </p>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        Controller is configured. Edit and delete functionality coming in Story P2-1.5.
-                      </p>
+                      {/* Edit and Remove buttons (Story P2-1.5) */}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setEditingController(controller as ControllerData);
+                            setShowControllerForm(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => setDeleteDialogOpen(true)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Remove
+                        </Button>
+                      </div>
                     </div>
                   ) : showControllerForm ? (
                     /* Controller Form */
                     <div className="sm:grid sm:grid-cols-2 sm:gap-6">
                       <div className="col-span-1">
                         <ControllerForm
+                          controller={editingController ?? undefined}
                           onSaveSuccess={() => {
                             setShowControllerForm(false);
+                            setEditingController(null);
                             controllersQuery.refetch();
                           }}
-                          onCancel={() => setShowControllerForm(false)}
+                          onCancel={() => {
+                            setShowControllerForm(false);
+                            setEditingController(null);
+                          }}
                         />
                       </div>
                       <div className="hidden sm:block col-span-1">
@@ -976,6 +999,19 @@ export default function SettingsPage() {
 
         {/* Confirmation Dialog */}
         <ConfirmDialog {...confirmDialog} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })} />
+
+        {/* Delete Controller Dialog (Story P2-1.5) */}
+        {controller && (
+          <DeleteControllerDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            controllerId={controller.id}
+            controllerName={controller.name}
+            onDeleteSuccess={() => {
+              controllersQuery.refetch();
+            }}
+          />
+        )}
       </div>
     </TooltipProvider>
   );

@@ -1,0 +1,217 @@
+<story-context id="bmm/story-context/p2-1-5" v="1.0">
+  <metadata>
+    <epicId>P2-1</epicId>
+    <storyId>5</storyId>
+    <title>Add Controller Edit and Delete Functionality</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-30</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p2-1-5-add-controller-edit-and-delete-functionality.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>user</asA>
+    <iWant>to edit or remove my Protect controller configuration</iWant>
+    <soThat>I can update credentials or disconnect the integration</soThat>
+    <tasks>
+      <task id="1" acs="3,5,10">Implement PUT endpoint for controller update
+        <subtask id="1.1">Update ProtectControllerUpdate schema to handle optional password (None = no change)</subtask>
+        <subtask id="1.2">Implement partial update logic in PUT /protect/controllers/{id} endpoint</subtask>
+        <subtask id="1.3">Detect if connection-related fields changed (host, port, username, password, verify_ssl)</subtask>
+        <subtask id="1.4">If credentials changed, call protect_service.disconnect() then connect() to reconnect</subtask>
+        <subtask id="1.5">Return updated controller in response</subtask>
+      </task>
+      <task id="2" acs="8,11,12">Implement DELETE endpoint with cascade
+        <subtask id="2.1">Implement DELETE /protect/controllers/{id} endpoint</subtask>
+        <subtask id="2.2">Before delete: Call protect_service.disconnect() to close WebSocket</subtask>
+        <subtask id="2.3">Cascade delete Protect cameras from cameras table where protect_controller_id matches</subtask>
+        <subtask id="2.4">Delete controller record from protect_controllers table</subtask>
+        <subtask id="2.5">Verify historical events with source_type: 'protect' are preserved</subtask>
+        <subtask id="2.6">Return success response</subtask>
+      </task>
+      <task id="3" acs="1,2,3,4,5">Build Edit Controller UI
+        <subtask id="3.1">Add "Edit" button to controller card in Settings → UniFi Protect</subtask>
+        <subtask id="3.2">Pre-populate form with existing values from controller record</subtask>
+        <subtask id="3.3">Password field shows placeholder "••••••••" and is optional</subtask>
+        <subtask id="3.4">"Test Connection" button validates using new/existing credentials</subtask>
+        <subtask id="3.5">"Save" submits PUT request with only changed fields</subtask>
+        <subtask id="3.6">"Cancel" button to discard changes</subtask>
+        <subtask id="3.7">Show loading state during save, success toast on completion</subtask>
+      </task>
+      <task id="4" acs="6,7,8,9">Build Delete Controller UI with Confirmation
+        <subtask id="4.1">Add "Remove" button to controller card (destructive style)</subtask>
+        <subtask id="4.2">Create confirmation modal using shadcn/ui AlertDialog</subtask>
+        <subtask id="4.3">Modal message: "Remove UniFi Protect Controller? This will disconnect all Protect cameras and stop receiving events."</subtask>
+        <subtask id="4.4">"Cancel" and "Remove" (red/destructive) buttons in modal</subtask>
+        <subtask id="4.5">On confirm: Send DELETE request, show loading state</subtask>
+        <subtask id="4.6">On success: Close modal, show toast "Controller removed successfully", reset UI to empty state</subtask>
+        <subtask id="4.7">On error: Show error toast with message</subtask>
+      </task>
+      <task id="5" acs="5,8">Add TanStack Query mutations
+        <subtask id="5.1">Create useUpdateController mutation hook</subtask>
+        <subtask id="5.2">Create useDeleteController mutation hook</subtask>
+        <subtask id="5.3">Invalidate controller queries on success</subtask>
+        <subtask id="5.4">Handle optimistic updates and rollback on error</subtask>
+      </task>
+      <task id="6" acs="all">Testing
+        <subtask id="6.1">Write API tests for PUT endpoint (partial update, password handling)</subtask>
+        <subtask id="6.2">Write API tests for DELETE endpoint (cascade behavior)</subtask>
+        <subtask id="6.3">Write test for WebSocket reconnection on credential change</subtask>
+        <subtask id="6.4">Write test for event preservation after controller deletion</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <ac id="1">When viewing Settings → UniFi Protect with a configured controller, I see "Edit" and "Remove" options</ac>
+    <ac id="2">When editing, form pre-populates with existing values (password field shows "••••••••")</ac>
+    <ac id="3">When editing, password field is optional (only update if changed)</ac>
+    <ac id="4">"Test Connection" re-validates with new settings before save</ac>
+    <ac id="5">"Save" updates controller and triggers WebSocket reconnection if credentials changed</ac>
+    <ac id="6">When removing, confirmation modal displays: "Remove UniFi Protect Controller? This will disconnect all Protect cameras and stop receiving events."</ac>
+    <ac id="7">Remove confirmation button is styled as destructive action (red)</ac>
+    <ac id="8">On confirm remove: Disconnect WebSocket, delete controller record, cascade delete Protect cameras</ac>
+    <ac id="9">After successful removal, toast displays: "Controller removed successfully"</ac>
+    <ac id="10">PUT /protect/controllers/{id} supports partial update (only changed fields)</ac>
+    <ac id="11">DELETE /protect/controllers/{id} deletes controller with cascade behavior</ac>
+    <ac id="12">Deleting controller removes associated cameras but preserves historical events (with source_type: 'protect')</ac>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epics-phase2.md</path>
+        <title>Phase 2 Epic Breakdown</title>
+        <section>Story 1.5: Add Controller Edit and Delete Functionality</section>
+        <snippet>Edit form pre-populates, password optional when editing. Delete with confirmation modal, cascade delete cameras, preserve historical events.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p2-1-4-implement-websocket-connection-manager-with-auto-reconnect.md</path>
+        <title>Previous Story: WebSocket Connection Manager</title>
+        <section>Implementation Summary</section>
+        <snippet>ProtectService extended with connect(), disconnect(), disconnect_all() methods. Use get_protect_service() singleton pattern.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <file>
+        <path>backend/app/api/v1/protect.py</path>
+        <kind>router</kind>
+        <symbol>update_controller, delete_controller</symbol>
+        <lines>177-291</lines>
+        <reason>Existing PUT and DELETE endpoints that need enhancement for reconnection logic and cascade delete</reason>
+      </file>
+      <file>
+        <path>backend/app/schemas/protect.py</path>
+        <kind>schema</kind>
+        <symbol>ProtectControllerUpdate</symbol>
+        <lines>39-47</lines>
+        <reason>Update schema - password field already Optional, but may need min_length adjustment for empty string handling</reason>
+      </file>
+      <file>
+        <path>backend/app/services/protect_service.py</path>
+        <kind>service</kind>
+        <symbol>connect, disconnect</symbol>
+        <lines>280, 418</lines>
+        <reason>Connection management methods to call on credential change - use get_protect_service() singleton</reason>
+      </file>
+      <file>
+        <path>frontend/components/protect/ControllerForm.tsx</path>
+        <kind>component</kind>
+        <symbol>ControllerForm</symbol>
+        <lines>1-80</lines>
+        <reason>Existing form component - needs edit mode with pre-populated values and optional password field</reason>
+      </file>
+      <file>
+        <path>frontend/components/protect/ConnectionStatus.tsx</path>
+        <kind>component</kind>
+        <symbol>ConnectionStatus</symbol>
+        <reason>Status indicator component - reuse in edit mode</reason>
+      </file>
+      <file>
+        <path>backend/tests/test_api/test_protect.py</path>
+        <kind>test</kind>
+        <symbol>TestUpdateController, TestDeleteController</symbol>
+        <reason>Existing test file - add tests for partial update, cascade delete, event preservation</reason>
+      </file>
+    </code>
+    <dependencies>
+      <python>
+        <package version="0.115.0">fastapi</package>
+        <package version=">=2.0.36">sqlalchemy</package>
+        <package version=">=2.10.0">pydantic</package>
+        <package version=">=6.0.0">uiprotect</package>
+        <package version="7.4.3">pytest</package>
+        <package version="0.21.1">pytest-asyncio</package>
+      </python>
+      <node>
+        <package version="16.0.3">next</package>
+        <package version="19.2.0">react</package>
+        <package version="^5.90.10">@tanstack/react-query</package>
+        <package version="^7.66.0">react-hook-form</package>
+        <package version="^4.1.12">zod</package>
+        <package version="^1.1.15">@radix-ui/react-alert-dialog</package>
+        <package version="^2.0.7">sonner</package>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Use existing ProtectService singleton via get_protect_service()</constraint>
+    <constraint type="pattern">PUT endpoint should use model_dump(exclude_unset=True) for partial updates</constraint>
+    <constraint type="pattern">Password field: None means "don't change", empty string should be rejected</constraint>
+    <constraint type="security">Never log credentials in error messages or logs</constraint>
+    <constraint type="database">Cascade delete cameras but preserve events with source_type: 'protect'</constraint>
+    <constraint type="async">PUT endpoint must be async to call protect_service methods</constraint>
+    <constraint type="ui">Use shadcn/ui AlertDialog for delete confirmation modal</constraint>
+    <constraint type="ui">Destructive button style: variant="destructive" (red)</constraint>
+    <constraint type="state">Use TanStack Query mutations with query invalidation</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>PUT /api/v1/protect/controllers/{controller_id}</name>
+      <kind>REST endpoint</kind>
+      <signature>PUT /protect/controllers/{id} - Body: ProtectControllerUpdate (all fields optional)</signature>
+      <path>backend/app/api/v1/protect.py:177</path>
+    </interface>
+    <interface>
+      <name>DELETE /api/v1/protect/controllers/{controller_id}</name>
+      <kind>REST endpoint</kind>
+      <signature>DELETE /protect/controllers/{id} - Returns ProtectControllerDeleteResponse</signature>
+      <path>backend/app/api/v1/protect.py:245</path>
+    </interface>
+    <interface>
+      <name>ProtectService.disconnect()</name>
+      <kind>async method</kind>
+      <signature>async def disconnect(self, controller_id: str) -> None</signature>
+      <path>backend/app/services/protect_service.py:418</path>
+    </interface>
+    <interface>
+      <name>ProtectService.connect()</name>
+      <kind>async method</kind>
+      <signature>async def connect(self, controller: ProtectController) -> bool</signature>
+      <path>backend/app/services/protect_service.py:280</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend: pytest with pytest-asyncio for async tests. Mock uiprotect client using unittest.mock.
+      Frontend: No frontend tests currently configured.
+      Test files located alongside code in tests/ directory.
+      Use TestClient for API endpoint testing with TestingSessionLocal for database isolation.
+    </standards>
+    <locations>
+      <location>backend/tests/test_api/test_protect.py</location>
+      <location>backend/tests/</location>
+    </locations>
+    <ideas>
+      <idea ac="3,10">Test PUT with password=None preserves existing encrypted password</idea>
+      <idea ac="5">Test PUT with host change triggers disconnect() and connect() calls</idea>
+      <idea ac="8,11">Test DELETE calls disconnect() before database delete</idea>
+      <idea ac="8,11">Test DELETE cascades to cameras table</idea>
+      <idea ac="12">Test DELETE preserves events with source_type='protect'</idea>
+      <idea ac="10">Test PUT partial update only modifies provided fields</idea>
+    </ideas>
+  </tests>
+</story-context>

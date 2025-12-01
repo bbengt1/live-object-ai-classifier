@@ -33,6 +33,7 @@ from app.api.v1.auth import router as auth_router, ensure_admin_exists, limiter
 from app.api.v1.protect import router as protect_router  # Story P2-1.1: UniFi Protect
 from app.services.event_processor import initialize_event_processor, shutdown_event_processor
 from app.services.cleanup_service import get_cleanup_service
+from app.services.protect_service import get_protect_service  # Story P2-1.4: Protect WebSocket
 
 # Application version
 APP_VERSION = "1.0.0"
@@ -299,6 +300,71 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # Connect to Protect controllers on startup (Story P2-1.4, AC1)
+    from app.models.protect_controller import ProtectController
+    protect_service = get_protect_service()
+
+    db = next(get_db())
+    try:
+        # Initialize app.state.protect_connections (AC9)
+        # Note: app is not in scope here yet, so we store in service
+
+        protect_controllers = db.query(ProtectController).all()
+        protect_started_count = 0
+
+        if protect_controllers:
+            logger.info(
+                "Starting Protect controllers",
+                extra={
+                    "event_type": "protect_startup",
+                    "controller_count": len(protect_controllers)
+                }
+            )
+
+            for controller in protect_controllers:
+                try:
+                    success = await protect_service.connect(controller)
+                    if success:
+                        protect_started_count += 1
+                        logger.info(
+                            "Protect controller connected",
+                            extra={
+                                "event_type": "protect_controller_connected",
+                                "controller_id": str(controller.id),
+                                "controller_name": controller.name
+                            }
+                        )
+                    else:
+                        logger.warning(
+                            "Protect controller failed to connect",
+                            extra={
+                                "event_type": "protect_controller_connection_failed",
+                                "controller_id": str(controller.id),
+                                "controller_name": controller.name
+                            }
+                        )
+                except Exception as e:
+                    # AC8: One failing controller doesn't affect others
+                    logger.error(
+                        f"Exception connecting Protect controller: {e}",
+                        extra={
+                            "event_type": "protect_controller_connection_error",
+                            "controller_id": str(controller.id),
+                            "error": str(e)
+                        }
+                    )
+
+            logger.info(
+                "Protect controllers startup complete",
+                extra={
+                    "event_type": "protect_startup_complete",
+                    "started_count": protect_started_count,
+                    "total_count": len(protect_controllers)
+                }
+            )
+    finally:
+        db.close()
+
     logger.info(
         "Application startup complete",
         extra={
@@ -315,6 +381,20 @@ async def lifespan(app: FastAPI):
         "Application shutting down",
         extra={"event_type": "app_shutdown_start", "version": APP_VERSION}
     )
+
+    # Disconnect Protect controllers first (Story P2-1.4, AC5)
+    # Must happen before other services shutdown
+    try:
+        await protect_service.disconnect_all(timeout=10.0)
+        logger.info(
+            "Protect controllers disconnected",
+            extra={"event_type": "protect_shutdown_complete"}
+        )
+    except Exception as e:
+        logger.error(
+            f"Error disconnecting Protect controllers: {e}",
+            extra={"event_type": "protect_shutdown_error", "error": str(e)}
+        )
 
     # Stop scheduler
     if scheduler and scheduler.running:

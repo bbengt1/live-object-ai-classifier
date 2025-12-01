@@ -1,0 +1,260 @@
+<story-context id="p2-1-4-implement-websocket-connection-manager-with-auto-reconnect" v="1.0">
+  <metadata>
+    <epicId>P2-1</epicId>
+    <storyId>4</storyId>
+    <title>Implement WebSocket Connection Manager with Auto-Reconnect</title>
+    <status>drafted</status>
+    <generatedAt>2025-11-30</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p2-1-4-implement-websocket-connection-manager-with-auto-reconnect.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>backend service</asA>
+    <iWant>to maintain a persistent WebSocket connection to the Protect controller</iWant>
+    <soThat>I can receive real-time events without polling</soThat>
+    <tasks>
+      <task id="1" title="Extend ProtectService with Connection Management Methods">
+        <subtask>1.1 Add async def connect(self, controller: ProtectController) -> bool method</subtask>
+        <subtask>1.2 Add async def disconnect(self, controller_id: str) -> None method</subtask>
+        <subtask>1.3 Add async def _websocket_listener(self, controller: ProtectController) -> None method</subtask>
+        <subtask>1.4 Add async def _reconnect_with_backoff(self, controller: ProtectController) -> None method</subtask>
+        <subtask>1.5 Implement exponential backoff logic with delays: 1s, 2s, 4s, 8s, 16s, 30s (max)</subtask>
+        <subtask>1.6 Use uiprotect library's subscribe_websocket() for event subscription</subtask>
+      </task>
+      <task id="2" title="Implement Connection State Management">
+        <subtask>2.1 Store active connections in service-level dictionary: self._connections</subtask>
+        <subtask>2.2 Store background tasks in dictionary: self._listener_tasks</subtask>
+        <subtask>2.3 Update is_connected field in database on connect/disconnect</subtask>
+        <subtask>2.4 Update last_connected_at timestamp on successful connection</subtask>
+        <subtask>2.5 Update last_error field on connection failure</subtask>
+        <subtask>2.6 Add logging for connection lifecycle events (no credentials)</subtask>
+      </task>
+      <task id="3" title="Integrate with FastAPI Lifespan Events">
+        <subtask>3.1 Add startup logic in main.py lifespan to connect all configured controllers</subtask>
+        <subtask>3.2 Add shutdown logic to disconnect all controllers gracefully</subtask>
+        <subtask>3.3 Query database for all controllers and initiate connections</subtask>
+        <subtask>3.4 Ensure cleanup of asyncio tasks on shutdown with configurable timeout</subtask>
+      </task>
+      <task id="4" title="Implement WebSocket Status Broadcasting">
+        <subtask>4.1 Import and use existing WebSocket broadcast function from app/api/v1/websocket.py</subtask>
+        <subtask>4.2 Define PROTECT_CONNECTION_STATUS message type</subtask>
+        <subtask>4.3 Broadcast status changes: connected, disconnected, reconnecting, error</subtask>
+        <subtask>4.4 Include controller_id, status, error (optional), and timestamp in message</subtask>
+      </task>
+      <task id="5" title="Create Connect/Disconnect API Endpoints">
+        <subtask>5.1 Add POST /api/v1/protect/controllers/{id}/connect endpoint</subtask>
+        <subtask>5.2 Add POST /api/v1/protect/controllers/{id}/disconnect endpoint</subtask>
+        <subtask>5.3 Return connection status and any error messages</subtask>
+        <subtask>5.4 Handle cases where controller doesn't exist (404)</subtask>
+      </task>
+      <task id="6" title="Add Graceful Error Handling">
+        <subtask>6.1 Handle uiprotect exceptions: NotAuthorized, NvrError, BadRequest</subtask>
+        <subtask>6.2 Handle aiohttp exceptions: ClientConnectorError, ClientConnectorCertificateError</subtask>
+        <subtask>6.3 Handle asyncio exceptions: TimeoutError, CancelledError</subtask>
+        <subtask>6.4 Ensure one failing controller doesn't affect others</subtask>
+        <subtask>6.5 Log errors with context, never log credentials</subtask>
+      </task>
+      <task id="7" title="Store Connections in App State">
+        <subtask>7.1 Initialize app.state.protect_connections in lifespan startup</subtask>
+        <subtask>7.2 Reference app state from ProtectService for connection storage</subtask>
+        <subtask>7.3 Clear connections dict on shutdown</subtask>
+        <subtask>7.4 Provide method to get connection status for all controllers</subtask>
+      </task>
+      <task id="8" title="Testing">
+        <subtask>8.1 Write unit test for exponential backoff timing</subtask>
+        <subtask>8.2 Write unit test for connection state transitions</subtask>
+        <subtask>8.3 Write integration test for connect/disconnect lifecycle</subtask>
+        <subtask>8.4 Write test for WebSocket status broadcast messages</subtask>
+        <subtask>8.5 Write test for graceful shutdown behavior</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">When the backend service starts or a new controller is added, the system establishes a WebSocket connection to the controller</criterion>
+    <criterion id="AC2">Connection state is tracked in database (is_connected field) and last_connected_at is updated on successful connection</criterion>
+    <criterion id="AC3">On disconnect, system implements exponential backoff reconnection: 1s -> 2s -> 4s -> 8s -> 16s -> 30s (max), unlimited attempts</criterion>
+    <criterion id="AC4">First reconnect attempt occurs within 5 seconds of disconnect detection (NFR3)</criterion>
+    <criterion id="AC5">On server shutdown, WebSocket is properly closed and controller is marked as disconnected in database</criterion>
+    <criterion id="AC6">WebSocket message PROTECT_CONNECTION_STATUS is broadcast to frontend on connection state change with format: { type, data: { controller_id, status, error }, timestamp }</criterion>
+    <criterion id="AC7">Connection errors are logged with context (no credentials in logs) and last_error field is updated in database</criterion>
+    <criterion id="AC8">System continues operation even if one controller connection fails (graceful degradation)</criterion>
+    <criterion id="AC9">Active connections are stored in app.state.protect_connections dictionary for lifecycle management</criterion>
+    <criterion id="AC10">Connect and disconnect API endpoints (POST /api/v1/protect/controllers/{id}/connect, POST /api/v1/protect/controllers/{id}/disconnect) are functional</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Phase 2 Additions - ProtectService</section>
+        <snippet>ProtectService manages WebSocket connections to UniFi Protect controllers. Key methods: connect(), disconnect(), _websocket_listener(), _reconnect_with_backoff(). Uses exponential backoff: 1s, 2s, 4s, 8s, max 30s.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD-phase2.md</path>
+        <title>Phase 2 PRD</title>
+        <section>FR14, FR15 - WebSocket Connection</section>
+        <snippet>FR14: System maintains WebSocket connection to controller. FR15: Auto-reconnect with exponential backoff. NFR3: Reconnect within 5 seconds of disconnect.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics-phase2.md</path>
+        <title>Phase 2 Epics</title>
+        <section>Story 1.4 - WebSocket Connection Manager</section>
+        <snippet>Detailed acceptance criteria for WebSocket lifecycle, auto-reconnect behavior, graceful shutdown, and status broadcasting.</snippet>
+      </doc>
+      <doc>
+        <path>docs/ux-design-specification.md</path>
+        <title>UX Design Specification</title>
+        <section>Section 10.2 - ConnectionStatusIndicator</section>
+        <snippet>Frontend expects real-time status updates via WebSocket. States: connected (green), connecting (yellow+spinner), disconnected (red), error (red+tooltip).</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>backend/app/services/protect_service.py</path>
+        <kind>service</kind>
+        <symbol>ProtectService</symbol>
+        <lines>35-251</lines>
+        <reason>Existing service with test_connection() method. Add connect(), disconnect(), _websocket_listener(), _reconnect_with_backoff() here.</reason>
+      </file>
+      <file>
+        <path>backend/app/models/protect_controller.py</path>
+        <kind>model</kind>
+        <symbol>ProtectController</symbol>
+        <lines>1-104</lines>
+        <reason>Database model with is_connected, last_connected_at, last_error fields to update on connection state changes.</reason>
+      </file>
+      <file>
+        <path>backend/app/api/v1/protect.py</path>
+        <kind>router</kind>
+        <symbol>router</symbol>
+        <lines>1-452</lines>
+        <reason>Add connect/disconnect endpoints here. Follow existing pattern for error handling and response format.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/websocket_manager.py</path>
+        <kind>service</kind>
+        <symbol>WebSocketManager</symbol>
+        <lines>35-182</lines>
+        <reason>Use broadcast() method to send PROTECT_CONNECTION_STATUS messages to frontend. get_websocket_manager() singleton.</reason>
+      </file>
+      <file>
+        <path>backend/app/api/v1/websocket.py</path>
+        <kind>router</kind>
+        <symbol>websocket_endpoint</symbol>
+        <lines>1-94</lines>
+        <reason>Existing WebSocket endpoint. Messages broadcast through WebSocketManager reach connected clients here.</reason>
+      </file>
+      <file>
+        <path>backend/main.py</path>
+        <kind>entrypoint</kind>
+        <symbol>lifespan</symbol>
+        <lines>142-344</lines>
+        <reason>Add Protect controller connection in startup (after camera startup), disconnection in shutdown (before camera shutdown).</reason>
+      </file>
+      <file>
+        <path>backend/tests/test_api/test_protect.py</path>
+        <kind>test</kind>
+        <symbol>TestConnectionTestEndpoint</symbol>
+        <lines>536-700</lines>
+        <reason>Existing test patterns for Protect API. Add new test classes for connect/disconnect endpoints.</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="fastapi" version=">=0.115.0" />
+        <package name="uvicorn" version=">=0.24.0" />
+        <package name="sqlalchemy" version=">=2.0.36" />
+        <package name="uiprotect" version=">=6.0.0" note="UniFi Protect API client with WebSocket support" />
+        <package name="aiohttp" version="transitive" note="Used by uiprotect for async HTTP/WebSocket" />
+        <package name="pytest" version="==7.4.3" />
+        <package name="pytest-asyncio" version="==0.21.1" />
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <interfaces>
+    <interface>
+      <name>ProtectService.connect</name>
+      <kind>async method</kind>
+      <signature>async def connect(self, controller: ProtectController) -> bool</signature>
+      <path>backend/app/services/protect_service.py</path>
+      <notes>Establish WebSocket connection, start listener task, update database state</notes>
+    </interface>
+    <interface>
+      <name>ProtectService.disconnect</name>
+      <kind>async method</kind>
+      <signature>async def disconnect(self, controller_id: str) -> None</signature>
+      <path>backend/app/services/protect_service.py</path>
+      <notes>Close WebSocket, cancel listener task, update database state</notes>
+    </interface>
+    <interface>
+      <name>POST /protect/controllers/{id}/connect</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /api/v1/protect/controllers/{controller_id}/connect -> { data: { controller_id, status }, meta }</signature>
+      <path>backend/app/api/v1/protect.py</path>
+      <notes>Returns 404 if controller not found, 503 if connection fails</notes>
+    </interface>
+    <interface>
+      <name>POST /protect/controllers/{id}/disconnect</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /api/v1/protect/controllers/{controller_id}/disconnect -> { data: { controller_id, status }, meta }</signature>
+      <path>backend/app/api/v1/protect.py</path>
+      <notes>Returns 404 if controller not found</notes>
+    </interface>
+    <interface>
+      <name>WebSocketManager.broadcast</name>
+      <kind>async method</kind>
+      <signature>async def broadcast(self, message: Dict[str, Any]) -> int</signature>
+      <path>backend/app/services/websocket_manager.py</path>
+      <notes>Adds timestamp, sends to all connected clients, returns success count</notes>
+    </interface>
+    <interface>
+      <name>uiprotect.ProtectApiClient</name>
+      <kind>external library</kind>
+      <signature>client.subscribe_websocket(callback: Callable) -> Callable</signature>
+      <path>external: uiprotect</path>
+      <notes>Returns unsubscribe function. Callback receives event objects.</notes>
+    </interface>
+  </interfaces>
+
+  <constraints>
+    <constraint type="pattern">Follow singleton pattern for ProtectService: get_protect_service()</constraint>
+    <constraint type="pattern">Response format: { data, meta } with meta containing request_id and timestamp</constraint>
+    <constraint type="security">Never log credentials (password, API keys)</constraint>
+    <constraint type="performance">NFR3: First reconnect attempt within 5 seconds of disconnect</constraint>
+    <constraint type="performance">NFR5: WebSocket connection maintains 99%+ uptime during normal operation</constraint>
+    <constraint type="reliability">NFR6: System recovers gracefully from controller disconnection without crashing</constraint>
+    <constraint type="architecture">Services in backend/app/services/, API routes in backend/app/api/v1/</constraint>
+    <constraint type="database">Use SessionLocal() for background task database operations (not get_db dependency)</constraint>
+    <constraint type="async">Use asyncio.Task for background WebSocket listener, store in service dictionary</constraint>
+  </constraints>
+
+  <tests>
+    <standards>
+      Tests use pytest with pytest-asyncio for async tests. API tests use FastAPI TestClient with temporary SQLite database.
+      Mock external dependencies (uiprotect.ProtectApiClient) using unittest.mock. Follow existing patterns in test_protect.py.
+      Use @pytest.mark.asyncio for async test functions. Clean up database between tests with fixtures.
+    </standards>
+    <locations>
+      <location>backend/tests/test_api/test_protect.py</location>
+      <location>backend/tests/test_services/</location>
+    </locations>
+    <ideas>
+      <idea acId="AC1">Test that lifespan startup connects all saved controllers</idea>
+      <idea acId="AC2">Test database is_connected and last_connected_at updated on connect/disconnect</idea>
+      <idea acId="AC3">Test exponential backoff timing: mock disconnect, verify delay sequence</idea>
+      <idea acId="AC4">Test first reconnect occurs within 5 seconds (use time.sleep mock)</idea>
+      <idea acId="AC5">Test graceful shutdown closes connections and updates database</idea>
+      <idea acId="AC6">Test WebSocketManager.broadcast called with PROTECT_CONNECTION_STATUS on state change</idea>
+      <idea acId="AC7">Test last_error updated on connection failure, verify no credentials in logs</idea>
+      <idea acId="AC8">Test one failing controller doesn't block others from connecting</idea>
+      <idea acId="AC9">Test app.state.protect_connections populated after startup</idea>
+      <idea acId="AC10">Test connect/disconnect endpoints return correct status codes and formats</idea>
+    </ideas>
+  </tests>
+</story-context>
