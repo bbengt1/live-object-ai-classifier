@@ -1416,6 +1416,9 @@ async def analyze_camera(
     regardless of motion detection settings. The analysis happens asynchronously
     and results are saved as an Event in the database.
 
+    Supports both RTSP/USB cameras (via camera_service) and Protect cameras
+    (via Protect API snapshot).
+
     Args:
         camera_id: UUID of camera
         db: Database session
@@ -1449,53 +1452,11 @@ async def analyze_camera(
                 detail=f"Camera {camera_id} is disabled. Enable camera first."
             )
 
-        # Check if camera is running
-        camera_status = camera_service.get_camera_status(camera_id)
-
-        if not camera_status or camera_status.get('status') != 'connected':
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Camera {camera_id} is not currently running"
-            )
-
-        # Get latest frame
-        latest_frame = camera_service.get_latest_frame(camera_id)
-
-        if latest_frame is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No frame available from camera"
-            )
-
-        # Get event processor
-        event_processor = get_event_processor()
-        if event_processor is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Event processor not running. Check if AI service is configured."
-            )
-
-        # Queue event for AI processing
-        from datetime import datetime, timezone
-
-        processing_event = ProcessingEvent(
-            camera_id=camera_id,
-            camera_name=camera.name,
-            frame=latest_frame,
-            timestamp=datetime.now(timezone.utc),
-            detected_objects=["manual_trigger"],
-            metadata={"trigger": "manual", "source": "analyze_button"}
-        )
-
-        # Queue the event for async AI processing
-        await event_processor.queue_event(processing_event)
-
-        logger.info(f"Manual analysis queued for camera {camera_id} ({camera.name})")
-
-        return {
-            "success": True,
-            "message": "Analysis triggered successfully"
-        }
+        # Handle Protect cameras differently from RTSP/USB cameras
+        if camera.source_type == 'protect':
+            return await _analyze_protect_camera(camera, db)
+        else:
+            return await _analyze_rtsp_camera(camera, db)
 
     except HTTPException:
         raise
@@ -1506,3 +1467,149 @@ async def analyze_camera(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to trigger analysis: {str(e)}"
         )
+
+
+async def _analyze_rtsp_camera(camera: Camera, db: Session):
+    """Handle manual analysis for RTSP/USB cameras"""
+    camera_id = str(camera.id)
+
+    # Check if camera is running
+    camera_status = camera_service.get_camera_status(camera_id)
+
+    if not camera_status or camera_status.get('status') != 'connected':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Camera {camera_id} is not currently running"
+        )
+
+    # Get latest frame
+    latest_frame = camera_service.get_latest_frame(camera_id)
+
+    if latest_frame is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No frame available from camera"
+        )
+
+    # Get event processor
+    event_processor = get_event_processor()
+    if event_processor is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Event processor not running. Check if AI service is configured."
+        )
+
+    # Queue event for AI processing
+    from datetime import datetime, timezone
+
+    processing_event = ProcessingEvent(
+        camera_id=camera_id,
+        camera_name=camera.name,
+        frame=latest_frame,
+        timestamp=datetime.now(timezone.utc),
+        detected_objects=["manual_trigger"],
+        metadata={"trigger": "manual", "source": "analyze_button"}
+    )
+
+    # Queue the event for async AI processing
+    await event_processor.queue_event(processing_event)
+
+    logger.info(f"Manual analysis queued for RTSP camera {camera_id} ({camera.name})")
+
+    return {
+        "success": True,
+        "message": "Analysis triggered successfully"
+    }
+
+
+async def _analyze_protect_camera(camera: Camera, db: Session):
+    """Handle manual analysis for Protect cameras (Story P2-3.3 extension)"""
+    from app.services.protect_service import get_protect_service
+    from app.services.snapshot_service import get_snapshot_service
+    from app.services.protect_event_handler import get_protect_event_handler
+
+    camera_id = str(camera.id)
+
+    # Validate Protect camera has required fields
+    if not camera.protect_controller_id or not camera.protect_camera_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Protect camera is missing controller or camera ID configuration"
+        )
+
+    # Check if controller is connected
+    protect_service = get_protect_service()
+    controller_status = protect_service.get_connection_status(camera.protect_controller_id)
+
+    if not controller_status.get('connected'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Protect controller is not connected. Connect the controller first."
+        )
+
+    # Get snapshot from Protect API
+    snapshot_service = get_snapshot_service()
+    try:
+        snapshot_result = await snapshot_service.get_snapshot(
+            controller_id=camera.protect_controller_id,
+            protect_camera_id=camera.protect_camera_id,
+            camera_id=camera_id,
+            camera_name=camera.name,
+            event_type="manual_trigger"
+        )
+    except Exception as e:
+        logger.error(f"Failed to get snapshot for Protect camera {camera_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to get camera snapshot: {str(e)}"
+        )
+
+    if not snapshot_result:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No snapshot available from Protect camera"
+        )
+
+    # Use the protect event handler to process through AI pipeline
+    # This reuses the same code path as WebSocket events
+    event_handler = get_protect_event_handler()
+
+    # Submit to AI pipeline
+    ai_result = await event_handler._submit_to_ai_pipeline(
+        snapshot_result=snapshot_result,
+        camera=camera,
+        event_type="manual_trigger"
+    )
+
+    if not ai_result or not ai_result.success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"AI analysis failed: {ai_result.error if ai_result else 'No result'}"
+        )
+
+    # Store the event
+    stored_event = await event_handler._store_protect_event(
+        db=db,
+        ai_result=ai_result,
+        snapshot_result=snapshot_result,
+        camera=camera,
+        event_type="manual_trigger",
+        protect_event_id=None  # Manual trigger has no Protect event ID
+    )
+
+    if not stored_event:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to store analysis result"
+        )
+
+    # Broadcast event
+    await event_handler._broadcast_event_created(stored_event, camera)
+
+    logger.info(f"Manual analysis completed for Protect camera {camera_id} ({camera.name})")
+
+    return {
+        "success": True,
+        "message": "Analysis completed successfully",
+        "event_id": stored_event.id
+    }
