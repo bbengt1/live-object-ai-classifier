@@ -2203,3 +2203,705 @@ class TestForceRefreshParameter:
         # Result will indicate not connected since we didn't set up a real connection
         assert result.warning is not None
         assert "not connected" in result.warning.lower()
+
+
+# =============================================================================
+# Story P2-3.1: Protect Event Listener and Event Handler Tests
+# =============================================================================
+
+class TestProtectEventHandlerConstants:
+    """Test suite for ProtectEventHandler constants (Story P2-3.1, AC2, AC10)"""
+
+    def test_event_cooldown_constant_defined(self):
+        """AC10: Event cooldown constant is 60 seconds"""
+        from app.services.protect_event_handler import EVENT_COOLDOWN_SECONDS
+
+        assert EVENT_COOLDOWN_SECONDS == 60
+
+    def test_event_type_mapping_defined(self):
+        """AC2: Event type mapping from Protect to filter types is defined"""
+        from app.services.protect_event_handler import EVENT_TYPE_MAPPING
+
+        assert EVENT_TYPE_MAPPING["motion"] == "motion"
+        assert EVENT_TYPE_MAPPING["smart_detect_person"] == "person"
+        assert EVENT_TYPE_MAPPING["smart_detect_vehicle"] == "vehicle"
+        assert EVENT_TYPE_MAPPING["smart_detect_package"] == "package"
+        assert EVENT_TYPE_MAPPING["smart_detect_animal"] == "animal"
+        assert EVENT_TYPE_MAPPING["ring"] == "ring"
+
+    def test_valid_event_types_contains_all_mappings(self):
+        """AC2: All event types in mapping are in valid event types set"""
+        from app.services.protect_event_handler import EVENT_TYPE_MAPPING, VALID_EVENT_TYPES
+
+        for event_type in EVENT_TYPE_MAPPING.keys():
+            assert event_type in VALID_EVENT_TYPES
+
+
+class TestProtectEventHandlerInit:
+    """Test suite for ProtectEventHandler initialization (Story P2-3.1)"""
+
+    def test_handler_initializes_with_empty_tracking(self):
+        """Event handler initializes with empty last event times dictionary"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+        assert hasattr(handler, '_last_event_times')
+        assert isinstance(handler._last_event_times, dict)
+        assert len(handler._last_event_times) == 0
+
+    def test_singleton_returns_same_instance(self):
+        """get_protect_event_handler returns singleton instance"""
+        from app.services.protect_event_handler import get_protect_event_handler
+
+        handler1 = get_protect_event_handler()
+        handler2 = get_protect_event_handler()
+        assert handler1 is handler2
+
+
+class TestEventTypeParsing:
+    """Test suite for event type parsing (Story P2-3.1, AC2)"""
+
+    def test_parse_motion_detected(self):
+        """AC2: Parse motion event from camera object"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = True
+        mock_obj.smart_detect_types = None
+
+        event_types = handler._parse_event_types(mock_obj, "Camera")
+        assert "motion" in event_types
+
+    def test_parse_no_motion_detected(self):
+        """AC2: No motion event when is_motion_detected is False"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = False
+        mock_obj.smart_detect_types = None
+
+        event_types = handler._parse_event_types(mock_obj, "Camera")
+        assert "motion" not in event_types
+
+    def test_parse_smart_detect_person(self):
+        """AC2: Parse smart_detect_person from camera object"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = False
+        mock_obj.smart_detect_types = ["person"]
+
+        event_types = handler._parse_event_types(mock_obj, "Camera")
+        assert "smart_detect_person" in event_types
+
+    def test_parse_smart_detect_vehicle(self):
+        """AC2: Parse smart_detect_vehicle from camera object"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = False
+        mock_obj.smart_detect_types = ["vehicle"]
+
+        event_types = handler._parse_event_types(mock_obj, "Camera")
+        assert "smart_detect_vehicle" in event_types
+
+    def test_parse_smart_detect_package(self):
+        """AC2: Parse smart_detect_package from camera object"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = False
+        mock_obj.smart_detect_types = ["package"]
+
+        event_types = handler._parse_event_types(mock_obj, "Camera")
+        assert "smart_detect_package" in event_types
+
+    def test_parse_smart_detect_animal(self):
+        """AC2: Parse smart_detect_animal from camera object"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = False
+        mock_obj.smart_detect_types = ["animal"]
+
+        event_types = handler._parse_event_types(mock_obj, "Camera")
+        assert "smart_detect_animal" in event_types
+
+    def test_parse_multiple_smart_detects(self):
+        """AC2: Parse multiple smart detection types"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = True
+        mock_obj.smart_detect_types = ["person", "vehicle"]
+
+        event_types = handler._parse_event_types(mock_obj, "Camera")
+        assert "motion" in event_types
+        assert "smart_detect_person" in event_types
+        assert "smart_detect_vehicle" in event_types
+
+    def test_parse_doorbell_ring(self):
+        """AC2: Parse ring event from doorbell"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = False
+        mock_obj.smart_detect_types = None
+        mock_obj.is_ringing = True
+
+        event_types = handler._parse_event_types(mock_obj, "Doorbell")
+        assert "ring" in event_types
+
+    def test_parse_doorbell_no_ring(self):
+        """AC2: No ring event when doorbell is not ringing"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_obj = MagicMock()
+        mock_obj.is_motion_detected = False
+        mock_obj.smart_detect_types = None
+        mock_obj.is_ringing = False
+
+        event_types = handler._parse_event_types(mock_obj, "Doorbell")
+        assert "ring" not in event_types
+
+
+class TestEventFiltering:
+    """Test suite for event filtering logic (Story P2-3.1, AC5, AC6, AC7, AC8)"""
+
+    def test_should_process_all_motion_mode_empty_array(self):
+        """AC8: Empty array means all-motion mode - process all events"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Empty array should process all event types
+        assert handler._should_process_event("person", [], "Test Camera") == True
+        assert handler._should_process_event("vehicle", [], "Test Camera") == True
+        assert handler._should_process_event("motion", [], "Test Camera") == True
+
+    def test_should_process_all_motion_mode_motion_only(self):
+        """AC8: ["motion"] means all-motion mode - process all events"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # ["motion"] should also process all event types
+        assert handler._should_process_event("person", ["motion"], "Test Camera") == True
+        assert handler._should_process_event("vehicle", ["motion"], "Test Camera") == True
+        assert handler._should_process_event("motion", ["motion"], "Test Camera") == True
+
+    def test_should_process_matching_filter(self):
+        """AC6: Event type in filter list should pass"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        assert handler._should_process_event("person", ["person", "vehicle"], "Test Camera") == True
+        assert handler._should_process_event("vehicle", ["person", "vehicle"], "Test Camera") == True
+
+    def test_should_not_process_non_matching_filter(self):
+        """AC7: Event type not in filter list should be discarded"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Camera configured for person only, vehicle event should be filtered
+        assert handler._should_process_event("vehicle", ["person"], "Test Camera") == False
+        # Camera configured for vehicles, person event should be filtered
+        assert handler._should_process_event("person", ["vehicle"], "Test Camera") == False
+
+    def test_should_process_single_filter_type(self):
+        """AC6, AC7: Single filter type only accepts that type"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Only person configured
+        assert handler._should_process_event("person", ["person"], "Test Camera") == True
+        assert handler._should_process_event("vehicle", ["person"], "Test Camera") == False
+        assert handler._should_process_event("package", ["person"], "Test Camera") == False
+
+    def test_load_smart_detection_types_valid_json(self):
+        """AC5: Load smart_detection_types from valid JSON"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_camera = MagicMock()
+        mock_camera.smart_detection_types = '["person", "vehicle"]'
+
+        result = handler._load_smart_detection_types(mock_camera)
+        assert result == ["person", "vehicle"]
+
+    def test_load_smart_detection_types_null(self):
+        """AC5: Load smart_detection_types returns empty list for null"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_camera = MagicMock()
+        mock_camera.smart_detection_types = None
+
+        result = handler._load_smart_detection_types(mock_camera)
+        assert result == []
+
+    def test_load_smart_detection_types_invalid_json(self):
+        """AC5: Load smart_detection_types returns empty list for invalid JSON"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        mock_camera = MagicMock()
+        mock_camera.name = "Test Camera"
+        mock_camera.id = "test-id"
+        mock_camera.smart_detection_types = "not-valid-json"
+
+        result = handler._load_smart_detection_types(mock_camera)
+        assert result == []
+
+
+class TestEventDeduplication:
+    """Test suite for event deduplication (Story P2-3.1, AC9, AC10)"""
+
+    def test_first_event_is_not_duplicate(self):
+        """AC9: First event for a camera is not a duplicate"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # First event should not be duplicate
+        assert handler._is_duplicate_event("camera-1", "Test Camera") == False
+
+    def test_event_within_cooldown_is_duplicate(self):
+        """AC10: Event within 60 second cooldown is duplicate"""
+        from app.services.protect_event_handler import ProtectEventHandler
+        from datetime import datetime, timezone, timedelta
+
+        handler = ProtectEventHandler()
+        camera_id = "camera-duplicate-test"
+
+        # Simulate an event that happened 30 seconds ago (within cooldown)
+        handler._last_event_times[camera_id] = (
+            datetime.now(timezone.utc) - timedelta(seconds=30)
+        )
+
+        assert handler._is_duplicate_event(camera_id, "Test Camera") == True
+
+    def test_event_after_cooldown_is_not_duplicate(self):
+        """AC10: Event after 60 second cooldown is not duplicate"""
+        from app.services.protect_event_handler import ProtectEventHandler, EVENT_COOLDOWN_SECONDS
+        from datetime import datetime, timezone, timedelta
+
+        handler = ProtectEventHandler()
+        camera_id = "camera-after-cooldown"
+
+        # Simulate an event that happened 65 seconds ago (past cooldown)
+        handler._last_event_times[camera_id] = (
+            datetime.now(timezone.utc) - timedelta(seconds=EVENT_COOLDOWN_SECONDS + 5)
+        )
+
+        assert handler._is_duplicate_event(camera_id, "Test Camera") == False
+
+    def test_deduplication_exactly_at_boundary(self):
+        """AC10: Event exactly at cooldown boundary is not duplicate"""
+        from app.services.protect_event_handler import ProtectEventHandler, EVENT_COOLDOWN_SECONDS
+        from datetime import datetime, timezone, timedelta
+
+        handler = ProtectEventHandler()
+        camera_id = "camera-boundary"
+
+        # Simulate an event that happened exactly at the cooldown boundary
+        handler._last_event_times[camera_id] = (
+            datetime.now(timezone.utc) - timedelta(seconds=EVENT_COOLDOWN_SECONDS)
+        )
+
+        # Should be allowed (>= check)
+        assert handler._is_duplicate_event(camera_id, "Test Camera") == False
+
+    def test_multiple_cameras_independent_deduplication(self):
+        """AC9: Each camera has independent deduplication tracking"""
+        from app.services.protect_event_handler import ProtectEventHandler
+        from datetime import datetime, timezone, timedelta
+
+        handler = ProtectEventHandler()
+
+        # Camera 1 had event 30 seconds ago (within cooldown)
+        handler._last_event_times["camera-1"] = (
+            datetime.now(timezone.utc) - timedelta(seconds=30)
+        )
+
+        # Camera 2 has never had an event
+        # Camera 3 had event 120 seconds ago (past cooldown)
+        handler._last_event_times["camera-3"] = (
+            datetime.now(timezone.utc) - timedelta(seconds=120)
+        )
+
+        assert handler._is_duplicate_event("camera-1", "Camera 1") == True   # Within cooldown
+        assert handler._is_duplicate_event("camera-2", "Camera 2") == False  # First event
+        assert handler._is_duplicate_event("camera-3", "Camera 3") == False  # Past cooldown
+
+    def test_clear_event_tracking_specific_camera(self):
+        """Clear event tracking for specific camera"""
+        from app.services.protect_event_handler import ProtectEventHandler
+        from datetime import datetime, timezone
+
+        handler = ProtectEventHandler()
+        handler._last_event_times["camera-1"] = datetime.now(timezone.utc)
+        handler._last_event_times["camera-2"] = datetime.now(timezone.utc)
+
+        handler.clear_event_tracking("camera-1")
+
+        assert "camera-1" not in handler._last_event_times
+        assert "camera-2" in handler._last_event_times
+
+    def test_clear_event_tracking_all_cameras(self):
+        """Clear all event tracking data"""
+        from app.services.protect_event_handler import ProtectEventHandler
+        from datetime import datetime, timezone
+
+        handler = ProtectEventHandler()
+        handler._last_event_times["camera-1"] = datetime.now(timezone.utc)
+        handler._last_event_times["camera-2"] = datetime.now(timezone.utc)
+
+        handler.clear_event_tracking()
+
+        assert len(handler._last_event_times) == 0
+
+
+class TestHandleEventCameraLookup:
+    """Test suite for camera lookup in event handling (Story P2-3.1, AC3, AC4)"""
+
+    @patch('app.services.protect_event_handler.SessionLocal', TestingSessionLocal)
+    @pytest.mark.asyncio
+    async def test_handle_event_unknown_camera_discarded(self):
+        """AC4: Event from unknown camera is discarded silently"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Create mock message with camera not in database
+        mock_msg = MagicMock()
+        mock_msg.new_obj = MagicMock()
+        type(mock_msg.new_obj).__name__ = "Camera"
+        mock_msg.new_obj.id = "unknown-protect-camera-id"
+        mock_msg.new_obj.is_motion_detected = True
+        mock_msg.new_obj.smart_detect_types = None
+
+        result = await handler.handle_event("ctrl-1", mock_msg)
+        assert result == False
+
+    @patch('app.services.protect_event_handler.SessionLocal', TestingSessionLocal)
+    @pytest.mark.asyncio
+    async def test_handle_event_disabled_camera_discarded(self):
+        """AC4: Event from disabled camera is discarded silently"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Create a disabled camera in database
+        db = TestingSessionLocal()
+        try:
+            camera = Camera(
+                name="Disabled Camera",
+                type="rtsp",
+                source_type="protect",
+                protect_camera_id="disabled-protect-cam",
+                is_enabled=False,
+                smart_detection_types='["person"]'
+            )
+            db.add(camera)
+            db.commit()
+
+            # Create mock message
+            mock_msg = MagicMock()
+            mock_msg.new_obj = MagicMock()
+            type(mock_msg.new_obj).__name__ = "Camera"
+            mock_msg.new_obj.id = "disabled-protect-cam"
+            mock_msg.new_obj.is_motion_detected = True
+            mock_msg.new_obj.smart_detect_types = None
+
+            result = await handler.handle_event("ctrl-1", mock_msg)
+            assert result == False
+        finally:
+            db.close()
+
+    @patch('app.services.protect_event_handler.SessionLocal', TestingSessionLocal)
+    @pytest.mark.asyncio
+    async def test_handle_event_non_protect_camera_discarded(self):
+        """AC4: Event from camera with wrong source_type is discarded"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Create an RTSP camera (not protect)
+        db = TestingSessionLocal()
+        try:
+            camera = Camera(
+                name="RTSP Camera",
+                type="rtsp",
+                source_type="rtsp",  # Not protect
+                protect_camera_id="rtsp-protect-cam",
+                is_enabled=True,
+                smart_detection_types='["person"]'
+            )
+            db.add(camera)
+            db.commit()
+
+            # Create mock message
+            mock_msg = MagicMock()
+            mock_msg.new_obj = MagicMock()
+            type(mock_msg.new_obj).__name__ = "Camera"
+            mock_msg.new_obj.id = "rtsp-protect-cam"
+            mock_msg.new_obj.is_motion_detected = True
+            mock_msg.new_obj.smart_detect_types = None
+
+            result = await handler.handle_event("ctrl-1", mock_msg)
+            assert result == False
+        finally:
+            db.close()
+
+
+class TestHandleEventFullFlow:
+    """Test suite for full event handling flow (Story P2-3.1, AC1, AC3, AC5, AC6)"""
+
+    @patch('app.services.protect_event_handler.SessionLocal', TestingSessionLocal)
+    @pytest.mark.asyncio
+    async def test_handle_event_passes_all_filters(self):
+        """AC1, AC3, AC5, AC6: Event that matches all criteria passes"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+        handler.clear_event_tracking()
+
+        # Create enabled protect camera in database
+        db = TestingSessionLocal()
+        try:
+            camera = Camera(
+                name="Enabled Camera",
+                type="rtsp",
+                source_type="protect",
+                protect_camera_id="enabled-protect-cam",
+                is_enabled=True,
+                smart_detection_types='["person"]'
+            )
+            db.add(camera)
+            db.commit()
+
+            # Create mock message with person detection
+            mock_msg = MagicMock()
+            mock_msg.new_obj = MagicMock()
+            type(mock_msg.new_obj).__name__ = "Camera"
+            mock_msg.new_obj.id = "enabled-protect-cam"
+            mock_msg.new_obj.is_motion_detected = False
+            mock_msg.new_obj.smart_detect_types = ["person"]
+
+            result = await handler.handle_event("ctrl-1", mock_msg)
+            assert result == True
+
+            # Verify tracking was updated
+            assert camera.id in handler._last_event_times
+        finally:
+            db.close()
+
+    @patch('app.services.protect_event_handler.SessionLocal', TestingSessionLocal)
+    @pytest.mark.asyncio
+    async def test_handle_event_filtered_by_type(self):
+        """AC7: Event filtered when type not in smart_detection_types"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+        handler.clear_event_tracking()
+
+        # Create camera configured for person only
+        db = TestingSessionLocal()
+        try:
+            camera = Camera(
+                name="Person Only Camera",
+                type="rtsp",
+                source_type="protect",
+                protect_camera_id="person-only-cam",
+                is_enabled=True,
+                smart_detection_types='["person"]'
+            )
+            db.add(camera)
+            db.commit()
+
+            # Create mock message with vehicle detection (not person)
+            mock_msg = MagicMock()
+            mock_msg.new_obj = MagicMock()
+            type(mock_msg.new_obj).__name__ = "Camera"
+            mock_msg.new_obj.id = "person-only-cam"
+            mock_msg.new_obj.is_motion_detected = False
+            mock_msg.new_obj.smart_detect_types = ["vehicle"]
+
+            result = await handler.handle_event("ctrl-1", mock_msg)
+            assert result == False
+        finally:
+            db.close()
+
+    @patch('app.services.protect_event_handler.SessionLocal', TestingSessionLocal)
+    @pytest.mark.asyncio
+    async def test_handle_event_all_motion_mode(self):
+        """AC8: All motion mode processes all event types"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+        handler.clear_event_tracking()
+
+        # Create camera with empty filter (all motion mode)
+        db = TestingSessionLocal()
+        try:
+            camera = Camera(
+                name="All Motion Camera",
+                type="rtsp",
+                source_type="protect",
+                protect_camera_id="all-motion-cam",
+                is_enabled=True,
+                smart_detection_types='[]'  # Empty = all motion mode
+            )
+            db.add(camera)
+            db.commit()
+
+            # Create mock message with vehicle detection
+            mock_msg = MagicMock()
+            mock_msg.new_obj = MagicMock()
+            type(mock_msg.new_obj).__name__ = "Camera"
+            mock_msg.new_obj.id = "all-motion-cam"
+            mock_msg.new_obj.is_motion_detected = False
+            mock_msg.new_obj.smart_detect_types = ["vehicle"]
+
+            result = await handler.handle_event("ctrl-1", mock_msg)
+            assert result == True
+        finally:
+            db.close()
+
+    @patch('app.services.protect_event_handler.SessionLocal', TestingSessionLocal)
+    @pytest.mark.asyncio
+    async def test_handle_event_deduplicated(self):
+        """AC10: Duplicate event within cooldown is skipped"""
+        from app.services.protect_event_handler import ProtectEventHandler, EVENT_COOLDOWN_SECONDS
+        from datetime import datetime, timezone, timedelta
+
+        handler = ProtectEventHandler()
+        handler.clear_event_tracking()
+
+        # Create enabled protect camera
+        db = TestingSessionLocal()
+        try:
+            camera = Camera(
+                name="Dedup Test Camera",
+                type="rtsp",
+                source_type="protect",
+                protect_camera_id="dedup-test-cam",
+                is_enabled=True,
+                smart_detection_types='["person"]'
+            )
+            db.add(camera)
+            db.commit()
+            db.refresh(camera)
+
+            # Simulate recent event (within cooldown)
+            handler._last_event_times[camera.id] = (
+                datetime.now(timezone.utc) - timedelta(seconds=30)
+            )
+
+            # Create mock message
+            mock_msg = MagicMock()
+            mock_msg.new_obj = MagicMock()
+            type(mock_msg.new_obj).__name__ = "Camera"
+            mock_msg.new_obj.id = "dedup-test-cam"
+            mock_msg.new_obj.is_motion_detected = False
+            mock_msg.new_obj.smart_detect_types = ["person"]
+
+            result = await handler.handle_event("ctrl-1", mock_msg)
+            assert result == False
+        finally:
+            db.close()
+
+    @pytest.mark.asyncio
+    async def test_handle_event_non_camera_object_ignored(self):
+        """Events from non-camera objects are ignored"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Create mock message for non-camera object
+        mock_msg = MagicMock()
+        mock_msg.new_obj = MagicMock()
+        type(mock_msg.new_obj).__name__ = "Light"  # Not Camera or Doorbell
+        mock_msg.new_obj.id = "light-123"
+
+        result = await handler.handle_event("ctrl-1", mock_msg)
+        assert result == False
+
+    @pytest.mark.asyncio
+    async def test_handle_event_no_new_obj_ignored(self):
+        """Events without new_obj are ignored"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Create mock message without new_obj
+        mock_msg = MagicMock()
+        mock_msg.new_obj = None
+
+        result = await handler.handle_event("ctrl-1", mock_msg)
+        assert result == False
+
+    @pytest.mark.asyncio
+    async def test_handle_event_exception_handled_gracefully(self):
+        """Exceptions in event handling don't propagate"""
+        from app.services.protect_event_handler import ProtectEventHandler
+
+        handler = ProtectEventHandler()
+
+        # Create mock that raises exception
+        mock_msg = MagicMock()
+        mock_msg.new_obj = MagicMock()
+        type(mock_msg.new_obj).__name__ = "Camera"
+        mock_msg.new_obj.id = "test-cam"
+        mock_msg.new_obj.is_motion_detected = True
+        mock_msg.new_obj.smart_detect_types = None
+
+        # Mock database to raise exception
+        with patch('app.services.protect_event_handler.SessionLocal') as mock_session:
+            mock_session.side_effect = Exception("Database error")
+
+            result = await handler.handle_event("ctrl-1", mock_msg)
+            assert result == False  # Should return False, not raise
+
+
+class TestWebSocketIntegration:
+    """Test suite for WebSocket listener integration (Story P2-3.1, AC1)"""
+
+    def test_event_handler_import_in_protect_service(self):
+        """AC1: ProtectEventHandler is imported in protect_service"""
+        from app.services.protect_service import get_protect_event_handler
+
+        handler = get_protect_event_handler()
+        assert handler is not None
+
+    def test_protect_service_uses_event_handler(self):
+        """AC1: Verify protect_service imports and uses event handler"""
+        import app.services.protect_service as protect_service
+
+        # Check that get_protect_event_handler is imported
+        assert hasattr(protect_service, 'get_protect_event_handler')
