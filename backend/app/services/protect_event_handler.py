@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.camera import Camera
+from app.services.snapshot_service import get_snapshot_service, SnapshotResult
 
 if TYPE_CHECKING:
     pass
@@ -198,10 +199,20 @@ class ProtectEventHandler:
                         }
                     )
 
-                    # TODO: Story P2-3.2 - Pass to snapshot retrieval
-                    # await self._trigger_snapshot_retrieval(controller_id, camera, event_type)
+                    # Story P2-3.2: Retrieve snapshot for AI processing
+                    snapshot_result = await self._retrieve_snapshot(
+                        controller_id,
+                        camera.protect_camera_id,
+                        camera.id,
+                        camera.name,
+                        event_type
+                    )
 
-                    return True
+                    # TODO: Story P2-3.3 - Pass snapshot to AI pipeline
+                    # if snapshot_result:
+                    #     await self._submit_to_ai_pipeline(snapshot_result, camera, event_type)
+
+                    return snapshot_result is not None
 
                 return False
 
@@ -416,6 +427,78 @@ class ProtectEventHandler:
             return True
 
         return False
+
+    async def _retrieve_snapshot(
+        self,
+        controller_id: str,
+        protect_camera_id: str,
+        camera_id: str,
+        camera_name: str,
+        event_type: str
+    ) -> Optional[SnapshotResult]:
+        """
+        Retrieve snapshot from Protect camera (Story P2-3.2).
+
+        Args:
+            controller_id: Controller UUID
+            protect_camera_id: Native Protect camera ID
+            camera_id: Internal camera UUID
+            camera_name: Camera name for logging
+            event_type: Type of event that triggered snapshot
+
+        Returns:
+            SnapshotResult if successful, None otherwise
+        """
+        try:
+            snapshot_service = get_snapshot_service()
+            result = await snapshot_service.get_snapshot(
+                controller_id=controller_id,
+                protect_camera_id=protect_camera_id,
+                camera_id=camera_id,
+                camera_name=camera_name,
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            if result:
+                logger.info(
+                    f"Snapshot retrieved for camera '{camera_name}' ({event_type})",
+                    extra={
+                        "event_type": "protect_snapshot_retrieved",
+                        "controller_id": controller_id,
+                        "camera_id": camera_id,
+                        "camera_name": camera_name,
+                        "detected_type": event_type,
+                        "thumbnail_path": result.thumbnail_path,
+                        "image_dimensions": f"{result.width}x{result.height}"
+                    }
+                )
+            else:
+                logger.warning(
+                    f"Snapshot retrieval failed for camera '{camera_name}' ({event_type})",
+                    extra={
+                        "event_type": "protect_snapshot_failed",
+                        "controller_id": controller_id,
+                        "camera_id": camera_id,
+                        "camera_name": camera_name,
+                        "detected_type": event_type
+                    }
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(
+                f"Snapshot retrieval error for camera '{camera_name}': {e}",
+                extra={
+                    "event_type": "protect_snapshot_error",
+                    "controller_id": controller_id,
+                    "camera_id": camera_id,
+                    "camera_name": camera_name,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return None
 
     def clear_event_tracking(self, camera_id: Optional[str] = None) -> None:
         """
