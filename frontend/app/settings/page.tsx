@@ -23,6 +23,7 @@ import {
   RotateCcw,
   Download,
   Trash2,
+  Shield,
 } from 'lucide-react';
 
 import { apiClient } from '@/lib/api-client';
@@ -41,6 +42,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConfirmDialog } from '@/components/settings/ConfirmDialog';
 import { BackupRestore } from '@/components/settings/BackupRestore';
+import { ControllerForm, type ControllerData, DeleteControllerDialog, DiscoveredCameraList } from '@/components/protect';
+import { useQuery } from '@tanstack/react-query';
 
 const DEFAULT_PROMPT = 'Describe what you see in this image in one concise sentence. Focus on objects, people, and actions.';
 
@@ -64,6 +67,20 @@ export default function SettingsPage() {
     description: '',
     onConfirm: () => {},
   });
+
+  // UniFi Protect controller state
+  const [showControllerForm, setShowControllerForm] = useState(false);
+  const [editingController, setEditingController] = useState<ControllerData | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  // Query for existing Protect controllers
+  const controllersQuery = useQuery({
+    queryKey: ['protect-controllers'],
+    queryFn: () => apiClient.protect.listControllers(),
+  });
+
+  const hasController = (controllersQuery.data?.data?.length ?? 0) > 0;
+  const controller = controllersQuery.data?.data?.[0];
 
   const form = useForm<SystemSettings>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -285,7 +302,7 @@ export default function SettingsPage() {
         <form onSubmit={form.handleSubmit(handleSave)}>
           <Tabs defaultValue="general" className="space-y-6">
             {/* Tab Navigation */}
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="general" className="flex items-center gap-2">
                 <Globe className="h-4 w-4" />
                 <span className="hidden sm:inline">General</span>
@@ -301,6 +318,10 @@ export default function SettingsPage() {
               <TabsTrigger value="data" className="flex items-center gap-2">
                 <Database className="h-4 w-4" />
                 <span className="hidden sm:inline">Data</span>
+              </TabsTrigger>
+              <TabsTrigger value="protect" className="flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                <span className="hidden sm:inline">Protect</span>
               </TabsTrigger>
             </TabsList>
 
@@ -836,6 +857,140 @@ export default function SettingsPage() {
               {/* Backup & Restore Section (Story 6.4) */}
               <BackupRestore />
             </TabsContent>
+
+            {/* UniFi Protect Tab (Story P2-1.3) */}
+            <TabsContent value="protect" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-cyan-500" />
+                    <CardTitle>UniFi Protect Integration</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Connect your UniFi Protect controller to auto-discover cameras and receive motion events
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {controllersQuery.isLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : hasController && !showControllerForm ? (
+                    /* Controller Configured View */
+                    <div className="space-y-4">
+                      <div className="p-4 rounded-lg border bg-muted/50">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-medium">{controller?.name}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              {controller?.host}:{controller?.port}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`h-3 w-3 rounded-full ${
+                                controller?.is_connected ? 'bg-green-500' : 'bg-gray-400'
+                              }`}
+                            />
+                            <span className="text-sm text-muted-foreground">
+                              {controller?.is_connected ? 'Connected' : 'Not connected'}
+                            </span>
+                          </div>
+                        </div>
+                        {controller?.last_error && (
+                          <p className="mt-2 text-sm text-red-500">
+                            Last error: {controller.last_error}
+                          </p>
+                        )}
+                      </div>
+                      {/* Edit and Remove buttons (Story P2-1.5) */}
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setEditingController(controller as ControllerData);
+                            setShowControllerForm(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => setDeleteDialogOpen(true)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Remove
+                        </Button>
+                      </div>
+
+                      {/* Discovered Cameras List (Story P2-2.2) */}
+                      {controller && (
+                        <DiscoveredCameraList
+                          controllerId={controller.id}
+                          isControllerConnected={controller.is_connected}
+                        />
+                      )}
+                    </div>
+                  ) : showControllerForm ? (
+                    /* Controller Form */
+                    <div className="sm:grid sm:grid-cols-2 sm:gap-6">
+                      <div className="col-span-1">
+                        <ControllerForm
+                          controller={editingController ?? undefined}
+                          onSaveSuccess={() => {
+                            setShowControllerForm(false);
+                            setEditingController(null);
+                            controllersQuery.refetch();
+                          }}
+                          onCancel={() => {
+                            setShowControllerForm(false);
+                            setEditingController(null);
+                          }}
+                        />
+                      </div>
+                      <div className="hidden sm:block col-span-1">
+                        <Card className="h-full">
+                          <CardHeader>
+                            <CardTitle className="text-lg">About UniFi Protect</CardTitle>
+                          </CardHeader>
+                          <CardContent className="text-sm text-muted-foreground space-y-3">
+                            <p>
+                              UniFi Protect is Ubiquiti&apos;s video surveillance platform that manages
+                              cameras, doorbells, and sensors.
+                            </p>
+                            <p>
+                              Connecting your Protect controller allows this system to:
+                            </p>
+                            <ul className="list-disc list-inside space-y-1">
+                              <li>Auto-discover all connected cameras</li>
+                              <li>Receive real-time motion events</li>
+                              <li>Process doorbell ring notifications</li>
+                              <li>Generate AI descriptions for events</li>
+                            </ul>
+                            <p className="text-xs">
+                              Your credentials are encrypted and stored securely.
+                            </p>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Empty State */
+                    <div className="text-center py-8">
+                      <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-medium mb-2">No Controller Configured</h3>
+                      <p className="text-muted-foreground mb-4">
+                        Connect your UniFi Protect controller to auto-discover cameras and receive events
+                      </p>
+                      <Button onClick={() => setShowControllerForm(true)}>
+                        <Shield className="h-4 w-4 mr-2" />
+                        Add Controller
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
 
           {/* Footer Actions */}
@@ -852,6 +1007,19 @@ export default function SettingsPage() {
 
         {/* Confirmation Dialog */}
         <ConfirmDialog {...confirmDialog} onOpenChange={(open) => setConfirmDialog({ ...confirmDialog, open })} />
+
+        {/* Delete Controller Dialog (Story P2-1.5) */}
+        {controller && (
+          <DeleteControllerDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            controllerId={controller.id}
+            controllerName={controller.name}
+            onDeleteSuccess={() => {
+              controllersQuery.refetch();
+            }}
+          />
+        )}
       </div>
     </TooltipProvider>
   );

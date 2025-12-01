@@ -42,15 +42,7 @@ export function DashboardStats() {
   // Fetch alert rules
   const { data: rulesData } = useQuery({
     queryKey: ['alertRules'],
-    queryFn: async () => {
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/alert-rules`);
-        if (!response.ok) return { items: [] };
-        return response.json();
-      } catch {
-        return { items: [] };
-      }
-    },
+    queryFn: () => apiClient.alertRules.list(),
     staleTime: 60 * 1000,
   });
 
@@ -95,7 +87,7 @@ export function DashboardStats() {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
-            {rulesData?.items?.length ?? 0}
+            {rulesData?.data?.length ?? 0}
           </div>
           <p className="text-xs text-muted-foreground">
             Active notification rules

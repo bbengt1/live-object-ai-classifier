@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<story-context version="1.0" generated="2025-11-30">
+  <story>
+    <id>P2-2.1</id>
+    <key>p2-2-1-implement-camera-auto-discovery-from-protect-controller</key>
+    <title>Implement Camera Auto-Discovery from Protect Controller</title>
+    <epic>P2-2: Camera Discovery &amp; Configuration</epic>
+    <status>ready-for-dev</status>
+    <asA>system</asA>
+    <iWant>to automatically discover all cameras from a connected Protect controller</iWant>
+    <soThat>users don't need to manually configure RTSP URLs for each camera</soThat>
+  </story>
+
+  <acceptance-criteria>
+    <criterion id="AC1">When controller connects, system fetches all cameras within 10 seconds (NFR1)</criterion>
+    <criterion id="AC2">Discovery extracts: protect_camera_id, name, type/model, is_doorbell, is_online, smart_detection_capabilities</criterion>
+    <criterion id="AC3">Discovery results are returned immediately via API (not auto-saved to cameras table)</criterion>
+    <criterion id="AC4">Discovery results are cached for 60 seconds to avoid repeated API calls</criterion>
+    <criterion id="AC5">GET /protect/controllers/{id}/cameras returns array of discovered cameras with proper schema</criterion>
+    <criterion id="AC6">Response includes meta.count and meta.controller_id</criterion>
+    <criterion id="AC7">Each camera includes is_enabled_for_ai field (default: false for undiscovered)</criterion>
+    <criterion id="AC8">If discovery fails, return cached results (if available) with warning</criterion>
+    <criterion id="AC9">Discovery failures are logged for debugging</criterion>
+    <criterion id="AC10">Doorbell cameras are correctly identified via camera type/feature flags</criterion>
+  </acceptance-criteria>
+
+  <tasks>
+    <task id="1" ac="1,2,10">Add discover_cameras method to ProtectService</task>
+    <task id="2" ac="4,8">Implement caching for discovery results</task>
+    <task id="3" ac="3,5,6,7,9">Create API endpoint for camera discovery</task>
+    <task id="4" ac="7">Cross-reference discovered cameras with enabled cameras</task>
+    <task id="5" ac="5">Add frontend API client method</task>
+    <task id="6" ac="all">Testing</task>
+  </tasks>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics-phase2.md" title="Phase 2 Epics" section="Story 2.1">
+        Full acceptance criteria for camera auto-discovery. Specifies: extract protect_camera_id, name, type, model, is_doorbell, is_online, smart_detection_capabilities. Discovery results NOT auto-saved. Cache for 60 seconds. Use uiprotect library client.get_cameras().
+      </doc>
+      <doc path="docs/PRD-phase2.md" title="Phase 2 PRD" section="FR8-FR9">
+        Camera discovery requirements: Auto-discover cameras when controller connects. Extract camera metadata including smart detection capabilities. Support doorbell identification.
+      </doc>
+      <doc path="docs/ux-design-specification.md" title="UX Design" section="Section 10.3">
+        Camera list wireframes for Settings page. Shows discovered cameras with enable/disable toggle, status indicator, and camera type icons.
+      </doc>
+    </docs>
+
+    <code>
+      <file path="backend/app/services/protect_service.py" kind="service" symbol="ProtectService" lines="50-898">
+        Existing ProtectService class with connection management. Has _connections dict storing ProtectApiClient instances per controller_id. Provides connect(), disconnect(), test_connection() methods. Uses singleton pattern via get_protect_service(). Need to add discover_cameras() method with caching.
+      </file>
+      <file path="backend/app/schemas/protect.py" kind="schema" symbol="ProtectControllerResponse" lines="1-196">
+        Existing Pydantic schemas for Protect API. Has MetaResponse helper. Need to add ProtectDiscoveredCamera and ProtectCamerasResponse schemas.
+      </file>
+      <file path="backend/app/api/v1/protect.py" kind="router" symbol="router" lines="all">
+        Protect API endpoints. Has controller CRUD, test connection. Need to add GET /protect/controllers/{id}/cameras endpoint for discovery.
+      </file>
+      <file path="backend/app/models/camera.py" kind="model" symbol="Camera" lines="13-136">
+        Camera model with Phase 2 columns: source_type, protect_controller_id, protect_camera_id, protect_camera_type, smart_detection_types, is_doorbell. Use to cross-reference enabled cameras.
+      </file>
+      <file path="frontend/lib/api-client.ts" kind="client" symbol="apiClient.protect" lines="973-1157">
+        API client protect section. Has testConnection, createController, listControllers, updateController, deleteController. Need to add discoverCameras(controllerId) method.
+      </file>
+    </code>
+  </artifacts>
+
+  <interfaces>
+    <interface name="ProtectApiClient.get_cameras()" kind="uiprotect method" path="external">
+      Returns list of camera objects from uiprotect library. Each camera has: id, name, type, model, is_connected, feature_flags, smart_detect_types. Doorbell types include "UVC G4 Doorbell", "UVC G4 Doorbell Pro".
+    </interface>
+    <interface name="GET /protect/controllers/{id}/cameras" kind="REST endpoint" path="backend/app/api/v1/protect.py">
+      New endpoint to implement. Returns: { data: ProtectDiscoveredCamera[], meta: { count, controller_id, cached, last_discovery_at } }
+    </interface>
+    <interface name="apiClient.protect.discoverCameras" kind="frontend method" path="frontend/lib/api-client.ts">
+      New method to implement: discoverCameras(controllerId: string): Promise&lt;{ data: ProtectDiscoveredCamera[], meta: {...} }&gt;
+    </interface>
+  </interfaces>
+
+  <constraints>
+    <constraint source="docs/epics-phase2.md">Discovery must complete within 10 seconds (NFR1)</constraint>
+    <constraint source="docs/epics-phase2.md">Cache TTL is 60 seconds</constraint>
+    <constraint source="docs/epics-phase2.md">Results NOT auto-saved to cameras table - user must explicitly enable</constraint>
+    <constraint source="architecture">Use async/await pattern for all WebSocket-related operations</constraint>
+    <constraint source="architecture">Use get_protect_service() singleton pattern</constraint>
+    <constraint source="architecture">Response format: { data, meta } with create_meta() helper</constraint>
+    <constraint source="p2-1-5 review">Async endpoints required for WebSocket service calls</constraint>
+  </constraints>
+
+  <dependencies>
+    <ecosystem name="python">
+      <package name="uiprotect" version="latest">UniFi Protect API client - provides ProtectApiClient with get_cameras() method</package>
+      <package name="pydantic" version="2.x">Schema validation - use BaseModel for ProtectDiscoveredCamera</package>
+      <package name="fastapi" version="0.115">API framework - use APIRouter, Depends</package>
+    </ecosystem>
+    <ecosystem name="node">
+      <package name="@tanstack/react-query" version="5.x">Server state management - use for caching discovery results</package>
+    </ecosystem>
+  </dependencies>
+
+  <tests>
+    <standards>
+      Backend: pytest with TestClient, mock external APIs. Tests in backend/tests/test_api/ and backend/tests/test_services/. Use fixtures from conftest.py.
+      Frontend: TypeScript types, no component tests for this story.
+    </standards>
+    <locations>
+      <location>backend/tests/test_api/test_protect.py</location>
+      <location>backend/tests/test_services/test_protect_service.py</location>
+    </locations>
+    <ideas>
+      <idea ac="1,2">Test discover_cameras returns correct camera properties (id, name, type, model, is_online, is_doorbell, smart_detection_capabilities)</idea>
+      <idea ac="4">Test cache hit returns cached data within 60 seconds</idea>
+      <idea ac="4">Test cache miss fetches fresh data after 60 seconds</idea>
+      <idea ac="5,6">Test GET endpoint returns proper schema with meta.count and meta.controller_id</idea>
+      <idea ac="7">Test is_enabled_for_ai is true for cameras in cameras table, false otherwise</idea>
+      <idea ac="8">Test discovery failure returns cached results with warning when cache available</idea>
+      <idea ac="9">Test discovery failures are logged</idea>
+      <idea ac="10">Test doorbell detection for various camera types (G4 Doorbell, G4 Doorbell Pro)</idea>
+    </ideas>
+  </tests>
+
+  <previous-story-learnings>
+    <source>docs/sprint-artifacts/p2-1-5-add-controller-edit-and-delete-functionality.md</source>
+    <learning type="pattern">Async endpoints required for WebSocket service calls - same pattern needed for discovery</learning>
+    <learning type="pattern">Use get_protect_service() singleton pattern</learning>
+    <learning type="pattern">Add methods to apiClient.protect section in frontend/lib/api-client.ts</learning>
+    <learning type="pattern">Response format: { data, meta } with create_meta() helper from protect.py</learning>
+    <learning type="advisory">Consider automated tests for complex async scenarios</learning>
+  </previous-story-learnings>
+</story-context>

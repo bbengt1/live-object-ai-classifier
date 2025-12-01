@@ -966,4 +966,320 @@ export const apiClient = {
       }
     },
   },
+
+  // ============================================================================
+  // UniFi Protect Controllers (Story P2-1.3)
+  // ============================================================================
+  protect: {
+    /**
+     * Test connection to a UniFi Protect controller
+     * Does NOT save credentials - test only
+     * @param data Connection parameters
+     */
+    testConnection: async (data: {
+      host: string;
+      port?: number;
+      username: string;
+      password: string;
+      verify_ssl?: boolean;
+    }): Promise<{
+      data: {
+        success: boolean;
+        message: string;
+        firmware_version?: string;
+        camera_count?: number;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/test`, {
+        method: 'POST',
+        body: JSON.stringify({
+          host: data.host,
+          port: data.port ?? 443,
+          username: data.username,
+          password: data.password,
+          verify_ssl: data.verify_ssl ?? false,
+        }),
+      });
+    },
+
+    /**
+     * Create a new UniFi Protect controller
+     * @param data Controller configuration
+     */
+    createController: async (data: {
+      name: string;
+      host: string;
+      port?: number;
+      username: string;
+      password: string;
+      verify_ssl?: boolean;
+    }): Promise<{
+      data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        username: string;
+        verify_ssl: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        created_at: string;
+        updated_at: string;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: data.name,
+          host: data.host,
+          port: data.port ?? 443,
+          username: data.username,
+          password: data.password,
+          verify_ssl: data.verify_ssl ?? false,
+        }),
+      });
+    },
+
+    /**
+     * List all UniFi Protect controllers
+     */
+    listControllers: async (): Promise<{
+      data: Array<{
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        username: string;
+        verify_ssl: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        created_at: string;
+        updated_at: string;
+      }>;
+      meta: { request_id: string; timestamp: string; count?: number };
+    }> => {
+      return apiFetch(`/protect/controllers`);
+    },
+
+    /**
+     * Get a single UniFi Protect controller by ID
+     * @param id Controller UUID
+     */
+    getController: async (id: string): Promise<{
+      data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        username: string;
+        verify_ssl: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        created_at: string;
+        updated_at: string;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}`);
+    },
+
+    /**
+     * Test connection to an existing controller using stored credentials
+     * @param id Controller UUID
+     */
+    testExistingController: async (id: string): Promise<{
+      data: {
+        success: boolean;
+        message: string;
+        firmware_version?: string;
+        camera_count?: number;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}/test`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Update a UniFi Protect controller (Story P2-1.5)
+     * Supports partial updates - only provided fields are modified
+     * @param id Controller UUID
+     * @param data Partial controller data to update
+     */
+    updateController: async (id: string, data: {
+      name?: string;
+      host?: string;
+      port?: number;
+      username?: string;
+      password?: string;
+      verify_ssl?: boolean;
+    }): Promise<{
+      data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        username: string;
+        verify_ssl: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        created_at: string;
+        updated_at: string;
+      };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    },
+
+    /**
+     * Delete a UniFi Protect controller (Story P2-1.5)
+     * Disconnects WebSocket, disassociates cameras, preserves events
+     * @param id Controller UUID
+     */
+    deleteController: async (id: string): Promise<{
+      data: { deleted: boolean };
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    /**
+     * Discover cameras from a connected Protect controller (Story P2-2.1)
+     * Results are cached for 60 seconds
+     * @param controllerId Controller UUID
+     * @param forceRefresh If true, bypass cache and fetch fresh data
+     */
+    discoverCameras: async (controllerId: string, forceRefresh: boolean = false): Promise<{
+      data: ProtectDiscoveredCamera[];
+      meta: {
+        request_id: string;
+        timestamp: string;
+        count: number;
+        controller_id: string;
+        cached: boolean;
+        cached_at: string | null;
+        warning: string | null;
+      };
+    }> => {
+      const params = forceRefresh ? '?force_refresh=true' : '';
+      return apiFetch(`/protect/controllers/${controllerId}/cameras${params}`);
+    },
+
+    /**
+     * Enable a discovered camera for AI analysis (Story P2-2.2)
+     * Creates or updates camera record in database with source_type='protect'
+     * @param controllerId Controller UUID
+     * @param cameraId Protect camera ID
+     * @param options Optional name override and smart detection types
+     */
+    enableCamera: async (
+      controllerId: string,
+      cameraId: string,
+      options?: { name?: string; smart_detection_types?: string[] }
+    ): Promise<{
+      data: ProtectCameraEnableData;
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${controllerId}/cameras/${cameraId}/enable`, {
+        method: 'POST',
+        body: options ? JSON.stringify(options) : undefined,
+      });
+    },
+
+    /**
+     * Disable a camera from AI analysis (Story P2-2.2)
+     * Keeps camera record but marks as disabled for settings persistence
+     * @param controllerId Controller UUID
+     * @param cameraId Protect camera ID
+     */
+    disableCamera: async (
+      controllerId: string,
+      cameraId: string
+    ): Promise<{
+      data: ProtectCameraDisableData;
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${controllerId}/cameras/${cameraId}/disable`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Update camera event type filters (Story P2-2.3)
+     * Updates smart_detection_types for an enabled camera
+     * @param controllerId Controller UUID
+     * @param cameraId Protect camera ID
+     * @param filters The filter configuration
+     */
+    updateCameraFilters: async (
+      controllerId: string,
+      cameraId: string,
+      filters: { smart_detection_types: string[] }
+    ): Promise<{
+      data: ProtectCameraFiltersData;
+      meta: { request_id: string; timestamp: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${controllerId}/cameras/${cameraId}/filters`, {
+        method: 'PUT',
+        body: JSON.stringify(filters),
+      });
+    },
+  },
 };
+
+// Story P2-2.1: Camera Discovery Types
+
+/** Discovered camera from Protect controller */
+export interface ProtectDiscoveredCamera {
+  protect_camera_id: string;
+  name: string;
+  type: 'camera' | 'doorbell';
+  model: string;
+  is_online: boolean;
+  is_doorbell: boolean;
+  is_enabled_for_ai: boolean;
+  smart_detection_capabilities: string[];
+  /** Configured filter types for enabled cameras (Story P2-2.3) */
+  smart_detection_types?: string[] | null;
+  /** Whether this camera was newly discovered (not in database) (Story P2-2.4 AC11) */
+  is_new?: boolean;
+}
+
+// Story P2-2.2: Camera Enable/Disable Types
+
+/** Response data when camera is enabled for AI */
+export interface ProtectCameraEnableData {
+  camera_id: string;
+  protect_camera_id: string;
+  name: string;
+  is_enabled_for_ai: boolean;
+  smart_detection_types: string[];
+}
+
+/** Response data when camera is disabled */
+export interface ProtectCameraDisableData {
+  protect_camera_id: string;
+  is_enabled_for_ai: boolean;
+}
+
+// Story P2-2.3: Camera Filters Types
+
+/** Response data when camera filters are updated */
+export interface ProtectCameraFiltersData {
+  protect_camera_id: string;
+  name: string;
+  smart_detection_types: string[];
+  is_enabled_for_ai: boolean;
+}

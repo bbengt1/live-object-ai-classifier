@@ -116,7 +116,8 @@ export function RuleFormDialog({ open, onOpenChange, rule, onClose }: RuleFormDi
   };
 
   const form = useForm<RuleFormValues>({
-    resolver: zodResolver(ruleFormSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(ruleFormSchema) as any,
     defaultValues,
   });
 
