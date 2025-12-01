@@ -1436,8 +1436,10 @@ async def analyze_camera(
             "message": "Analysis triggered successfully"
         }
     """
+    logger.info(f"=== ANALYZE ENDPOINT CALLED for camera {camera_id} ===")
     try:
         camera = db.query(Camera).filter(Camera.id == camera_id).first()
+        logger.info(f"Camera found: {camera is not None}, source_type: {camera.source_type if camera else 'N/A'}")
 
         if not camera:
             raise HTTPException(
