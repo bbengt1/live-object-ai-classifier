@@ -8,6 +8,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -54,6 +55,9 @@ import type { AIProvider } from '@/types/settings';
 const DEFAULT_PROMPT = 'Describe what you see in this image in one concise sentence. Focus on objects, people, and actions.';
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'general';
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTestingKey, setIsTestingKey] = useState(false);
@@ -331,7 +335,7 @@ export default function SettingsPage() {
         </div>
 
         <form onSubmit={form.handleSubmit(handleSave)}>
-          <Tabs defaultValue="general" className="space-y-6">
+          <Tabs defaultValue={initialTab} className="space-y-6">
             {/* Tab Navigation */}
             <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="general" className="flex items-center gap-2">
