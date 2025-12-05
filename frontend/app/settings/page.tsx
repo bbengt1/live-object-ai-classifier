@@ -97,6 +97,7 @@ export default function SettingsPage() {
       language: 'English',
       date_format: 'MM/DD/YYYY',
       time_format: '12h',
+      description_prompt: 'Describe what you see in this image in one concise sentence. Focus on objects, people, and actions.',
       motion_sensitivity: 50,
       detection_method: 'background_subtraction',
       cooldown_period: 60,
@@ -424,6 +425,41 @@ export default function SettingsPage() {
                   }}
                 />
               </ErrorBoundary>
+
+              {/* Description Prompt Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>AI Description Prompt</CardTitle>
+                  <CardDescription>Customize how the AI describes detected events</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="description-prompt">Prompt Template</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          form.setValue('description_prompt', 'Describe what you see in this image in one concise sentence. Focus on objects, people, and actions.', { shouldDirty: true });
+                          toast.success('Prompt reset to default');
+                        }}
+                      >
+                        Reset to Default
+                      </Button>
+                    </div>
+                    <Textarea
+                      id="description-prompt"
+                      {...form.register('description_prompt')}
+                      rows={4}
+                      placeholder="Enter custom AI description prompt"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      This prompt guides the AI in generating event descriptions. A good prompt should ask for concise, relevant details about what&apos;s happening in the image.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
             </TabsContent>
 
             {/* Motion Detection Tab */}
