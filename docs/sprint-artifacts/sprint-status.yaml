@@ -169,7 +169,7 @@ development_status:
   p3-2-3-extend-aiservice-for-multi-image-analysis: done
   p3-2-4-create-multi-frame-prompts-optimized-for-sequences: done
   p3-2-5-track-token-usage-for-multi-image-requests: done
-  p3-2-6-integrate-multi-frame-analysis-into-event-pipeline: backlog
+  p3-2-6-integrate-multi-frame-analysis-into-event-pipeline: done
   epic-p3-2-retrospective: optional
 
   # Epic P3-3: Analysis Mode Configuration (MVP)
