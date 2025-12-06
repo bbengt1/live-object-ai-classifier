@@ -61,6 +61,25 @@ IMPORTANT - Use dynamic descriptions, NOT static ones:
 Be specific about the narrative - this is video showing motion over time, not a static photograph. Describe the complete sequence of what happened."""
 
 
+# Token estimation constants per provider (Story P3-2.5)
+# Approximate tokens per image for vision API calls
+TOKENS_PER_IMAGE = {
+    "openai": {"low_res": 85, "high_res": 765, "default": 85},
+    "grok": {"low_res": 85, "high_res": 765, "default": 85},  # OpenAI-compatible
+    "claude": {"default": 1334},  # Anthropic Claude
+    "gemini": {"default": 258},  # Google Gemini estimate
+}
+
+# Cost rates per 1K tokens by provider (Story P3-2.5)
+# Values from architecture.md CostTracker section (USD per 1K tokens)
+COST_RATES = {
+    "openai": {"input": 0.00015, "output": 0.00060},  # GPT-4o-mini
+    "grok": {"input": 0.00005, "output": 0.00010},  # xAI Grok estimate
+    "claude": {"input": 0.00025, "output": 0.00125},  # Claude 3 Haiku
+    "gemini": {"input": 0.000075, "output": 0.0003},  # Gemini Flash
+}
+
+
 class AIProvider(Enum):
     """Supported AI vision providers"""
     OPENAI = "openai"
@@ -1166,6 +1185,90 @@ class AIService:
         self.db: Optional[Session] = None  # Database session for usage tracking
         self.description_prompt: Optional[str] = None  # Custom description prompt from settings
 
+    def _estimate_image_tokens(self, provider: str, num_images: int, resolution: str = "default") -> int:
+        """
+        Estimate token usage for multi-image requests when provider doesn't return counts.
+
+        Uses provider-specific token estimates from TOKENS_PER_IMAGE constants.
+        This is used when providers like Gemini don't return token usage in responses.
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+            num_images: Number of images in the request
+            resolution: Image resolution hint ("low_res", "high_res", "default")
+
+        Returns:
+            Estimated token count for the images
+
+        Story: P3-2.5
+        """
+        provider_tokens = TOKENS_PER_IMAGE.get(provider, {"default": 100})
+
+        # Get tokens per image for the resolution
+        if resolution in provider_tokens:
+            tokens_per_image = provider_tokens[resolution]
+        else:
+            tokens_per_image = provider_tokens.get("default", 100)
+
+        # Base prompt tokens (approximate)
+        base_prompt_tokens = 200
+
+        # Estimate: base prompt + (tokens per image * num images) + expected response (~100 tokens)
+        estimated_tokens = base_prompt_tokens + (tokens_per_image * num_images) + 100
+
+        logger.debug(
+            f"Estimated {estimated_tokens} tokens for {num_images} images with {provider}",
+            extra={
+                "provider": provider,
+                "num_images": num_images,
+                "tokens_per_image": tokens_per_image,
+                "estimated_total": estimated_tokens,
+            }
+        )
+
+        return estimated_tokens
+
+    def _calculate_cost(self, provider: str, tokens: int, input_ratio: float = 0.9) -> float:
+        """
+        Calculate estimated cost for token usage using provider-specific rates.
+
+        Uses COST_RATES constants with provider-specific input/output pricing.
+        Default assumes 90% input tokens, 10% output tokens (typical for vision analysis).
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+            tokens: Total token count
+            input_ratio: Ratio of tokens that are input vs output (default 0.9)
+
+        Returns:
+            Estimated cost in USD
+
+        Story: P3-2.5
+        """
+        rates = COST_RATES.get(provider, {"input": 0.0001, "output": 0.0003})
+
+        input_tokens = int(tokens * input_ratio)
+        output_tokens = tokens - input_tokens
+
+        # Cost = (input_tokens / 1000 * input_rate) + (output_tokens / 1000 * output_rate)
+        input_cost = (input_tokens / 1000) * rates["input"]
+        output_cost = (output_tokens / 1000) * rates["output"]
+
+        total_cost = input_cost + output_cost
+
+        logger.debug(
+            f"Calculated cost ${total_cost:.6f} for {tokens} tokens with {provider}",
+            extra={
+                "provider": provider,
+                "total_tokens": tokens,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": total_cost,
+            }
+        )
+
+        return total_cost
+
     async def load_api_keys_from_db(self, db: Session):
         """
         Load and decrypt API keys from system_settings table.
@@ -1428,8 +1531,8 @@ class AIService:
                 provider_type=provider_enum
             )
 
-            # Track usage
-            self._track_usage(result)
+            # Track usage with analysis mode (Story P3-2.5)
+            self._track_usage(result, analysis_mode="single_image")
 
             if result.success:
                 total_elapsed_ms = int((time.time() - start_time) * 1000)
@@ -1649,8 +1752,27 @@ class AIService:
                 provider_type=provider_enum
             )
 
-            # Track usage
-            self._track_usage(result)
+            # Track usage with multi_frame analysis mode (Story P3-2.5)
+            # Check if tokens need estimation (e.g., Gemini may not return counts)
+            is_estimated = result.tokens_used == 0 and result.success
+            if is_estimated:
+                # Estimate tokens if provider didn't return counts
+                estimated_tokens = self._estimate_image_tokens(
+                    result.provider, len(images_base64)
+                )
+                # Create new result with estimated tokens
+                result = AIResult(
+                    description=result.description,
+                    confidence=result.confidence,
+                    objects_detected=result.objects_detected,
+                    provider=result.provider,
+                    tokens_used=estimated_tokens,
+                    response_time_ms=result.response_time_ms,
+                    cost_estimate=self._calculate_cost(result.provider, estimated_tokens),
+                    success=result.success,
+                    error=result.error
+                )
+            self._track_usage(result, analysis_mode="multi_frame", is_estimated=is_estimated)
 
             if result.success:
                 total_elapsed_ms = int((time.time() - start_time) * 1000)
@@ -1664,6 +1786,7 @@ class AIService:
                         "tokens_used": result.tokens_used,
                         "cost_usd": result.cost_estimate,
                         "description_preview": result.description[:50],
+                        "is_estimated": is_estimated,
                     }
                 )
 
@@ -1951,7 +2074,12 @@ class AIService:
         # Max retries exhausted
         return result
 
-    def _track_usage(self, result: AIResult):
+    def _track_usage(
+        self,
+        result: AIResult,
+        analysis_mode: Optional[str] = None,
+        is_estimated: bool = False
+    ):
         """
         Track API usage by persisting to database.
 
@@ -1960,6 +2088,8 @@ class AIService:
 
         Args:
             result: AIResult from provider with usage metadata
+            analysis_mode: Type of analysis - "single_image" or "multi_frame" (Story P3-2.5)
+            is_estimated: True if token count is estimated rather than from provider (Story P3-2.5)
         """
         if self.db is None:
             logger.warning("Database not configured, usage tracking disabled")
@@ -1973,7 +2103,9 @@ class AIService:
                 tokens_used=result.tokens_used,
                 response_time_ms=result.response_time_ms,
                 cost_estimate=result.cost_estimate,
-                error=result.error
+                error=result.error,
+                analysis_mode=analysis_mode,
+                is_estimated=is_estimated
             )
 
             self.db.add(usage_record)
@@ -1983,7 +2115,15 @@ class AIService:
                 f"Tracked usage: {result.provider} - "
                 f"{'success' if result.success else 'failed'} - "
                 f"{result.tokens_used} tokens - "
-                f"${result.cost_estimate:.6f}"
+                f"${result.cost_estimate:.6f} - "
+                f"mode={analysis_mode or 'unknown'} - "
+                f"estimated={is_estimated}",
+                extra={
+                    "provider": result.provider,
+                    "tokens": result.tokens_used,
+                    "analysis_mode": analysis_mode,
+                    "is_estimated": is_estimated
+                }
             )
 
         except Exception as e:

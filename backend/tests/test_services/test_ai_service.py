@@ -1886,3 +1886,169 @@ class TestMultiImageUsageTracking:
         # Verify database was called to track usage
         assert mock_db.add.called
         assert mock_db.commit.called
+
+
+class TestTokenEstimation:
+    """Test token estimation for multi-image requests (Story P3-2.5)"""
+
+    def test_estimate_image_tokens_openai_default(self, ai_service_instance):
+        """Test OpenAI token estimation uses correct default (AC3)"""
+        tokens = ai_service_instance._estimate_image_tokens("openai", 5)
+        # Base prompt (200) + 5 images * 85 tokens + response (100) = 725
+        assert tokens == 725
+
+    def test_estimate_image_tokens_openai_high_res(self, ai_service_instance):
+        """Test OpenAI token estimation with high resolution (AC3)"""
+        tokens = ai_service_instance._estimate_image_tokens("openai", 3, "high_res")
+        # Base prompt (200) + 3 images * 765 tokens + response (100) = 2595
+        assert tokens == 2595
+
+    def test_estimate_image_tokens_claude(self, ai_service_instance):
+        """Test Claude token estimation uses correct rate (AC3)"""
+        tokens = ai_service_instance._estimate_image_tokens("claude", 5)
+        # Base prompt (200) + 5 images * 1334 tokens + response (100) = 6970
+        assert tokens == 6970
+
+    def test_estimate_image_tokens_gemini(self, ai_service_instance):
+        """Test Gemini token estimation uses correct rate (AC3)"""
+        tokens = ai_service_instance._estimate_image_tokens("gemini", 5)
+        # Base prompt (200) + 5 images * 258 tokens + response (100) = 1590
+        assert tokens == 1590
+
+    def test_estimate_image_tokens_grok(self, ai_service_instance):
+        """Test Grok token estimation uses OpenAI-compatible rate (AC3)"""
+        tokens = ai_service_instance._estimate_image_tokens("grok", 5)
+        # Base prompt (200) + 5 images * 85 tokens + response (100) = 725
+        assert tokens == 725
+
+    def test_estimate_image_tokens_unknown_provider(self, ai_service_instance):
+        """Test unknown provider uses fallback rate (AC3)"""
+        tokens = ai_service_instance._estimate_image_tokens("unknown", 5)
+        # Base prompt (200) + 5 images * 100 tokens (fallback) + response (100) = 800
+        assert tokens == 800
+
+
+class TestCostCalculation:
+    """Test cost calculation for multi-image requests (Story P3-2.5)"""
+
+    def test_calculate_cost_openai(self, ai_service_instance):
+        """Test OpenAI cost calculation uses correct rates (AC4)"""
+        # 1000 tokens: 900 input @ $0.00015/1K + 100 output @ $0.00060/1K
+        cost = ai_service_instance._calculate_cost("openai", 1000)
+        expected = (900 / 1000 * 0.00015) + (100 / 1000 * 0.00060)
+        assert abs(cost - expected) < 0.0000001
+
+    def test_calculate_cost_claude(self, ai_service_instance):
+        """Test Claude cost calculation uses correct rates (AC4)"""
+        # 1000 tokens: 900 input @ $0.00025/1K + 100 output @ $0.00125/1K
+        cost = ai_service_instance._calculate_cost("claude", 1000)
+        expected = (900 / 1000 * 0.00025) + (100 / 1000 * 0.00125)
+        assert abs(cost - expected) < 0.0000001
+
+    def test_calculate_cost_gemini(self, ai_service_instance):
+        """Test Gemini cost calculation uses correct rates (AC4)"""
+        # 1000 tokens: 900 input @ $0.000075/1K + 100 output @ $0.0003/1K
+        cost = ai_service_instance._calculate_cost("gemini", 1000)
+        expected = (900 / 1000 * 0.000075) + (100 / 1000 * 0.0003)
+        assert abs(cost - expected) < 0.0000001
+
+    def test_calculate_cost_grok(self, ai_service_instance):
+        """Test Grok cost calculation uses correct rates (AC4)"""
+        # 1000 tokens: 900 input @ $0.00005/1K + 100 output @ $0.00010/1K
+        cost = ai_service_instance._calculate_cost("grok", 1000)
+        expected = (900 / 1000 * 0.00005) + (100 / 1000 * 0.00010)
+        assert abs(cost - expected) < 0.0000001
+
+
+class TestAnalysisModeTracking:
+    """Test analysis_mode tracking in AIUsage records (Story P3-2.5)"""
+
+    @pytest.mark.asyncio
+    async def test_single_image_tracking_sets_analysis_mode(self, ai_service_instance):
+        """Test single-image tracking sets analysis_mode='single_image' (AC2)"""
+        mock_result = AIResult(
+            description="Single image analysis.",
+            confidence=90,
+            objects_detected=['person'],
+            provider="openai",
+            tokens_used=100,
+            response_time_ms=500,
+            cost_estimate=0.01,
+            success=True
+        )
+
+        # Mock database
+        mock_db = Mock()
+        ai_service_instance.db = mock_db
+
+        # Test _track_usage directly with analysis_mode="single_image"
+        ai_service_instance._track_usage(mock_result, analysis_mode="single_image")
+
+        # Check that AIUsage was added with analysis_mode
+        assert mock_db.add.called
+        usage_record = mock_db.add.call_args[0][0]
+        assert usage_record.analysis_mode == "single_image"
+        assert usage_record.is_estimated is False
+
+    @pytest.mark.asyncio
+    async def test_multi_image_tracking_sets_analysis_mode(
+        self, ai_service_instance, sample_image_bytes_list
+    ):
+        """Test multi-image tracking sets analysis_mode='multi_frame' (AC2)"""
+        mock_result = AIResult(
+            description="Multi-frame analysis complete.",
+            confidence=85,
+            objects_detected=['person'],
+            provider="openai",
+            tokens_used=250,
+            response_time_ms=900,
+            cost_estimate=0.03,
+            success=True
+        )
+
+        # Mock database
+        mock_db = Mock()
+        ai_service_instance.db = mock_db
+
+        # Test _track_usage directly with analysis_mode="multi_frame"
+        ai_service_instance._track_usage(mock_result, analysis_mode="multi_frame")
+
+        # Check that AIUsage was added with analysis_mode
+        assert mock_db.add.called
+        usage_record = mock_db.add.call_args[0][0]
+        assert usage_record.analysis_mode == "multi_frame"
+        assert usage_record.is_estimated is False
+
+    @pytest.mark.asyncio
+    async def test_multi_image_estimation_when_no_tokens_returned(
+        self, ai_service_instance, sample_image_bytes_list
+    ):
+        """Test is_estimated=True when provider returns no token count (AC3)"""
+        # Simulate Gemini returning 0 tokens (needs estimation)
+        mock_result = AIResult(
+            description="Gemini analysis complete.",
+            confidence=85,
+            objects_detected=['person'],
+            provider="gemini",
+            tokens_used=0,  # No tokens returned by provider
+            response_time_ms=900,
+            cost_estimate=0.0,
+            success=True
+        )
+
+        # Mock database
+        mock_db = Mock()
+        ai_service_instance.db = mock_db
+
+        # Test _track_usage directly with is_estimated=True
+        ai_service_instance._track_usage(
+            mock_result,
+            analysis_mode="multi_frame",
+            is_estimated=True
+        )
+
+        # Check that estimation flag was set
+        assert mock_db.add.called
+        usage_record = mock_db.add.call_args[0][0]
+        assert usage_record.is_estimated is True
+        assert usage_record.analysis_mode == "multi_frame"
