@@ -79,6 +79,44 @@ COST_RATES = {
     "gemini": {"input": 0.000075, "output": 0.0003},  # Gemini Flash
 }
 
+# Provider capabilities matrix (Story P3-4.1)
+# Static capability information for each AI provider
+# - video: Whether provider supports native video input
+# - max_video_duration: Maximum video duration in seconds (0 if no video support)
+# - max_video_size_mb: Maximum video file size in MB (0 if no video support)
+# - supported_formats: List of supported video formats (empty if no video support)
+# - max_images: Maximum number of images for multi-frame analysis
+PROVIDER_CAPABILITIES = {
+    "openai": {
+        "video": True,
+        "max_video_duration": 60,
+        "max_video_size_mb": 20,
+        "supported_formats": ["mp4", "mov", "webm"],
+        "max_images": 10,
+    },
+    "grok": {
+        "video": False,
+        "max_video_duration": 0,
+        "max_video_size_mb": 0,
+        "supported_formats": [],
+        "max_images": 10,
+    },
+    "claude": {
+        "video": False,
+        "max_video_duration": 0,
+        "max_video_size_mb": 0,
+        "supported_formats": [],
+        "max_images": 20,
+    },
+    "gemini": {
+        "video": True,
+        "max_video_duration": 60,
+        "max_video_size_mb": 20,
+        "supported_formats": ["mp4", "mov", "webm"],
+        "max_images": 16,
+    },
+}
+
 
 class AIProvider(Enum):
     """Supported AI vision providers"""
@@ -2224,6 +2262,137 @@ class AIService:
                 'avg_response_time_ms': 0,
                 'provider_breakdown': {}
             }
+
+    # =========================================================================
+    # Provider Capability Query Methods (Story P3-4.1)
+    # =========================================================================
+
+    def get_provider_capabilities(self, provider: str) -> Dict[str, Any]:
+        """
+        Get capability dictionary for a specific provider (Story P3-4.1 AC1).
+
+        Returns static capability information from PROVIDER_CAPABILITIES constant.
+        Does NOT check if provider has a configured API key.
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+
+        Returns:
+            Dictionary with capability info:
+            {
+                "video": bool,
+                "max_video_duration": int,
+                "max_video_size_mb": int,
+                "supported_formats": list[str],
+                "max_images": int
+            }
+            Returns empty dict if provider not found.
+        """
+        return PROVIDER_CAPABILITIES.get(provider, {})
+
+    def supports_video(self, provider: str) -> bool:
+        """
+        Check if a provider supports native video input (Story P3-4.1 AC1).
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+
+        Returns:
+            True if provider supports video, False otherwise
+        """
+        capabilities = PROVIDER_CAPABILITIES.get(provider, {})
+        return capabilities.get("video", False)
+
+    def get_video_capable_providers(self) -> List[str]:
+        """
+        Get list of providers that support video AND have configured API keys (Story P3-4.1 AC2).
+
+        This is the primary method for determining which providers can be used for
+        video_native analysis mode. It combines static capability information with
+        runtime API key configuration.
+
+        Returns:
+            List of provider names that support video and are configured.
+            Example: ["openai", "gemini"] if both have API keys configured.
+        """
+        video_providers = []
+
+        for provider_name, capabilities in PROVIDER_CAPABILITIES.items():
+            if capabilities.get("video", False):
+                # Check if provider has a configured API key
+                try:
+                    provider_enum = AIProvider(provider_name)
+                    if self.providers.get(provider_enum) is not None:
+                        video_providers.append(provider_name)
+                except ValueError:
+                    # Unknown provider enum value, skip
+                    pass
+
+        logger.debug(
+            f"Video-capable providers with configured keys: {video_providers}",
+            extra={"video_providers": video_providers}
+        )
+
+        return video_providers
+
+    def get_max_video_duration(self, provider: str) -> int:
+        """
+        Get maximum video duration in seconds for a provider (Story P3-4.1 AC1).
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+
+        Returns:
+            Maximum duration in seconds, or 0 if provider doesn't support video
+        """
+        capabilities = PROVIDER_CAPABILITIES.get(provider, {})
+        return capabilities.get("max_video_duration", 0)
+
+    def get_max_video_size(self, provider: str) -> int:
+        """
+        Get maximum video file size in MB for a provider (Story P3-4.1 AC1).
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+
+        Returns:
+            Maximum size in MB, or 0 if provider doesn't support video
+        """
+        capabilities = PROVIDER_CAPABILITIES.get(provider, {})
+        return capabilities.get("max_video_size_mb", 0)
+
+    def get_all_capabilities(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get capabilities for all providers with configuration status (Story P3-4.1 AC1).
+
+        Returns complete capability matrix including whether each provider
+        has an API key configured. Used by the /api/v1/ai/capabilities endpoint.
+
+        Returns:
+            Dictionary mapping provider names to their capabilities with 'configured' flag:
+            {
+                "openai": {"video": True, ..., "configured": True},
+                "claude": {"video": False, ..., "configured": False},
+                ...
+            }
+        """
+        result = {}
+
+        for provider_name, capabilities in PROVIDER_CAPABILITIES.items():
+            # Check if provider has a configured API key
+            configured = False
+            try:
+                provider_enum = AIProvider(provider_name)
+                configured = self.providers.get(provider_enum) is not None
+            except ValueError:
+                pass
+
+            result[provider_name] = {
+                **capabilities,
+                "configured": configured
+            }
+
+        return result
 
 
 # Global AI service instance

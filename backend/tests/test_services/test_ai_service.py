@@ -2052,3 +2052,203 @@ class TestAnalysisModeTracking:
         usage_record = mock_db.add.call_args[0][0]
         assert usage_record.is_estimated is True
         assert usage_record.analysis_mode == "multi_frame"
+
+
+# =============================================================================
+# Story P3-4.1: Provider Capability Detection Tests
+# =============================================================================
+
+
+class TestProviderCapabilities:
+    """Test provider capability detection (Story P3-4.1 AC1)"""
+
+    def test_provider_capabilities_constant_contains_all_providers(self):
+        """Test PROVIDER_CAPABILITIES contains all four providers"""
+        from app.services.ai_service import PROVIDER_CAPABILITIES
+
+        expected_providers = ["openai", "grok", "claude", "gemini"]
+        assert set(PROVIDER_CAPABILITIES.keys()) == set(expected_providers)
+
+    def test_provider_capabilities_openai_supports_video(self):
+        """Test OpenAI capabilities include video=True (AC1)"""
+        from app.services.ai_service import PROVIDER_CAPABILITIES
+
+        openai_caps = PROVIDER_CAPABILITIES["openai"]
+        assert openai_caps["video"] is True
+        assert openai_caps["max_video_duration"] == 60
+        assert openai_caps["max_video_size_mb"] == 20
+        assert "mp4" in openai_caps["supported_formats"]
+        assert openai_caps["max_images"] == 10
+
+    def test_provider_capabilities_gemini_supports_video(self):
+        """Test Gemini capabilities include video=True (AC1)"""
+        from app.services.ai_service import PROVIDER_CAPABILITIES
+
+        gemini_caps = PROVIDER_CAPABILITIES["gemini"]
+        assert gemini_caps["video"] is True
+        assert gemini_caps["max_video_duration"] == 60
+        assert gemini_caps["max_video_size_mb"] == 20
+        assert "mp4" in gemini_caps["supported_formats"]
+        assert gemini_caps["max_images"] == 16
+
+    def test_provider_capabilities_claude_no_video(self):
+        """Test Claude capabilities have video=False (AC1)"""
+        from app.services.ai_service import PROVIDER_CAPABILITIES
+
+        claude_caps = PROVIDER_CAPABILITIES["claude"]
+        assert claude_caps["video"] is False
+        assert claude_caps["max_video_duration"] == 0
+        assert claude_caps["max_video_size_mb"] == 0
+        assert claude_caps["supported_formats"] == []
+        assert claude_caps["max_images"] == 20
+
+    def test_provider_capabilities_grok_no_video(self):
+        """Test Grok capabilities have video=False (AC1)"""
+        from app.services.ai_service import PROVIDER_CAPABILITIES
+
+        grok_caps = PROVIDER_CAPABILITIES["grok"]
+        assert grok_caps["video"] is False
+        assert grok_caps["max_video_duration"] == 0
+        assert grok_caps["max_video_size_mb"] == 0
+        assert grok_caps["supported_formats"] == []
+        assert grok_caps["max_images"] == 10
+
+
+class TestAIServiceCapabilityMethods:
+    """Test AIService capability query methods (Story P3-4.1 AC1, AC2)"""
+
+    def test_get_provider_capabilities_openai(self, ai_service_instance):
+        """Test get_provider_capabilities returns correct data for OpenAI"""
+        caps = ai_service_instance.get_provider_capabilities("openai")
+
+        assert caps["video"] is True
+        assert caps["max_video_duration"] == 60
+        assert caps["max_video_size_mb"] == 20
+        assert "mp4" in caps["supported_formats"]
+        assert caps["max_images"] == 10
+
+    def test_get_provider_capabilities_claude(self, ai_service_instance):
+        """Test get_provider_capabilities returns correct data for Claude"""
+        caps = ai_service_instance.get_provider_capabilities("claude")
+
+        assert caps["video"] is False
+        assert caps["max_video_duration"] == 0
+        assert caps["max_images"] == 20
+
+    def test_get_provider_capabilities_unknown_provider(self, ai_service_instance):
+        """Test get_provider_capabilities returns empty dict for unknown provider"""
+        caps = ai_service_instance.get_provider_capabilities("unknown_provider")
+        assert caps == {}
+
+    def test_supports_video_openai(self, ai_service_instance):
+        """Test supports_video returns True for OpenAI"""
+        assert ai_service_instance.supports_video("openai") is True
+
+    def test_supports_video_gemini(self, ai_service_instance):
+        """Test supports_video returns True for Gemini"""
+        assert ai_service_instance.supports_video("gemini") is True
+
+    def test_supports_video_claude(self, ai_service_instance):
+        """Test supports_video returns False for Claude"""
+        assert ai_service_instance.supports_video("claude") is False
+
+    def test_supports_video_grok(self, ai_service_instance):
+        """Test supports_video returns False for Grok"""
+        assert ai_service_instance.supports_video("grok") is False
+
+    def test_supports_video_unknown_provider(self, ai_service_instance):
+        """Test supports_video returns False for unknown provider"""
+        assert ai_service_instance.supports_video("unknown") is False
+
+    def test_get_video_capable_providers_all_configured(self, ai_service_instance):
+        """Test get_video_capable_providers returns OpenAI and Gemini when configured"""
+        video_providers = ai_service_instance.get_video_capable_providers()
+
+        # ai_service_instance fixture configures all providers
+        assert "openai" in video_providers
+        assert "gemini" in video_providers
+        # Non-video providers should not be in list
+        assert "claude" not in video_providers
+        assert "grok" not in video_providers
+
+    def test_get_video_capable_providers_none_configured(self):
+        """Test get_video_capable_providers returns empty list when no providers configured"""
+        service = AIService()
+        # Don't configure any providers
+
+        video_providers = service.get_video_capable_providers()
+        assert video_providers == []
+
+    def test_get_video_capable_providers_only_non_video_configured(self):
+        """Test get_video_capable_providers returns empty when only non-video providers configured"""
+        service = AIService()
+        # Only configure Claude and Grok (no video support)
+        service.configure_providers(
+            openai_key=None,
+            grok_key="xai-test-grok-key",
+            claude_key="sk-ant-test-claude-key",
+            gemini_key=None
+        )
+
+        video_providers = service.get_video_capable_providers()
+        assert video_providers == []
+
+    def test_get_max_video_duration_openai(self, ai_service_instance):
+        """Test get_max_video_duration returns 60 for OpenAI"""
+        assert ai_service_instance.get_max_video_duration("openai") == 60
+
+    def test_get_max_video_duration_claude(self, ai_service_instance):
+        """Test get_max_video_duration returns 0 for Claude (no video)"""
+        assert ai_service_instance.get_max_video_duration("claude") == 0
+
+    def test_get_max_video_size_gemini(self, ai_service_instance):
+        """Test get_max_video_size returns 20 for Gemini"""
+        assert ai_service_instance.get_max_video_size("gemini") == 20
+
+    def test_get_max_video_size_grok(self, ai_service_instance):
+        """Test get_max_video_size returns 0 for Grok (no video)"""
+        assert ai_service_instance.get_max_video_size("grok") == 0
+
+    def test_get_all_capabilities_structure(self, ai_service_instance):
+        """Test get_all_capabilities returns correct structure with configured flag"""
+        all_caps = ai_service_instance.get_all_capabilities()
+
+        # Should have all four providers
+        assert set(all_caps.keys()) == {"openai", "grok", "claude", "gemini"}
+
+        # Each should have configured flag
+        for provider, caps in all_caps.items():
+            assert "configured" in caps
+            assert "video" in caps
+            assert "max_video_duration" in caps
+            assert "max_video_size_mb" in caps
+            assert "supported_formats" in caps
+            assert "max_images" in caps
+
+    def test_get_all_capabilities_configured_flags(self, ai_service_instance):
+        """Test get_all_capabilities shows correct configured status"""
+        # ai_service_instance fixture configures all providers
+        all_caps = ai_service_instance.get_all_capabilities()
+
+        assert all_caps["openai"]["configured"] is True
+        assert all_caps["grok"]["configured"] is True
+        assert all_caps["claude"]["configured"] is True
+        assert all_caps["gemini"]["configured"] is True
+
+    def test_get_all_capabilities_unconfigured(self):
+        """Test get_all_capabilities shows configured=False for unconfigured providers"""
+        service = AIService()
+        # Only configure OpenAI
+        service.configure_providers(
+            openai_key="sk-test-openai-key",
+            grok_key=None,
+            claude_key=None,
+            gemini_key=None
+        )
+
+        all_caps = service.get_all_capabilities()
+
+        assert all_caps["openai"]["configured"] is True
+        assert all_caps["grok"]["configured"] is False
+        assert all_caps["claude"]["configured"] is False
+        assert all_caps["gemini"]["configured"] is False

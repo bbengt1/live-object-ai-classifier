@@ -58,3 +58,60 @@ class AIResultResponse(BaseModel):
     cost_estimate: float = Field(description="Estimated cost in USD")
     success: bool = Field(description="Whether generation succeeded")
     error: Optional[str] = Field(None, description="Error message if failed")
+
+
+class ProviderCapability(BaseModel):
+    """Capability information for a single AI provider (Story P3-4.1)"""
+    video: bool = Field(description="Whether provider supports native video input")
+    max_video_duration: int = Field(description="Maximum video duration in seconds (0 if no video)")
+    max_video_size_mb: int = Field(description="Maximum video file size in MB (0 if no video)")
+    supported_formats: List[str] = Field(description="Supported video formats (empty if no video)")
+    max_images: int = Field(description="Maximum images for multi-frame analysis")
+    configured: bool = Field(description="Whether provider has an API key configured")
+
+
+class AICapabilitiesResponse(BaseModel):
+    """Response schema for GET /api/v1/ai/capabilities (Story P3-4.1)"""
+    providers: Dict[str, ProviderCapability] = Field(
+        description="Capability information for each AI provider"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "providers": {
+                    "openai": {
+                        "video": True,
+                        "max_video_duration": 60,
+                        "max_video_size_mb": 20,
+                        "supported_formats": ["mp4", "mov", "webm"],
+                        "max_images": 10,
+                        "configured": True
+                    },
+                    "grok": {
+                        "video": False,
+                        "max_video_duration": 0,
+                        "max_video_size_mb": 0,
+                        "supported_formats": [],
+                        "max_images": 10,
+                        "configured": True
+                    },
+                    "claude": {
+                        "video": False,
+                        "max_video_duration": 0,
+                        "max_video_size_mb": 0,
+                        "supported_formats": [],
+                        "max_images": 20,
+                        "configured": False
+                    },
+                    "gemini": {
+                        "video": True,
+                        "max_video_duration": 60,
+                        "max_video_size_mb": 20,
+                        "supported_formats": ["mp4", "mov", "webm"],
+                        "max_images": 16,
+                        "configured": False
+                    }
+                }
+            }
+        }

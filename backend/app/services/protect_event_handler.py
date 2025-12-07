@@ -1020,10 +1020,11 @@ class ProtectEventHandler:
         is_doorbell_ring: bool = False
     ) -> Optional["AIResult"]:
         """
-        Attempt video native analysis (Story P3-3.5 AC1).
+        Attempt video native analysis (Story P3-4.1 AC2, AC3).
 
-        Currently no AI providers fully support video_native in Phase 3 MVP scope
-        (Epic P3-4 is Growth scope), so this immediately fails and records the reason.
+        Checks if any configured providers support video input before attempting.
+        If no video-capable providers are available, immediately falls back to multi_frame
+        with appropriate logging.
 
         Args:
             clip_path: Path to video clip file (may be None)
@@ -1033,24 +1034,77 @@ class ProtectEventHandler:
             is_doorbell_ring: If True, use doorbell-specific AI prompt
 
         Returns:
-            AIResult if video_native succeeded (currently always None - not implemented)
+            AIResult if video_native succeeded, None if should fall back to multi_frame
         """
-        # Story P3-3.5: video_native is not supported in MVP - immediately fall back
-        # Epic P3-4 (Growth) will implement actual video upload to providers
-        reason = "provider_unsupported"
+        from app.services.ai_service import ai_service
 
+        # Story P3-4.1 AC3: Check if clip is available first
         if not clip_path or not clip_path.exists():
             reason = "no_clip_available"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.info(
+                f"video_native analysis not available for camera '{camera.name}': {reason}",
+                extra={
+                    "event_type": "video_native_fallback",
+                    "camera_id": camera.id,
+                    "reason": reason,
+                    "clip_available": False
+                }
+            )
+            return None
 
+        # Story P3-4.1 AC2, AC3: Check which providers support video
+        video_capable_providers = ai_service.get_video_capable_providers()
+
+        if not video_capable_providers:
+            # AC3: No video-capable providers configured, fall back to multi_frame
+            reason = "no_video_providers_available"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.warning(
+                "No video-capable providers available - falling back to multi_frame",
+                extra={
+                    "event_type": "video_native_fallback",
+                    "camera_id": camera.id,
+                    "camera_name": camera.name,
+                    "reason": reason,
+                    "video_capable_count": 0
+                }
+            )
+            return None
+
+        # Log which providers support video for debugging
+        all_providers = ai_service.get_all_capabilities()
+        skipped_providers = [
+            p for p, caps in all_providers.items()
+            if not caps.get("video") and caps.get("configured")
+        ]
+
+        if skipped_providers:
+            logger.info(
+                f"Skipping non-video providers for video_native: {skipped_providers}",
+                extra={
+                    "event_type": "video_native_provider_filter",
+                    "camera_id": camera.id,
+                    "skipped_providers": skipped_providers,
+                    "video_capable_providers": video_capable_providers
+                }
+            )
+
+        # Story P3-4.1: Video capability detection complete
+        # Epic P3-4.2/P3-4.3 will implement actual video upload to OpenAI/Gemini
+        # For now, we've validated capability but video upload is not yet implemented
+        reason = "video_upload_not_implemented"
         self._fallback_chain.append(f"video_native:{reason}")
 
         logger.info(
-            f"video_native analysis not available for camera '{camera.name}': {reason}",
+            f"video_native analysis has capable providers ({video_capable_providers}) "
+            f"but upload not yet implemented for camera '{camera.name}'",
             extra={
                 "event_type": "video_native_fallback",
                 "camera_id": camera.id,
                 "reason": reason,
-                "clip_available": bool(clip_path and clip_path.exists())
+                "clip_path": str(clip_path),
+                "video_capable_providers": video_capable_providers
             }
         )
 

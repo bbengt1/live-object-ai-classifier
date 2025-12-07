@@ -1,0 +1,215 @@
+<story-context id="bmm/workflows/4-implementation/story-context" v="1.0">
+  <metadata>
+    <epicId>P3-4</epicId>
+    <storyId>P3-4.1</storyId>
+    <title>Add Provider Video Capability Detection</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-06</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p3-4-1-add-provider-video-capability-detection.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system</asA>
+    <iWant>to know which AI providers support video input</iWant>
+    <soThat>video_native mode routes to capable providers</soThat>
+    <tasks>
+      <task id="1">Analyze current AI service provider structure</task>
+      <task id="2">Define provider capabilities data structure</task>
+      <task id="3">Implement capability query methods in AIService</task>
+      <task id="4">Integrate capability detection into fallback chain</task>
+      <task id="5">Add capability endpoint to AI API</task>
+      <task id="6">Write backend tests</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <ac id="1">Given AIService provider configuration, when capability is checked, then returns capability matrix with: OpenAI GPT-4o: video=true, max_duration=60s; Claude: video=false; Gemini: video=true, max_duration=60s; Grok: video=false</ac>
+    <ac id="2">Given video_native analysis requested, when provider doesn't support video, then that provider is skipped in fallback chain, and next video-capable provider is tried</ac>
+    <ac id="3">Given no video-capable providers configured, when video_native mode is selected, then system falls back to multi_frame immediately, and logs "No video-capable providers available"</ac>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics-phase3.md">Epic P3-4 source with story requirements</doc>
+      <doc path="docs/architecture.md">AI Service architecture and provider patterns</doc>
+      <doc path="docs/sprint-artifacts/p3-3-5-implement-automatic-fallback-chain.md">Previous story with fallback chain implementation learnings</doc>
+    </docs>
+    <code>
+      <file path="backend/app/services/ai_service.py" relevance="primary">
+        <description>Main AI service with multi-provider fallback - TARGET for PROVIDER_CAPABILITIES constant and capability methods</description>
+        <keyElements>
+          <element>AIProvider enum (OPENAI, GROK, CLAUDE, GEMINI) - lines 83-88</element>
+          <element>TOKENS_PER_IMAGE constant - lines 66-71 (pattern to follow)</element>
+          <element>COST_RATES constant - lines 75-80 (pattern to follow)</element>
+          <element>AIService class - lines 1180-2231</element>
+          <element>AIService._get_provider_order() - lines 1387-1430 (reads from db settings)</element>
+          <element>AIService.generate_description() - lines 1432-1572 (fallback chain entry)</element>
+          <element>AIService.describe_images() - lines 1574-1837 (multi-frame analysis)</element>
+          <element>OpenAIProvider class - lines 256-522</element>
+          <element>ClaudeProvider class - lines 525-730</element>
+          <element>GeminiProvider class - lines 733-902</element>
+          <element>GrokProvider class - lines 905-1177</element>
+        </keyElements>
+        <implementation>
+          <add>PROVIDER_CAPABILITIES constant after line 80</add>
+          <add>get_provider_capabilities() method to AIService</add>
+          <add>supports_video() method to AIService</add>
+          <add>get_video_capable_providers() method to AIService</add>
+          <add>get_max_video_duration() method to AIService</add>
+          <add>get_max_video_size() method to AIService</add>
+        </implementation>
+      </file>
+      <file path="backend/app/services/protect_event_handler.py" relevance="primary">
+        <description>Protect event processing with fallback chain - needs video capability check integration</description>
+        <keyElements>
+          <element>_try_video_native_analysis() - lines 1014-1057 (currently stub returning None with "provider_unsupported")</element>
+          <element>_fallback_chain list - tracks fallback reasons</element>
+          <element>_try_multi_frame_analysis() - lines 1059-1099+ (fallback target)</element>
+        </keyElements>
+        <implementation>
+          <modify>_try_video_native_analysis() to check video capability before attempting</modify>
+          <add>Filter provider list to video-capable providers</add>
+          <add>Log which providers were skipped due to lack of video support</add>
+          <add>Fallback to multi_frame when no video providers available</add>
+        </implementation>
+      </file>
+      <file path="backend/app/api/v1/ai.py" relevance="secondary">
+        <description>AI API endpoints - needs new /capabilities endpoint</description>
+        <keyElements>
+          <element>GET /ai/usage endpoint - lines 20-59 (pattern to follow)</element>
+          <element>router = APIRouter(prefix="/ai", tags=["ai"]) - line 17</element>
+        </keyElements>
+        <implementation>
+          <add>GET /api/v1/ai/capabilities endpoint</add>
+          <add>Pydantic response schema for capabilities</add>
+        </implementation>
+      </file>
+      <file path="backend/tests/test_services/test_ai_service.py" relevance="secondary">
+        <description>Existing AI service tests - add capability detection tests</description>
+        <keyElements>
+          <element>TestOpenAIProvider class - lines 108-179</element>
+          <element>TestGrokProvider class - lines 246-327</element>
+          <element>TestAIServiceFallback class - lines 384-475</element>
+          <element>TestProviderOrderConfiguration class - lines 811-876</element>
+          <element>TestFallbackChainBehavior class - lines 879-1113</element>
+        </keyElements>
+        <implementation>
+          <add>Test get_provider_capabilities() for each provider</add>
+          <add>Test supports_video() returns correct boolean</add>
+          <add>Test get_video_capable_providers() returns only OpenAI and Gemini</add>
+          <add>Test video_native fallback when no video providers configured</add>
+          <add>Test provider skipping in fallback chain</add>
+        </implementation>
+      </file>
+    </code>
+    <dependencies>
+      <dependency name="openai" version=">=1.54.0">OpenAI Python SDK with video support</dependency>
+      <dependency name="anthropic" version=">=0.39.0">Anthropic Claude SDK (images only)</dependency>
+      <dependency name="google-generativeai" version=">=0.8.0">Google Gemini SDK with video support</dependency>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Follow existing constant patterns (TOKENS_PER_IMAGE, COST_RATES) for PROVIDER_CAPABILITIES</constraint>
+    <constraint type="architecture">Capabilities are static; availability depends on API key configuration</constraint>
+    <constraint type="api">New endpoint must follow existing /ai/usage pattern</constraint>
+    <constraint type="compatibility">Must not break existing fallback chain behavior</constraint>
+    <constraint type="future">Structure should allow easy addition of new capabilities (audio, documents)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface type="internal">
+      <name>AIService.get_provider_capabilities(provider: str) -> dict</name>
+      <description>Returns capability dictionary for specified provider</description>
+    </interface>
+    <interface type="internal">
+      <name>AIService.supports_video(provider: str) -> bool</name>
+      <description>Returns True if provider supports video input</description>
+    </interface>
+    <interface type="internal">
+      <name>AIService.get_video_capable_providers() -> list[str]</name>
+      <description>Returns list of providers that support video AND have configured API keys</description>
+    </interface>
+    <interface type="api">
+      <name>GET /api/v1/ai/capabilities</name>
+      <description>Returns capabilities matrix for all configured providers</description>
+      <response>{
+        "providers": {
+          "openai": {"video": true, "max_video_duration": 60, "max_video_size_mb": 20, "configured": true},
+          "claude": {"video": false, "max_video_duration": 0, "max_video_size_mb": 0, "configured": true},
+          "gemini": {"video": true, "max_video_duration": 60, "max_video_size_mb": 20, "configured": false},
+          "grok": {"video": false, "max_video_duration": 0, "max_video_size_mb": 0, "configured": true}
+        }
+      }</response>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      <standard>pytest with pytest-asyncio for async tests</standard>
+      <standard>Mock database and provider responses</standard>
+      <standard>Follow existing test patterns in test_ai_service.py</standard>
+    </standards>
+    <locations>
+      <location>backend/tests/test_services/test_ai_service.py</location>
+      <location>backend/tests/test_api/test_ai.py (new)</location>
+    </locations>
+    <ideas>
+      <test>Test PROVIDER_CAPABILITIES contains all 4 providers</test>
+      <test>Test get_provider_capabilities("openai") returns video=True</test>
+      <test>Test get_provider_capabilities("claude") returns video=False</test>
+      <test>Test supports_video("openai") returns True</test>
+      <test>Test supports_video("claude") returns False</test>
+      <test>Test get_video_capable_providers() returns ["openai", "gemini"] when both configured</test>
+      <test>Test get_video_capable_providers() returns empty list when no video providers configured</test>
+      <test>Test _try_video_native_analysis skips non-video providers</test>
+      <test>Test fallback to multi_frame when no video providers available</test>
+      <test>Test /api/v1/ai/capabilities returns expected structure</test>
+      <test>Test capabilities endpoint shows configured=false for providers without API keys</test>
+    </ideas>
+  </tests>
+
+  <providerCapabilities>
+    <provider name="openai">
+      <video>true</video>
+      <maxVideoDuration>60</maxVideoDuration>
+      <maxVideoSizeMB>20</maxVideoSizeMB>
+      <supportedFormats>mp4, mov, webm</supportedFormats>
+      <maxImages>10</maxImages>
+      <notes>GPT-4o supports video via base64 or file upload</notes>
+    </provider>
+    <provider name="claude">
+      <video>false</video>
+      <maxVideoDuration>0</maxVideoDuration>
+      <maxVideoSizeMB>0</maxVideoSizeMB>
+      <supportedFormats></supportedFormats>
+      <maxImages>20</maxImages>
+      <notes>Claude 3 Haiku supports images only</notes>
+    </provider>
+    <provider name="gemini">
+      <video>true</video>
+      <maxVideoDuration>60</maxVideoDuration>
+      <maxVideoSizeMB>20</maxVideoSizeMB>
+      <supportedFormats>mp4, mov, webm</supportedFormats>
+      <maxImages>16</maxImages>
+      <notes>Gemini 1.5 supports video via File API or inline</notes>
+    </provider>
+    <provider name="grok">
+      <video>false</video>
+      <maxVideoDuration>0</maxVideoDuration>
+      <maxVideoSizeMB>0</maxVideoSizeMB>
+      <supportedFormats></supportedFormats>
+      <maxImages>10</maxImages>
+      <notes>xAI Grok supports images only (TBD as of late 2025)</notes>
+    </provider>
+  </providerCapabilities>
+
+  <previousStoryLearnings story="P3-3.5">
+    <learning>Fallback chain implemented in ProtectEventHandler._submit_to_ai_pipeline() - NOT in event_processor.py</learning>
+    <learning>_try_video_native_analysis() currently stub that always returns None with "provider_unsupported" - this story enables proper detection</learning>
+    <learning>Uses _fallback_chain list to accumulate failures, joined with commas for fallback_reason field</learning>
+    <learning>Non-Protect cameras (RTSP/USB) bypass fallback chain entirely - no clips available</learning>
+    <learning>Full fallback chain: video_native -> multi_frame -> single_frame -> no description</learning>
+  </previousStoryLearnings>
+</story-context>

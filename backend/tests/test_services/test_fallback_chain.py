@@ -136,7 +136,12 @@ class TestFallbackChainVideoNative:
                 assert result.success is True
 
                 # Verify video_native was tracked in fallback chain
-                assert "video_native:provider_unsupported" in handler._fallback_chain
+                # Story P3-4.1: Now uses "video_upload_not_implemented" when video providers exist
+                # or "no_video_providers_available" when none are configured
+                video_native_recorded = any(
+                    "video_native:" in reason for reason in handler._fallback_chain
+                )
+                assert video_native_recorded, f"Expected video_native reason in {handler._fallback_chain}"
 
                 # Verify multi_frame was attempted
                 mock_multi.assert_called_once()
@@ -440,10 +445,10 @@ class TestVideoNativeMethod:
     """Test _try_video_native_analysis method specifically"""
 
     @pytest.mark.asyncio
-    async def test_video_native_with_clip_returns_none_provider_unsupported(
+    async def test_video_native_with_clip_returns_none_capability_based(
         self, handler, mock_camera_protect, mock_snapshot_result, temp_clip_file
     ):
-        """Video native with valid clip returns None (not implemented in MVP)"""
+        """Video native with valid clip returns None (checks video capability - P3-4.1)"""
         handler._fallback_chain = []
 
         result = await handler._try_video_native_analysis(
@@ -454,7 +459,12 @@ class TestVideoNativeMethod:
         )
 
         assert result is None
-        assert "video_native:provider_unsupported" in handler._fallback_chain
+        # Story P3-4.1: Now uses "no_video_providers_available" when no providers configured
+        # or "video_upload_not_implemented" when video providers exist but upload isn't done
+        video_native_recorded = any(
+            "video_native:" in reason for reason in handler._fallback_chain
+        )
+        assert video_native_recorded, f"Expected video_native reason in {handler._fallback_chain}"
 
     @pytest.mark.asyncio
     async def test_video_native_no_clip_records_reason(
