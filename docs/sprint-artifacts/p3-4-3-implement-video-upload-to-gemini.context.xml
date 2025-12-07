@@ -1,4 +1,4 @@
-<story-context id="p3-4-3-implement-video-upload-to-gemini" v="1.0">
+<story-context id="p3-4-3-implement-video-upload-to-gemini" v="1.1">
   <metadata>
     <epicId>P3-4</epicId>
     <storyId>P3-4.3</storyId>
@@ -7,6 +7,7 @@
     <generatedAt>2025-12-07</generatedAt>
     <generator>BMAD Story Context Workflow</generator>
     <sourceStoryPath>docs/sprint-artifacts/p3-4-3-implement-video-upload-to-gemini.md</sourceStoryPath>
+    <version>1.1 - Updated with Gemini API research findings</version>
   </metadata>
 
   <story>
@@ -14,23 +15,41 @@
     <iWant>to send video clips to Google Gemini</iWant>
     <soThat>users get video-native analysis from Gemini for the highest quality event descriptions</soThat>
     <tasks>
-      <task id="1" ac="All">Research Gemini Video API - Verify video input format, file upload vs base64, size/duration limits, model requirements</task>
-      <task id="2" ac="1,4">Implement describe_video() method in GeminiProvider - Add async method, read video file, use genai library, return AIResult</task>
-      <task id="3" ac="5">Add video size/duration validation - Implement _validate_video_for_gemini(), check limits from PROVIDER_CAPABILITIES</task>
+      <task id="1" ac="All" status="done">Research Gemini Video API - Two methods: File API (up to 2GB) and inline_data (&lt;20MB)</task>
+      <task id="2" ac="1,4">Implement describe_video() method in GeminiProvider - Use inline_data for &lt;20MB, File API for larger</task>
+      <task id="3" ac="5">Add video size validation - Check against 2GB File API limit</task>
       <task id="4" ac="2">Implement video format conversion - Add _convert_video_format() using PyAV, support MP4/H.264</task>
-      <task id="5" ac="3">Add token/cost tracking for video requests - Extract token usage from response, estimate if needed, calculate cost</task>
-      <task id="6" ac="All">Update _try_video_native_analysis() in protect_event_handler - Remove placeholder, call describe_video(), handle fallback</task>
-      <task id="7" ac="All">Add AIService orchestration for describe_video - Add method, route to video-capable providers, handle fallback</task>
-      <task id="8" ac="All">Write tests - Unit tests for describe_video, validation, format conversion; integration test for video_native</task>
+      <task id="5" ac="3">Add token/cost tracking for video requests - ~258 tokens/frame at 1fps, calculate cost</task>
+      <task id="6" ac="All">Update _try_video_native_analysis() in protect_event_handler - Remove placeholder, call describe_video()</task>
+      <task id="7" ac="All">Add AIService orchestration for describe_video - Route to video-capable providers, handle fallback</task>
+      <task id="8" ac="All">Write tests - Unit tests for describe_video, validation; integration test for video_native</task>
     </tasks>
   </story>
 
+  <researchFindings>
+    <finding priority="critical">
+      <summary>Gemini API supports native video upload via two methods</summary>
+      <detail>
+        1. File API (recommended for videos &gt;20MB): Upload to Google servers (genai.upload_file), wait for processing, then generate_content with file reference. Max 2GB, stored 48 hours.
+        2. Inline Data (for videos &lt;20MB): Pass video bytes directly as base64-encoded string. Best for real-time apps with small clips.
+      </detail>
+    </finding>
+    <finding priority="high">
+      <summary>Models and capabilities confirmed</summary>
+      <detail>Use Gemini 1.5 Flash or Gemini 1.5 Pro. Both are multimodal models optimized for video (process as image frames + audio). Models can "hear" video audio natively.</detail>
+    </finding>
+    <finding priority="medium">
+      <summary>Token usage for video</summary>
+      <detail>~258 tokens per frame at 1fps. Longer videos consume more context window. For cost estimation, calculate based on video duration.</detail>
+    </finding>
+  </researchFindings>
+
   <acceptanceCriteria>
-    <ac id="1">Given video clip under Gemini limits (20MB, 60s), when AIService.describe_video() called for Gemini, then video sent using Gemini API, description returned</ac>
+    <ac id="1">Given video clip under 20MB, when describe_video() called, then video sent as inline_data. For larger videos (20MB-2GB), use File API upload.</ac>
     <ac id="2">Given video needs format conversion, when original format unsupported, then converts to MP4/H.264 using PyAV, retries</ac>
-    <ac id="3">Given Gemini video analysis completes, when response received, then token usage tracked, cost estimate calculated</ac>
+    <ac id="3">Given Gemini video analysis completes, when response received, then token usage tracked (~258 tokens/frame), cost estimate calculated</ac>
     <ac id="4">Given Gemini provider configured with valid API key, when describe_video() called with valid clip, then returns AIResult with description</ac>
-    <ac id="5">Given video exceeds Gemini limits (>20MB or >60s), when video analysis attempted, then returns AIResult with success=False, triggers fallback to multi_frame</ac>
+    <ac id="5">Given video exceeds 2GB limit, when video analysis attempted, then returns AIResult with success=False, triggers fallback to multi_frame</ac>
   </acceptanceCriteria>
 
   <artifacts>

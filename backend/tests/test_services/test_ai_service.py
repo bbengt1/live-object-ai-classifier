@@ -2091,12 +2091,13 @@ class TestProviderCapabilities:
         gemini_caps = PROVIDER_CAPABILITIES["gemini"]
         assert gemini_caps["video"] is True
         assert gemini_caps["video_method"] == "native_upload"  # Gemini uploads video directly
-        assert gemini_caps["max_video_duration"] == 60
-        assert gemini_caps["max_video_size_mb"] == 20
+        assert gemini_caps["max_video_duration"] == 300  # 5 min practical limit (tokens)
+        assert gemini_caps["max_video_size_mb"] == 2048  # 2GB via File API
+        assert gemini_caps["inline_max_size_mb"] == 20  # Inline data limit
         assert gemini_caps["max_frames"] == 0  # N/A for native upload
         assert "mp4" in gemini_caps["supported_formats"]
         assert gemini_caps["max_images"] == 16
-        assert gemini_caps["supports_audio_transcription"] is False  # Gemini handles audio natively
+        assert gemini_caps["supports_audio"] is True  # Gemini handles video audio natively
 
     def test_provider_capabilities_claude_no_video(self):
         """Test Claude capabilities have video=False (AC1)"""
@@ -2224,8 +2225,9 @@ class TestAIServiceCapabilityMethods:
         assert ai_service_instance.get_max_video_duration("claude") == 0
 
     def test_get_max_video_size_gemini(self, ai_service_instance):
-        """Test get_max_video_size returns 20 for Gemini"""
-        assert ai_service_instance.get_max_video_size("gemini") == 20
+        """Test get_max_video_size returns 2048 for Gemini (2GB via File API)"""
+        # P3-4.3: Gemini supports up to 2GB via File API
+        assert ai_service_instance.get_max_video_size("gemini") == 2048
 
     def test_get_max_video_size_grok(self, ai_service_instance):
         """Test get_max_video_size returns 50 for Grok (P3-4.2: frame extraction)"""
@@ -2721,3 +2723,302 @@ class TestGetProviderOrder:
         order = service.get_provider_order()
 
         assert order == ["grok", "claude", "openai", "gemini"]
+
+
+class TestGeminiDescribeVideo:
+    """Tests for GeminiProvider.describe_video() functionality (Story P3-4.3)"""
+
+    @pytest.fixture
+    def gemini_provider(self):
+        """Create a GeminiProvider instance for testing"""
+        from app.services.ai_service import GeminiProvider
+        return GeminiProvider(api_key="test-gemini-key")
+
+    @pytest.fixture
+    def mock_video_file(self, tmp_path):
+        """Create a mock video file for testing"""
+        video_path = tmp_path / "test_video.mp4"
+        # Create a small dummy file (not a real video, but enough for path testing)
+        video_path.write_bytes(b"fake video content" * 100)
+        return video_path
+
+    @pytest.mark.asyncio
+    async def test_describe_video_file_not_found(self, gemini_provider, tmp_path):
+        """Test describe_video returns error for non-existent file (AC4)"""
+        non_existent = tmp_path / "nonexistent.mp4"
+
+        result = await gemini_provider.describe_video(
+            video_path=non_existent,
+            camera_name="Test Camera",
+            timestamp="2025-01-01T00:00:00Z",
+            detected_objects=["person"]
+        )
+
+        assert result.success is False
+        assert "not found" in result.error.lower()
+        assert result.provider == "gemini"
+
+    @pytest.mark.asyncio
+    async def test_describe_video_size_exceeded(self, gemini_provider, tmp_path):
+        """Test describe_video returns error for oversized video (AC5)"""
+        # Create a mock file that appears larger than 2GB
+        video_path = tmp_path / "large_video.mp4"
+        video_path.write_bytes(b"x")  # Create file
+
+        # Mock os.path.getsize to return a size > 2048MB
+        import os
+        original_getsize = os.path.getsize
+
+        def mock_getsize(path):
+            if str(path) == str(video_path):
+                return 3000 * 1024 * 1024  # 3GB
+            return original_getsize(path)
+
+        os.path.getsize = mock_getsize
+
+        try:
+            result = await gemini_provider.describe_video(
+                video_path=video_path,
+                camera_name="Test Camera",
+                timestamp="2025-01-01T00:00:00Z",
+                detected_objects=["person"]
+            )
+
+            assert result.success is False
+            assert "size limit" in result.error.lower() or "exceeds" in result.error.lower()
+            assert result.provider == "gemini"
+        finally:
+            os.path.getsize = original_getsize
+
+    def test_is_supported_video_format_mp4(self, gemini_provider, tmp_path):
+        """Test _is_supported_video_format returns True for MP4 (AC2)"""
+        video_path = tmp_path / "test.mp4"
+        video_path.touch()
+        assert gemini_provider._is_supported_video_format(video_path) is True
+
+    def test_is_supported_video_format_mov(self, gemini_provider, tmp_path):
+        """Test _is_supported_video_format returns True for MOV"""
+        video_path = tmp_path / "test.mov"
+        video_path.touch()
+        assert gemini_provider._is_supported_video_format(video_path) is True
+
+    def test_is_supported_video_format_webm(self, gemini_provider, tmp_path):
+        """Test _is_supported_video_format returns True for WebM"""
+        video_path = tmp_path / "test.webm"
+        video_path.touch()
+        assert gemini_provider._is_supported_video_format(video_path) is True
+
+    def test_is_supported_video_format_mkv_unsupported(self, gemini_provider, tmp_path):
+        """Test _is_supported_video_format returns False for MKV (AC2)"""
+        video_path = tmp_path / "test.mkv"
+        video_path.touch()
+        assert gemini_provider._is_supported_video_format(video_path) is False
+
+    def test_get_video_mime_type_mp4(self, gemini_provider, tmp_path):
+        """Test _get_video_mime_type returns correct MIME for MP4"""
+        video_path = tmp_path / "test.mp4"
+        video_path.touch()
+        assert gemini_provider._get_video_mime_type(video_path) == "video/mp4"
+
+    def test_get_video_mime_type_mov(self, gemini_provider, tmp_path):
+        """Test _get_video_mime_type returns correct MIME for MOV"""
+        video_path = tmp_path / "test.mov"
+        video_path.touch()
+        assert gemini_provider._get_video_mime_type(video_path) == "video/quicktime"
+
+    def test_get_video_mime_type_webm(self, gemini_provider, tmp_path):
+        """Test _get_video_mime_type returns correct MIME for WebM"""
+        video_path = tmp_path / "test.webm"
+        video_path.touch()
+        assert gemini_provider._get_video_mime_type(video_path) == "video/webm"
+
+    def test_build_video_prompt_includes_camera_name(self, gemini_provider):
+        """Test _build_video_prompt includes camera name in prompt"""
+        prompt = gemini_provider._build_video_prompt(
+            camera_name="Front Door",
+            timestamp="2025-01-01T12:00:00Z",
+            detected_objects=["person", "vehicle"],
+            video_duration_seconds=10.5
+        )
+
+        assert "Front Door" in prompt
+        assert "10.5" in prompt
+        assert "person" in prompt
+        assert "vehicle" in prompt
+
+    def test_build_video_prompt_with_custom_prompt(self, gemini_provider):
+        """Test _build_video_prompt includes custom prompt"""
+        custom = "Focus on detecting packages"
+        prompt = gemini_provider._build_video_prompt(
+            camera_name="Test Camera",
+            timestamp="2025-01-01T12:00:00Z",
+            detected_objects=["motion"],
+            video_duration_seconds=5.0,
+            custom_prompt=custom
+        )
+
+        assert custom in prompt
+
+    @pytest.mark.asyncio
+    async def test_describe_video_inline_success(self, gemini_provider, tmp_path):
+        """Test describe_video via inline data with mocked Gemini response (AC1, AC4)"""
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        # Create a small test video file
+        video_path = tmp_path / "small_video.mp4"
+        video_path.write_bytes(b"fake video content" * 100)  # ~1.8KB
+
+        # Mock the Gemini model response
+        mock_response = MagicMock()
+        mock_response.text = "A person walks up to the front door and rings the doorbell."
+
+        mock_model = MagicMock()
+        mock_model.generate_content_async = AsyncMock(return_value=mock_response)
+
+        # Mock _get_video_duration to return a valid duration
+        with patch.object(gemini_provider, 'model', mock_model):
+            with patch.object(gemini_provider, '_get_video_duration', new_callable=AsyncMock) as mock_duration:
+                mock_duration.return_value = 10.0
+
+                result = await gemini_provider.describe_video(
+                    video_path=video_path,
+                    camera_name="Front Door",
+                    timestamp="2025-01-01T12:00:00Z",
+                    detected_objects=["person"]
+                )
+
+        assert result.success is True
+        assert result.provider == "gemini"
+        assert "person" in result.description.lower() or "door" in result.description.lower()
+        assert result.tokens_used > 0  # Token estimation should work
+        assert result.cost_estimate > 0  # Cost should be calculated
+
+    @pytest.mark.asyncio
+    async def test_describe_video_token_estimation(self, gemini_provider, tmp_path):
+        """Test token estimation for video (~258 tokens/frame at 1fps) (AC3)"""
+        from unittest.mock import AsyncMock, patch, MagicMock
+
+        video_path = tmp_path / "test_video.mp4"
+        video_path.write_bytes(b"fake video content" * 100)
+
+        mock_response = MagicMock()
+        mock_response.text = "A person enters the frame."
+
+        mock_model = MagicMock()
+        mock_model.generate_content_async = AsyncMock(return_value=mock_response)
+
+        # Mock a 10-second video (should be ~2580 tokens + 150 base)
+        with patch.object(gemini_provider, 'model', mock_model):
+            with patch.object(gemini_provider, '_get_video_duration', new_callable=AsyncMock) as mock_duration:
+                mock_duration.return_value = 10.0  # 10 seconds = 10 frames at 1fps
+
+                result = await gemini_provider.describe_video(
+                    video_path=video_path,
+                    camera_name="Test Camera",
+                    timestamp="2025-01-01T12:00:00Z",
+                    detected_objects=[]
+                )
+
+        assert result.success is True
+        # Expected tokens: 150 base + (10 frames * 258 tokens/frame) = 2730
+        expected_tokens = 150 + (10 * 258)
+        assert result.tokens_used == expected_tokens
+
+
+class TestAIServiceDescribeVideo:
+    """Tests for AIService.describe_video() orchestration (Story P3-4.3 Task 7)"""
+
+    @pytest.fixture
+    def ai_service_with_gemini(self):
+        """Create AIService with only Gemini configured"""
+        service = AIService()
+        service.configure_providers(
+            openai_key=None,
+            grok_key=None,
+            claude_key=None,
+            gemini_key="test-gemini-key"
+        )
+        return service
+
+    @pytest.mark.asyncio
+    async def test_describe_video_no_video_providers(self):
+        """Test describe_video returns error when no video providers configured"""
+        service = AIService()
+        # Don't configure any providers
+
+        result = await service.describe_video(
+            video_path="/fake/path.mp4",
+            camera_name="Test Camera"
+        )
+
+        assert result.success is False
+        assert "No video-capable" in result.error
+
+    @pytest.mark.asyncio
+    async def test_describe_video_routes_to_gemini(self, ai_service_with_gemini, tmp_path):
+        """Test describe_video routes to Gemini provider"""
+        from unittest.mock import AsyncMock, patch, MagicMock
+        from app.services.ai_service import AIProvider
+
+        video_path = tmp_path / "test.mp4"
+        video_path.write_bytes(b"fake video" * 100)
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.description = "Test description"
+        mock_result.provider = "gemini"
+        mock_result.tokens_used = 1000
+        mock_result.cost_estimate = 0.001
+        mock_result.confidence = 75
+        mock_result.objects_detected = ["person"]
+        mock_result.response_time_ms = 500
+        mock_result.error = None
+
+        # Mock the Gemini provider's describe_video method
+        gemini_provider = ai_service_with_gemini.providers[AIProvider.GEMINI]
+        with patch.object(gemini_provider, 'describe_video', new_callable=AsyncMock) as mock_describe:
+            mock_describe.return_value = mock_result
+
+            result = await ai_service_with_gemini.describe_video(
+                video_path=video_path,
+                camera_name="Front Door",
+                detected_objects=["person"]
+            )
+
+        assert result.success is True
+        assert result.provider == "gemini"
+        mock_describe.assert_called_once()
+
+
+class TestGeminiVideoFormatConversion:
+    """Tests for video format conversion functionality (Story P3-4.3 AC2)"""
+
+    @pytest.fixture
+    def gemini_provider(self):
+        """Create a GeminiProvider instance for testing"""
+        from app.services.ai_service import GeminiProvider
+        return GeminiProvider(api_key="test-gemini-key")
+
+    @pytest.mark.asyncio
+    async def test_convert_video_format_unsupported_triggers_conversion(self, gemini_provider, tmp_path):
+        """Test that unsupported format triggers conversion attempt"""
+        from unittest.mock import AsyncMock, patch
+
+        # Create an MKV file (unsupported format)
+        video_path = tmp_path / "test.mkv"
+        video_path.write_bytes(b"fake mkv content" * 100)
+
+        # Mock the conversion to return None (failed) - this tests the error path
+        with patch.object(gemini_provider, '_convert_video_format', new_callable=AsyncMock) as mock_convert:
+            mock_convert.return_value = None
+
+            result = await gemini_provider.describe_video(
+                video_path=video_path,
+                camera_name="Test Camera",
+                timestamp="2025-01-01T12:00:00Z",
+                detected_objects=[]
+            )
+
+        assert result.success is False
+        assert "convert" in result.error.lower() or "unsupported" in result.error.lower()
+        mock_convert.assert_called_once()

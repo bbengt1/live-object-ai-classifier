@@ -1144,20 +1144,14 @@ class ProtectEventHandler:
             )
 
         elif video_method == "native_upload":
-            # Story P3-4.3: Gemini uses native video upload (not yet implemented)
-            reason = "native_upload_not_implemented"
-            self._fallback_chain.append(f"video_native:{reason}")
-            logger.info(
-                f"native_upload method not yet implemented for {selected_provider}",
-                extra={
-                    "event_type": "video_native_fallback",
-                    "camera_id": camera.id,
-                    "provider": selected_provider,
-                    "reason": reason,
-                    "clip_path": str(clip_path)
-                }
+            # Story P3-4.3: Gemini uses native video upload
+            return await self._try_video_native_upload(
+                clip_path=clip_path,
+                camera=camera,
+                event_type=event_type,
+                is_doorbell_ring=is_doorbell_ring,
+                provider_name=selected_provider
             )
-            return None
 
         else:
             reason = f"unknown_video_method:{video_method}"
@@ -1288,6 +1282,123 @@ class ProtectEventHandler:
             self._fallback_chain.append(f"video_native:{reason}")
             logger.error(
                 f"Exception during video frame extraction for camera '{camera.name}': {e}",
+                extra={
+                    "event_type": "video_native_error",
+                    "camera_id": camera.id,
+                    "provider": provider_name,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return None
+
+    async def _try_video_native_upload(
+        self,
+        clip_path: Path,
+        camera: "Camera",
+        event_type: str,
+        is_doorbell_ring: bool,
+        provider_name: str
+    ) -> Optional["AIResult"]:
+        """
+        Perform video analysis via native video upload (Story P3-4.3).
+
+        Uses provider's describe_video() method which uploads the video directly
+        to the AI provider (e.g., Gemini) for native video analysis.
+
+        Args:
+            clip_path: Path to video clip file
+            camera: Camera that captured the event
+            event_type: Detection type (person, vehicle, ring, etc.)
+            is_doorbell_ring: If True, use doorbell-specific prompt
+            provider_name: Provider to use (gemini)
+
+        Returns:
+            AIResult if successful, None to trigger fallback
+        """
+        from app.services.ai_service import ai_service, AIProvider, PROVIDER_CAPABILITIES
+        from datetime import datetime
+
+        try:
+            # Get provider instance
+            provider_enum = AIProvider(provider_name)
+            provider = ai_service.providers.get(provider_enum)
+
+            if not provider or not hasattr(provider, 'describe_video'):
+                reason = f"provider_missing_describe_video:{provider_name}"
+                self._fallback_chain.append(f"video_native:{reason}")
+                logger.warning(
+                    f"Provider {provider_name} does not have describe_video method",
+                    extra={
+                        "event_type": "video_native_fallback",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "reason": reason
+                    }
+                )
+                return None
+
+            # Build custom prompt for event context
+            custom_prompt = None
+            if is_doorbell_ring:
+                custom_prompt = (
+                    "This is a doorbell ring event. Describe who is at the door, "
+                    "their appearance, what they might want, and any packages or items visible."
+                )
+
+            logger.info(
+                f"Calling describe_video (native upload) for camera '{camera.name}'",
+                extra={
+                    "event_type": "video_native_upload_start",
+                    "camera_id": camera.id,
+                    "provider": provider_name,
+                    "clip_path": str(clip_path),
+                    "is_doorbell_ring": is_doorbell_ring
+                }
+            )
+
+            # Call describe_video
+            result = await provider.describe_video(
+                video_path=clip_path,
+                camera_name=camera.name,
+                timestamp=datetime.now().isoformat(),
+                detected_objects=[event_type] if event_type else [],
+                custom_prompt=custom_prompt
+            )
+
+            if result.success:
+                logger.info(
+                    f"video_native analysis (native_upload) succeeded for camera '{camera.name}'",
+                    extra={
+                        "event_type": "video_native_success",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "video_method": "native_upload",
+                        "tokens_used": result.tokens_used,
+                        "response_time_ms": result.response_time_ms
+                    }
+                )
+                return result
+            else:
+                reason = f"describe_video_failed:{result.error}"
+                self._fallback_chain.append(f"video_native:{reason}")
+                logger.warning(
+                    f"describe_video returned failure for camera '{camera.name}': {result.error}",
+                    extra={
+                        "event_type": "video_native_fallback",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "reason": reason,
+                        "error": result.error
+                    }
+                )
+                return None
+
+        except Exception as e:
+            reason = f"exception:{type(e).__name__}"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.error(
+                f"Exception during video native upload for camera '{camera.name}': {e}",
                 extra={
                     "event_type": "video_native_error",
                     "camera_id": camera.id,
