@@ -3,13 +3,14 @@ AI Service API endpoints
 
 Provides:
 - GET /ai/usage - Usage statistics and cost tracking
+- GET /ai/capabilities - Provider capability information (Story P3-4.1)
 """
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Query
 import logging
 
-from app.schemas.ai import AIUsageStatsResponse
+from app.schemas.ai import AIUsageStatsResponse, AICapabilitiesResponse
 from app.services.ai_service import ai_service
 
 logger = logging.getLogger(__name__)
@@ -57,3 +58,52 @@ async def get_ai_usage_stats(
     )
 
     return AIUsageStatsResponse(**stats)
+
+
+@router.get("/capabilities", response_model=AICapabilitiesResponse)
+async def get_ai_capabilities():
+    """
+    Get AI provider capabilities (Story P3-4.1).
+
+    Returns capability information for all AI providers, including:
+    - Whether provider supports native video input
+    - Maximum video duration and file size limits
+    - Supported video formats
+    - Maximum images for multi-frame analysis
+    - Whether provider has an API key configured
+
+    This endpoint helps determine which analysis modes are available
+    based on the current provider configuration.
+
+    Example:
+        GET /api/v1/ai/capabilities
+
+    Response:
+        {
+            "providers": {
+                "openai": {"video": true, "max_video_duration": 60, ...},
+                "claude": {"video": false, ...},
+                ...
+            }
+        }
+    """
+    # Get capabilities from AI service
+    capabilities = ai_service.get_all_capabilities()
+
+    # Count video-capable providers
+    video_providers = [p for p, caps in capabilities.items() if caps.get("video")]
+    configured_video_providers = [
+        p for p, caps in capabilities.items()
+        if caps.get("video") and caps.get("configured")
+    ]
+
+    logger.info(
+        f"AI capabilities requested: {len(video_providers)} video-capable providers, "
+        f"{len(configured_video_providers)} configured",
+        extra={
+            "video_capable_providers": video_providers,
+            "configured_video_providers": configured_video_providers
+        }
+    )
+
+    return AICapabilitiesResponse(providers=capabilities)

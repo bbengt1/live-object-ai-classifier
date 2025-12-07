@@ -79,6 +79,63 @@ COST_RATES = {
     "gemini": {"input": 0.000075, "output": 0.0003},  # Gemini Flash
 }
 
+# Provider capabilities matrix (Story P3-4.1, P3-4.2)
+# Static capability information for each AI provider
+# - video: Whether provider supports native video file input (NOT frame extraction)
+# - max_video_duration: Maximum video duration in seconds (0 if no video support)
+# - max_video_size_mb: Maximum video file size in MB (0 if no video support)
+# - supported_formats: List of supported video formats (empty if no video support)
+# - max_images: Maximum number of images for multi-frame analysis
+#
+# NOTE (P3-4.2): Provider video capabilities
+# - OpenAI: Supports video via FRAME EXTRACTION (not native upload). Extract frames + optional Whisper audio.
+#   Source: https://cookbook.openai.com/examples/gpt4o/introduction_to_gpt4o
+# - Gemini: Supports NATIVE VIDEO UPLOAD (file upload or inline data).
+#   Source: https://ai.google.dev/gemini-api/docs/vision
+PROVIDER_CAPABILITIES = {
+    "openai": {
+        "video": True,  # P3-4.2: OpenAI supports video via frame extraction
+        "video_method": "frame_extraction",  # Extract frames, send as images
+        "max_video_duration": 60,  # Practical limit for frame extraction
+        "max_video_size_mb": 50,  # Larger files OK since we extract frames
+        "max_frames": 10,  # Cost control: max frames to extract
+        "supported_formats": ["mp4", "mov", "webm", "avi"],
+        "max_images": 10,
+        "supports_audio_transcription": True,  # Optional Whisper integration
+    },
+    "grok": {
+        "video": True,  # Grok 2 Vision supports video via frame extraction (same as OpenAI pattern)
+        "video_method": "frame_extraction",
+        "max_video_duration": 60,
+        "max_video_size_mb": 50,
+        "max_frames": 10,
+        "supported_formats": ["mp4", "mov", "webm", "avi"],
+        "max_images": 10,
+        "supports_audio_transcription": False,
+    },
+    "claude": {
+        "video": False,  # Claude does not support video input
+        "video_method": None,
+        "max_video_duration": 0,
+        "max_video_size_mb": 0,
+        "max_frames": 0,
+        "supported_formats": [],
+        "max_images": 20,
+        "supports_audio_transcription": False,
+    },
+    "gemini": {
+        "video": True,
+        "video_method": "native_upload",  # P3-4.3: Native video file upload
+        "max_video_duration": 300,  # 5 min practical limit (tokens ~258/frame at 1fps)
+        "max_video_size_mb": 2048,  # 2GB via File API
+        "inline_max_size_mb": 20,  # Inline data limit (faster, no upload)
+        "max_frames": 0,  # N/A for native upload
+        "supported_formats": ["mp4", "mov", "webm", "avi", "flv", "mpg", "mpeg", "wmv"],
+        "max_images": 16,
+        "supports_audio": True,  # Gemini natively processes video audio
+    },
+}
+
 
 class AIProvider(Enum):
     """Supported AI vision providers"""
@@ -521,6 +578,265 @@ class OpenAIProvider(AIProviderBase):
                 error=str(e)
             )
 
+    async def describe_video(
+        self,
+        video_path: "Path",
+        camera_name: str,
+        timestamp: str,
+        detected_objects: List[str],
+        include_audio: bool = False,
+        custom_prompt: Optional[str] = None
+    ) -> AIResult:
+        """
+        Analyze video using frame extraction + optional audio transcription (Story P3-4.2).
+
+        OpenAI does not support native video file upload. This method extracts frames
+        using FrameExtractor (P3-2.1) and sends them via generate_multi_image_description().
+        Optionally transcribes audio via Whisper API and includes in prompt context.
+
+        Args:
+            video_path: Path to the video file (MP4, MOV, etc.)
+            camera_name: Name of the camera for context
+            timestamp: Timestamp of the event
+            detected_objects: Objects detected by motion analysis
+            include_audio: If True, extract and transcribe audio via Whisper (AC3)
+            custom_prompt: Optional custom prompt to append
+
+        Returns:
+            AIResult with video analysis description
+
+        Implementation Notes:
+            - Extracts max 10 frames for cost control (AC2)
+            - Uses evenly_spaced strategy with blur filtering
+            - Token usage is tracked accurately (AC5)
+            - Frame extraction uses existing FrameExtractor (P3-2.1)
+        """
+        from pathlib import Path
+        from app.services.frame_extractor import get_frame_extractor
+
+        start_time = time.time()
+
+        # Ensure video_path is a Path object
+        if isinstance(video_path, str):
+            video_path = Path(video_path)
+
+        logger.info(
+            "Starting video analysis via frame extraction",
+            extra={
+                "event_type": "video_describe_start",
+                "provider": "openai",
+                "video_path": str(video_path),
+                "include_audio": include_audio,
+                "camera_name": camera_name
+            }
+        )
+
+        try:
+            # Step 1: Extract frames using FrameExtractor (AC1, AC2)
+            frame_extractor = get_frame_extractor()
+            max_frames = PROVIDER_CAPABILITIES["openai"].get("max_frames", 10)
+
+            frames_bytes = await frame_extractor.extract_frames(
+                clip_path=video_path,
+                frame_count=max_frames,
+                strategy="evenly_spaced",
+                filter_blur=True
+            )
+
+            if not frames_bytes:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                logger.warning(
+                    "No frames extracted from video",
+                    extra={
+                        "event_type": "video_describe_no_frames",
+                        "provider": "openai",
+                        "video_path": str(video_path),
+                        "response_time_ms": elapsed_ms
+                    }
+                )
+                return AIResult(
+                    description="",
+                    confidence=0,
+                    objects_detected=[],
+                    provider=AIProvider.OPENAI.value,
+                    tokens_used=0,
+                    response_time_ms=elapsed_ms,
+                    cost_estimate=0.0,
+                    success=False,
+                    error="No frames could be extracted from video"
+                )
+
+            # Convert JPEG bytes to base64 strings
+            frames_base64 = [base64.b64encode(fb).decode('utf-8') for fb in frames_bytes]
+
+            # Step 2: Optional audio transcription via Whisper (AC3)
+            transcript = None
+            if include_audio:
+                transcript = await self._transcribe_audio(video_path)
+
+            # Step 3: Build enhanced prompt with transcript context
+            enhanced_prompt = custom_prompt or ""
+            if transcript:
+                enhanced_prompt = f"Audio transcript from the video: {transcript}\n\n{enhanced_prompt}".strip()
+
+            # Step 4: Use existing multi-image method (reuse P3-2.3 infrastructure)
+            result = await self.generate_multi_image_description(
+                images_base64=frames_base64,
+                camera_name=camera_name,
+                timestamp=timestamp,
+                detected_objects=detected_objects,
+                custom_prompt=enhanced_prompt if enhanced_prompt else None
+            )
+
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            logger.info(
+                "Video analysis via frame extraction completed",
+                extra={
+                    "event_type": "video_describe_success",
+                    "provider": "openai",
+                    "video_path": str(video_path),
+                    "num_frames": len(frames_base64),
+                    "audio_transcribed": transcript is not None,
+                    "response_time_ms": elapsed_ms,
+                    "tokens_used": result.tokens_used,
+                    "success": result.success
+                }
+            )
+
+            # Update response time to include frame extraction time
+            result.response_time_ms = elapsed_ms
+
+            return result
+
+        except Exception as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            logger.error(
+                "Video analysis via frame extraction failed",
+                extra={
+                    "event_type": "video_describe_error",
+                    "provider": "openai",
+                    "video_path": str(video_path),
+                    "response_time_ms": elapsed_ms,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return AIResult(
+                description="",
+                confidence=0,
+                objects_detected=[],
+                provider=AIProvider.OPENAI.value,
+                tokens_used=0,
+                response_time_ms=elapsed_ms,
+                cost_estimate=0.0,
+                success=False,
+                error=str(e)
+            )
+
+    async def _transcribe_audio(self, video_path: "Path") -> Optional[str]:
+        """
+        Extract and transcribe audio from video using Whisper API (Story P3-4.2 AC3).
+
+        Args:
+            video_path: Path to the video file
+
+        Returns:
+            Transcribed text, or None if no audio or transcription fails
+        """
+        import tempfile
+        import os
+        import av
+
+        temp_audio_path = None
+        try:
+            # Check if video has audio stream
+            with av.open(str(video_path)) as container:
+                audio_stream = next(
+                    (s for s in container.streams if s.type == 'audio'),
+                    None
+                )
+                if not audio_stream:
+                    logger.debug(
+                        "Video has no audio track",
+                        extra={
+                            "event_type": "audio_transcribe_no_track",
+                            "video_path": str(video_path)
+                        }
+                    )
+                    return None
+
+            # Extract audio to temporary WAV file
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+                temp_audio_path = temp_audio.name
+
+            # Use PyAV to extract audio
+            with av.open(str(video_path)) as in_container:
+                audio_stream = next(s for s in in_container.streams if s.type == 'audio')
+
+                # Create output container for WAV
+                with av.open(temp_audio_path, 'w', format='wav') as out_container:
+                    out_stream = out_container.add_stream('pcm_s16le', rate=16000)
+                    out_stream.layout = 'mono'
+
+                    # Resample and write audio
+                    resampler = av.AudioResampler(
+                        format='s16',
+                        layout='mono',
+                        rate=16000
+                    )
+
+                    for packet in in_container.demux(audio_stream):
+                        for frame in packet.decode():
+                            resampled = resampler.resample(frame)
+                            for resampled_frame in resampled:
+                                for out_packet in out_stream.encode(resampled_frame):
+                                    out_container.mux(out_packet)
+
+                    # Flush encoder
+                    for out_packet in out_stream.encode():
+                        out_container.mux(out_packet)
+
+            # Transcribe with Whisper
+            with open(temp_audio_path, "rb") as audio_file:
+                transcript_response = await self.client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file
+                )
+
+            transcript = transcript_response.text.strip() if transcript_response.text else None
+
+            logger.info(
+                "Audio transcription completed",
+                extra={
+                    "event_type": "audio_transcribe_success",
+                    "video_path": str(video_path),
+                    "transcript_length": len(transcript) if transcript else 0
+                }
+            )
+
+            return transcript
+
+        except Exception as e:
+            logger.warning(
+                f"Audio transcription failed: {e}",
+                extra={
+                    "event_type": "audio_transcribe_error",
+                    "video_path": str(video_path),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return None
+
+        finally:
+            # Clean up temp file
+            if temp_audio_path and os.path.exists(temp_audio_path):
+                try:
+                    os.unlink(temp_audio_path)
+                except Exception:
+                    pass
+
 
 class ClaudeProvider(AIProviderBase):
     """Anthropic Claude 3 Haiku vision provider"""
@@ -900,6 +1216,559 @@ class GeminiProvider(AIProviderBase):
                 success=False,
                 error=str(e)
             )
+
+    async def describe_video(
+        self,
+        video_path: "Path",
+        camera_name: str,
+        timestamp: str,
+        detected_objects: List[str],
+        custom_prompt: Optional[str] = None
+    ) -> AIResult:
+        """
+        Analyze video using Gemini's native video upload (Story P3-4.3).
+
+        Gemini supports two methods:
+        - Inline data: For videos under 20MB, send bytes directly
+        - File API: For videos 20MB-2GB, upload to Google servers first
+
+        This method automatically selects the appropriate method based on file size.
+
+        Args:
+            video_path: Path to the video file (MP4, MOV, WebM, etc.)
+            camera_name: Name of the camera for context
+            timestamp: Timestamp of the event
+            detected_objects: Objects detected by motion analysis
+            custom_prompt: Optional custom prompt to append
+
+        Returns:
+            AIResult with video analysis description
+
+        Implementation Notes:
+            - Uses inline_data for clips under 20MB (typical security clips)
+            - Falls back to File API for larger videos (up to 2GB)
+            - Token usage estimated at ~258 tokens/frame at 1fps (AC3)
+            - Audio is processed natively by Gemini models
+        """
+        from pathlib import Path
+        import os
+
+        start_time = time.time()
+
+        # Ensure video_path is a Path object
+        if isinstance(video_path, str):
+            video_path = Path(video_path)
+
+        logger.info(
+            "Starting video analysis via Gemini native upload",
+            extra={
+                "event_type": "video_describe_start",
+                "provider": "gemini",
+                "video_path": str(video_path),
+                "camera_name": camera_name
+            }
+        )
+
+        try:
+            # Step 1: Validate video file exists
+            if not video_path.exists():
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                return AIResult(
+                    description="",
+                    confidence=0,
+                    objects_detected=[],
+                    provider=AIProvider.GEMINI.value,
+                    tokens_used=0,
+                    response_time_ms=elapsed_ms,
+                    cost_estimate=0.0,
+                    success=False,
+                    error=f"Video file not found: {video_path}"
+                )
+
+            # Step 2: Get file size and validate against limits
+            file_size_bytes = os.path.getsize(video_path)
+            file_size_mb = file_size_bytes / (1024 * 1024)
+            max_size_mb = PROVIDER_CAPABILITIES["gemini"].get("max_video_size_mb", 20)
+            inline_max_mb = 20  # Gemini inline data limit
+
+            if file_size_mb > max_size_mb:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                logger.warning(
+                    f"Video exceeds size limit: {file_size_mb:.2f}MB > {max_size_mb}MB",
+                    extra={
+                        "event_type": "video_describe_size_exceeded",
+                        "provider": "gemini",
+                        "video_path": str(video_path),
+                        "file_size_mb": file_size_mb,
+                        "max_size_mb": max_size_mb
+                    }
+                )
+                return AIResult(
+                    description="",
+                    confidence=0,
+                    objects_detected=[],
+                    provider=AIProvider.GEMINI.value,
+                    tokens_used=0,
+                    response_time_ms=elapsed_ms,
+                    cost_estimate=0.0,
+                    success=False,
+                    error=f"Video exceeds size limit: {file_size_mb:.2f}MB > {max_size_mb}MB"
+                )
+
+            # Step 3: Validate and convert video format if needed (AC2)
+            converted_path = None
+            working_video_path = video_path
+            if not self._is_supported_video_format(video_path):
+                logger.info(
+                    f"Video format not natively supported, converting: {video_path.suffix}",
+                    extra={
+                        "event_type": "video_format_unsupported",
+                        "provider": "gemini",
+                        "video_path": str(video_path),
+                        "format": video_path.suffix
+                    }
+                )
+                converted_path = await self._convert_video_format(video_path)
+                if converted_path is None:
+                    elapsed_ms = int((time.time() - start_time) * 1000)
+                    return AIResult(
+                        description="",
+                        confidence=0,
+                        objects_detected=[],
+                        provider=AIProvider.GEMINI.value,
+                        tokens_used=0,
+                        response_time_ms=elapsed_ms,
+                        cost_estimate=0.0,
+                        success=False,
+                        error=f"Failed to convert unsupported video format: {video_path.suffix}"
+                    )
+                working_video_path = converted_path
+                # Update file size after conversion
+                file_size_bytes = os.path.getsize(working_video_path)
+                file_size_mb = file_size_bytes / (1024 * 1024)
+
+            try:
+                # Step 4: Get video duration for token estimation
+                video_duration_seconds = await self._get_video_duration(working_video_path)
+
+                # Step 5: Determine MIME type
+                mime_type = self._get_video_mime_type(working_video_path)
+
+                # Step 6: Build prompt
+                user_prompt = self._build_video_prompt(
+                    camera_name, timestamp, detected_objects, video_duration_seconds, custom_prompt
+                )
+                full_prompt = f"{self.system_prompt}\n\n{user_prompt}"
+
+                # Step 7: Choose method based on file size
+                if file_size_mb <= inline_max_mb:
+                    # Inline data method for small videos
+                    result = await self._describe_video_inline(
+                        working_video_path, full_prompt, mime_type, start_time, video_duration_seconds
+                    )
+                else:
+                    # File API method for larger videos
+                    result = await self._describe_video_file_api(
+                        working_video_path, full_prompt, start_time, video_duration_seconds
+                    )
+
+                return result
+            finally:
+                # Clean up converted file if we created one
+                if converted_path and converted_path.exists():
+                    try:
+                        converted_path.unlink()
+                        logger.debug(f"Cleaned up converted video file: {converted_path}")
+                    except Exception as e:
+                        logger.warning(f"Could not clean up converted video: {e}")
+
+        except Exception as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            logger.error(
+                "Video analysis via Gemini native upload failed",
+                extra={
+                    "event_type": "video_describe_error",
+                    "provider": "gemini",
+                    "video_path": str(video_path),
+                    "response_time_ms": elapsed_ms,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return AIResult(
+                description="",
+                confidence=0,
+                objects_detected=[],
+                provider=AIProvider.GEMINI.value,
+                tokens_used=0,
+                response_time_ms=elapsed_ms,
+                cost_estimate=0.0,
+                success=False,
+                error=str(e)
+            )
+
+    async def _describe_video_inline(
+        self,
+        video_path: "Path",
+        prompt: str,
+        mime_type: str,
+        start_time: float,
+        video_duration_seconds: float
+    ) -> AIResult:
+        """
+        Send video as inline data (for videos under 20MB).
+        """
+        # Read video bytes
+        video_bytes = video_path.read_bytes()
+
+        # Create video part for Gemini
+        video_part = {"mime_type": mime_type, "data": video_bytes}
+
+        # Send to Gemini
+        response = await self.model.generate_content_async(
+            [prompt, video_part],
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=500,
+                temperature=0.4
+            )
+        )
+
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        description = response.text.strip()
+
+        # Estimate token usage: ~258 tokens/frame at 1fps
+        estimated_frames = int(video_duration_seconds) if video_duration_seconds > 0 else 10
+        tokens_used = 150 + (estimated_frames * 258)  # Base + video tokens
+        cost = tokens_used / 1000 * self.cost_per_1k_tokens
+
+        confidence = 75  # Higher confidence for native video
+        objects = self._extract_objects(description)
+
+        logger.info(
+            "Gemini video analysis (inline) completed",
+            extra={
+                "event_type": "video_describe_success",
+                "provider": "gemini",
+                "method": "inline",
+                "video_path": str(video_path),
+                "video_duration_seconds": video_duration_seconds,
+                "response_time_ms": elapsed_ms,
+                "tokens_used": tokens_used,
+                "cost_usd": cost,
+                "confidence": confidence
+            }
+        )
+
+        return AIResult(
+            description=description,
+            confidence=confidence,
+            objects_detected=objects,
+            provider=AIProvider.GEMINI.value,
+            tokens_used=tokens_used,
+            response_time_ms=elapsed_ms,
+            cost_estimate=cost,
+            success=True
+        )
+
+    async def _describe_video_file_api(
+        self,
+        video_path: "Path",
+        prompt: str,
+        start_time: float,
+        video_duration_seconds: float
+    ) -> AIResult:
+        """
+        Upload video via File API for larger videos (20MB-2GB).
+
+        This method uploads the video to Google's servers, waits for processing,
+        then sends to Gemini for analysis.
+        """
+        import asyncio
+
+        # Upload the video file
+        logger.info(
+            "Uploading video to Gemini File API",
+            extra={
+                "event_type": "video_file_api_upload_start",
+                "provider": "gemini",
+                "video_path": str(video_path)
+            }
+        )
+
+        video_file = genai.upload_file(path=str(video_path))
+
+        # Wait for processing to complete (poll status)
+        max_wait_seconds = 120
+        poll_interval = 5
+        waited = 0
+
+        while video_file.state.name == "PROCESSING" and waited < max_wait_seconds:
+            logger.debug(
+                f"Video processing, waiting... ({waited}s)",
+                extra={
+                    "event_type": "video_file_api_processing",
+                    "provider": "gemini",
+                    "state": video_file.state.name,
+                    "waited_seconds": waited
+                }
+            )
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
+            video_file = genai.get_file(video_file.name)
+
+        if video_file.state.name == "FAILED":
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return AIResult(
+                description="",
+                confidence=0,
+                objects_detected=[],
+                provider=AIProvider.GEMINI.value,
+                tokens_used=0,
+                response_time_ms=elapsed_ms,
+                cost_estimate=0.0,
+                success=False,
+                error=f"Video processing failed: {video_file.state.name}"
+            )
+
+        if video_file.state.name == "PROCESSING":
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            return AIResult(
+                description="",
+                confidence=0,
+                objects_detected=[],
+                provider=AIProvider.GEMINI.value,
+                tokens_used=0,
+                response_time_ms=elapsed_ms,
+                cost_estimate=0.0,
+                success=False,
+                error=f"Video processing timed out after {max_wait_seconds}s"
+            )
+
+        # Video is ready, generate content
+        response = await self.model.generate_content_async(
+            [prompt, video_file],
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=500,
+                temperature=0.4
+            )
+        )
+
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        description = response.text.strip()
+
+        # Estimate token usage
+        estimated_frames = int(video_duration_seconds) if video_duration_seconds > 0 else 10
+        tokens_used = 150 + (estimated_frames * 258)
+        cost = tokens_used / 1000 * self.cost_per_1k_tokens
+
+        confidence = 75
+        objects = self._extract_objects(description)
+
+        logger.info(
+            "Gemini video analysis (File API) completed",
+            extra={
+                "event_type": "video_describe_success",
+                "provider": "gemini",
+                "method": "file_api",
+                "video_path": str(video_path),
+                "video_duration_seconds": video_duration_seconds,
+                "response_time_ms": elapsed_ms,
+                "tokens_used": tokens_used,
+                "cost_usd": cost,
+                "confidence": confidence
+            }
+        )
+
+        # Clean up uploaded file (optional, auto-deleted after 48h)
+        try:
+            genai.delete_file(video_file.name)
+        except Exception as e:
+            logger.debug(f"Could not delete uploaded video file: {e}")
+
+        return AIResult(
+            description=description,
+            confidence=confidence,
+            objects_detected=objects,
+            provider=AIProvider.GEMINI.value,
+            tokens_used=tokens_used,
+            response_time_ms=elapsed_ms,
+            cost_estimate=cost,
+            success=True
+        )
+
+    async def _get_video_duration(self, video_path: "Path") -> float:
+        """Get video duration in seconds using PyAV."""
+        import av
+
+        try:
+            with av.open(str(video_path)) as container:
+                if container.duration is not None:
+                    return container.duration / av.time_base
+                # Fallback: estimate from stream
+                for stream in container.streams.video:
+                    if stream.duration and stream.time_base:
+                        return float(stream.duration * stream.time_base)
+            return 10.0  # Default estimate
+        except Exception as e:
+            logger.warning(f"Could not get video duration: {e}")
+            return 10.0  # Default estimate
+
+    def _get_video_mime_type(self, video_path: "Path") -> str:
+        """Determine MIME type from file extension."""
+        ext = video_path.suffix.lower()
+        mime_types = {
+            ".mp4": "video/mp4",
+            ".mov": "video/quicktime",
+            ".webm": "video/webm",
+            ".avi": "video/x-msvideo",
+            ".flv": "video/x-flv",
+            ".mpg": "video/mpeg",
+            ".mpeg": "video/mpeg",
+            ".wmv": "video/x-ms-wmv",
+            ".mkv": "video/x-matroska",
+        }
+        return mime_types.get(ext, "video/mp4")
+
+    def _build_video_prompt(
+        self,
+        camera_name: str,
+        timestamp: str,
+        detected_objects: List[str],
+        video_duration_seconds: float,
+        custom_prompt: Optional[str] = None
+    ) -> str:
+        """Build prompt for video analysis with temporal narrative emphasis."""
+        objects_str = ", ".join(detected_objects) if detected_objects else "motion"
+        duration_str = f"{video_duration_seconds:.1f}" if video_duration_seconds > 0 else "several"
+
+        prompt = f"""Analyze this {duration_str}-second video clip from security camera '{camera_name}' captured at {timestamp}.
+
+Motion detection triggered on: {objects_str}
+
+This is a security camera video clip. Describe what happens throughout the video in chronological order:
+1. What activity or motion is occurring?
+2. Who or what is moving and how?
+3. What is the sequence of events from start to finish?
+4. Any notable details about appearance, behavior, or items visible?
+
+Provide a clear, temporal narrative of the events in the video."""
+
+        if custom_prompt:
+            prompt = f"{custom_prompt}\n\n{prompt}"
+
+        return prompt
+
+    def _is_supported_video_format(self, video_path: "Path") -> bool:
+        """Check if video format is supported by Gemini (AC2)."""
+        ext = video_path.suffix.lower().lstrip(".")
+        supported = PROVIDER_CAPABILITIES["gemini"].get("supported_formats", [])
+        return ext in supported
+
+    async def _convert_video_format(self, video_path: "Path") -> Optional["Path"]:
+        """
+        Convert unsupported video format to MP4/H.264 using PyAV (AC2).
+
+        Args:
+            video_path: Path to the original video file
+
+        Returns:
+            Path to converted video file, or None if conversion failed.
+            Caller is responsible for cleaning up the converted file.
+        """
+        import av
+        from pathlib import Path
+        import tempfile
+
+        try:
+            # Create temp file for converted video
+            output_path = Path(tempfile.mktemp(suffix=".mp4"))
+
+            logger.info(
+                f"Converting video format: {video_path.suffix} -> .mp4",
+                extra={
+                    "event_type": "video_format_conversion_start",
+                    "provider": "gemini",
+                    "source_path": str(video_path),
+                    "source_format": video_path.suffix,
+                    "target_path": str(output_path)
+                }
+            )
+
+            # Open input and output containers
+            input_container = av.open(str(video_path))
+            output_container = av.open(str(output_path), mode='w')
+
+            # Get input video stream
+            input_video_stream = None
+            for stream in input_container.streams.video:
+                input_video_stream = stream
+                break
+
+            if not input_video_stream:
+                logger.warning("No video stream found in input file")
+                input_container.close()
+                output_container.close()
+                return None
+
+            # Create output stream with H.264 codec
+            output_video_stream = output_container.add_stream('libx264', rate=input_video_stream.average_rate or 30)
+            output_video_stream.width = input_video_stream.width
+            output_video_stream.height = input_video_stream.height
+            output_video_stream.pix_fmt = 'yuv420p'
+
+            # Copy audio if present
+            input_audio_stream = None
+            output_audio_stream = None
+            for stream in input_container.streams.audio:
+                input_audio_stream = stream
+                output_audio_stream = output_container.add_stream('aac', rate=stream.rate or 44100)
+                break
+
+            # Transcode video frames
+            for frame in input_container.decode(video=0):
+                for packet in output_video_stream.encode(frame):
+                    output_container.mux(packet)
+
+            # Flush encoder
+            for packet in output_video_stream.encode():
+                output_container.mux(packet)
+
+            # Transcode audio if present
+            if input_audio_stream:
+                input_container.seek(0)
+                for frame in input_container.decode(audio=0):
+                    for packet in output_audio_stream.encode(frame):
+                        output_container.mux(packet)
+                for packet in output_audio_stream.encode():
+                    output_container.mux(packet)
+
+            input_container.close()
+            output_container.close()
+
+            logger.info(
+                "Video format conversion completed",
+                extra={
+                    "event_type": "video_format_conversion_success",
+                    "provider": "gemini",
+                    "source_path": str(video_path),
+                    "target_path": str(output_path)
+                }
+            )
+
+            return output_path
+
+        except Exception as e:
+            logger.error(
+                f"Video format conversion failed: {e}",
+                extra={
+                    "event_type": "video_format_conversion_error",
+                    "provider": "gemini",
+                    "source_path": str(video_path),
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return None
 
 
 class GrokProvider(AIProviderBase):
@@ -1836,6 +2705,224 @@ class AIService:
             error=f"All providers failed. Last error: {last_error}"
         )
 
+    async def describe_video(
+        self,
+        video_path: "Path",
+        camera_name: str,
+        timestamp: Optional[str] = None,
+        detected_objects: Optional[List[str]] = None,
+        sla_timeout_ms: int = 30000,
+        custom_prompt: Optional[str] = None
+    ) -> AIResult:
+        """
+        Generate natural language description from video clip (Story P3-4.3 Task 7).
+
+        Routes to video-capable providers (currently only Gemini supports native upload).
+        Falls back to multi-frame or single-frame analysis if video analysis fails.
+
+        Args:
+            video_path: Path to video file (MP4, MOV, WebM, etc.)
+            camera_name: Name of camera for context
+            timestamp: ISO 8601 timestamp of the event (default: now)
+            detected_objects: Objects detected by motion detection
+            sla_timeout_ms: Maximum time allowed in milliseconds (default: 30000ms = 30s)
+            custom_prompt: Optional custom prompt to use instead of default
+
+        Returns:
+            AIResult with video description, confidence, objects, and usage stats
+        """
+        from pathlib import Path
+
+        start_time = time.time()
+
+        if timestamp is None:
+            timestamp = datetime.utcnow().isoformat()
+        if detected_objects is None:
+            detected_objects = []
+
+        # Ensure video_path is a Path object
+        if isinstance(video_path, str):
+            video_path = Path(video_path)
+
+        # Use custom prompt from settings if no explicit custom_prompt provided
+        effective_prompt = custom_prompt
+        if effective_prompt is None and self.description_prompt:
+            effective_prompt = self.description_prompt
+            logger.debug(
+                "Using description prompt from settings for video analysis",
+                extra={"prompt_preview": effective_prompt[:50] if effective_prompt else ""}
+            )
+
+        # Get video-capable providers (P3-4.1)
+        video_providers = self.get_video_capable_providers()
+        logger.info(
+            f"Starting video analysis, {len(video_providers)} video-capable providers available",
+            extra={
+                "event_type": "ai_video_analysis_start",
+                "video_path": str(video_path),
+                "camera_name": camera_name,
+                "video_providers": video_providers,
+            }
+        )
+
+        if not video_providers:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            logger.warning(
+                "No video-capable providers available",
+                extra={"event_type": "ai_video_no_providers"}
+            )
+            return AIResult(
+                description="No video-capable AI providers configured",
+                confidence=0,
+                objects_detected=detected_objects or ['unknown'],
+                provider="none",
+                tokens_used=0,
+                response_time_ms=elapsed_ms,
+                cost_estimate=0.0,
+                success=False,
+                error="No video-capable AI providers configured. Currently only Gemini supports native video."
+            )
+
+        # Try each video-capable provider
+        last_error = None
+        for provider_name in video_providers:
+            # Check SLA timeout
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            if elapsed_ms >= sla_timeout_ms:
+                logger.warning(
+                    f"Video SLA timeout ({sla_timeout_ms}ms) exceeded after {elapsed_ms}ms",
+                    extra={
+                        "event_type": "ai_video_sla_timeout",
+                        "elapsed_ms": elapsed_ms,
+                        "sla_timeout_ms": sla_timeout_ms,
+                    }
+                )
+                break
+
+            # Get provider enum and instance
+            try:
+                provider_enum = AIProvider(provider_name)
+            except ValueError:
+                logger.warning(f"Unknown provider: {provider_name}")
+                continue
+
+            provider = self.providers.get(provider_enum)
+            if provider is None:
+                logger.debug(
+                    f"Provider {provider_name} not configured, skipping",
+                    extra={"event_type": "ai_video_provider_not_configured"}
+                )
+                continue
+
+            # Check if provider supports native video upload (P3-4.3)
+            caps = PROVIDER_CAPABILITIES.get(provider_name, {})
+            if caps.get("video_method") != "native_upload":
+                logger.debug(
+                    f"Provider {provider_name} uses {caps.get('video_method', 'none')}, skipping for native video",
+                    extra={"event_type": "ai_video_provider_incompatible"}
+                )
+                continue
+
+            # Check if provider has describe_video method
+            if not hasattr(provider, 'describe_video'):
+                logger.warning(
+                    f"Provider {provider_name} lacks describe_video method",
+                    extra={"event_type": "ai_video_provider_no_method"}
+                )
+                continue
+
+            logger.info(
+                f"Attempting video analysis with {provider_name}",
+                extra={
+                    "event_type": "ai_video_attempt",
+                    "provider": provider_name,
+                    "elapsed_ms": elapsed_ms,
+                }
+            )
+
+            try:
+                result = await provider.describe_video(
+                    video_path=video_path,
+                    camera_name=camera_name,
+                    timestamp=timestamp,
+                    detected_objects=detected_objects,
+                    custom_prompt=effective_prompt
+                )
+
+                # Track usage with video_native analysis mode
+                self._track_usage(result, analysis_mode="video_native", is_estimated=True)
+
+                if result.success:
+                    total_elapsed_ms = int((time.time() - start_time) * 1000)
+                    logger.info(
+                        f"Video analysis success with {result.provider}",
+                        extra={
+                            "event_type": "ai_video_success",
+                            "provider": result.provider,
+                            "total_elapsed_ms": total_elapsed_ms,
+                            "tokens_used": result.tokens_used,
+                            "cost_usd": result.cost_estimate,
+                            "description_preview": result.description[:50] if result.description else "",
+                        }
+                    )
+
+                    # Log SLA violations
+                    if total_elapsed_ms > sla_timeout_ms:
+                        logger.warning(
+                            f"Video SLA violation: {total_elapsed_ms}ms > {sla_timeout_ms}ms target",
+                            extra={
+                                "event_type": "ai_video_sla_violation",
+                                "elapsed_ms": total_elapsed_ms,
+                                "sla_timeout_ms": sla_timeout_ms,
+                            }
+                        )
+
+                    return result
+                else:
+                    last_error = result.error
+                    logger.warning(
+                        f"{provider_name} video analysis failed: {result.error}",
+                        extra={
+                            "event_type": "ai_video_provider_failed",
+                            "provider": provider_name,
+                            "error": result.error,
+                        }
+                    )
+
+            except Exception as e:
+                last_error = str(e)
+                logger.error(
+                    f"Video analysis exception with {provider_name}: {e}",
+                    extra={
+                        "event_type": "ai_video_exception",
+                        "provider": provider_name,
+                        "error_type": type(e).__name__,
+                        "error": str(e),
+                    }
+                )
+
+        # All video providers failed
+        total_elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.error(
+            f"All video providers failed after {total_elapsed_ms}ms",
+            extra={
+                "event_type": "ai_video_all_failed",
+                "elapsed_ms": total_elapsed_ms,
+                "last_error": last_error,
+            }
+        )
+        return AIResult(
+            description="Failed to analyze video - all video providers unavailable",
+            confidence=0,
+            objects_detected=detected_objects or ['unknown'],
+            provider="none",
+            tokens_used=0,
+            response_time_ms=total_elapsed_ms,
+            cost_estimate=0.0,
+            success=False,
+            error=f"All video providers failed. Last error: {last_error}"
+        )
+
     def _preprocess_image(self, frame: np.ndarray) -> str:
         """
         Preprocess frame for AI API transmission.
@@ -2224,6 +3311,151 @@ class AIService:
                 'avg_response_time_ms': 0,
                 'provider_breakdown': {}
             }
+
+    # =========================================================================
+    # Provider Capability Query Methods (Story P3-4.1)
+    # =========================================================================
+
+    def get_provider_capabilities(self, provider: str) -> Dict[str, Any]:
+        """
+        Get capability dictionary for a specific provider (Story P3-4.1 AC1).
+
+        Returns static capability information from PROVIDER_CAPABILITIES constant.
+        Does NOT check if provider has a configured API key.
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+
+        Returns:
+            Dictionary with capability info:
+            {
+                "video": bool,
+                "max_video_duration": int,
+                "max_video_size_mb": int,
+                "supported_formats": list[str],
+                "max_images": int
+            }
+            Returns empty dict if provider not found.
+        """
+        return PROVIDER_CAPABILITIES.get(provider, {})
+
+    def supports_video(self, provider: str) -> bool:
+        """
+        Check if a provider supports native video input (Story P3-4.1 AC1).
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+
+        Returns:
+            True if provider supports video, False otherwise
+        """
+        capabilities = PROVIDER_CAPABILITIES.get(provider, {})
+        return capabilities.get("video", False)
+
+    def get_video_capable_providers(self) -> List[str]:
+        """
+        Get list of providers that support video AND have configured API keys (Story P3-4.1 AC2).
+
+        This is the primary method for determining which providers can be used for
+        video_native analysis mode. It combines static capability information with
+        runtime API key configuration.
+
+        Returns:
+            List of provider names that support video and are configured.
+            Example: ["openai", "gemini"] if both have API keys configured.
+        """
+        video_providers = []
+
+        for provider_name, capabilities in PROVIDER_CAPABILITIES.items():
+            if capabilities.get("video", False):
+                # Check if provider has a configured API key
+                try:
+                    provider_enum = AIProvider(provider_name)
+                    if self.providers.get(provider_enum) is not None:
+                        video_providers.append(provider_name)
+                except ValueError:
+                    # Unknown provider enum value, skip
+                    pass
+
+        logger.debug(
+            f"Video-capable providers with configured keys: {video_providers}",
+            extra={"video_providers": video_providers}
+        )
+
+        return video_providers
+
+    def get_max_video_duration(self, provider: str) -> int:
+        """
+        Get maximum video duration in seconds for a provider (Story P3-4.1 AC1).
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+
+        Returns:
+            Maximum duration in seconds, or 0 if provider doesn't support video
+        """
+        capabilities = PROVIDER_CAPABILITIES.get(provider, {})
+        return capabilities.get("max_video_duration", 0)
+
+    def get_max_video_size(self, provider: str) -> int:
+        """
+        Get maximum video file size in MB for a provider (Story P3-4.1 AC1).
+
+        Args:
+            provider: Provider name (openai, grok, claude, gemini)
+
+        Returns:
+            Maximum size in MB, or 0 if provider doesn't support video
+        """
+        capabilities = PROVIDER_CAPABILITIES.get(provider, {})
+        return capabilities.get("max_video_size_mb", 0)
+
+    def get_provider_order(self) -> List[str]:
+        """
+        Get the configured provider order for fallback chain (Story P3-4.2).
+
+        Returns the list of provider names in the order they should be tried.
+        Uses system settings if configured, otherwise returns default order.
+
+        Returns:
+            List of provider names in priority order.
+            Example: ["openai", "grok", "claude", "gemini"]
+        """
+        provider_enums = self._get_provider_order()
+        return [p.value for p in provider_enums]
+
+    def get_all_capabilities(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get capabilities for all providers with configuration status (Story P3-4.1 AC1).
+
+        Returns complete capability matrix including whether each provider
+        has an API key configured. Used by the /api/v1/ai/capabilities endpoint.
+
+        Returns:
+            Dictionary mapping provider names to their capabilities with 'configured' flag:
+            {
+                "openai": {"video": True, ..., "configured": True},
+                "claude": {"video": False, ..., "configured": False},
+                ...
+            }
+        """
+        result = {}
+
+        for provider_name, capabilities in PROVIDER_CAPABILITIES.items():
+            # Check if provider has a configured API key
+            configured = False
+            try:
+                provider_enum = AIProvider(provider_name)
+                configured = self.providers.get(provider_enum) is not None
+            except ValueError:
+                pass
+
+            result[provider_name] = {
+                **capabilities,
+                "configured": configured
+            }
+
+        return result
 
 
 # Global AI service instance

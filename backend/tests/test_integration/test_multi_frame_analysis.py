@@ -243,7 +243,8 @@ class TestMultiFrameAnalysisIntegration:
             assert result.success is True
             assert handler._last_analysis_mode == "single_frame"
             assert handler._last_frame_count == 1
-            assert handler._last_fallback_reason == "frame_extraction_failed"
+            # Fallback reason now includes the mode prefix
+            assert "frame_extraction_failed" in handler._last_fallback_reason
             mock_ai_service.generate_description.assert_called_once()
 
     @pytest.mark.asyncio
@@ -278,7 +279,8 @@ class TestMultiFrameAnalysisIntegration:
             assert result is not None
             assert result.success is True
             assert handler._last_analysis_mode == "single_frame"
-            assert handler._last_fallback_reason == "frame_extraction_failed"
+            # Fallback reason now includes the mode prefix
+            assert "frame_extraction_failed" in handler._last_fallback_reason
 
     @pytest.mark.asyncio
     async def test_fallback_to_single_frame_when_multi_frame_ai_fails(
@@ -320,7 +322,8 @@ class TestMultiFrameAnalysisIntegration:
             assert result is not None
             assert result.success is True
             assert handler._last_analysis_mode == "single_frame"
-            assert handler._last_fallback_reason == "multi_frame_ai_failed"
+            # Fallback reason now includes the mode prefix
+            assert "ai_failed" in handler._last_fallback_reason
 
     @pytest.mark.asyncio
     async def test_fallback_to_single_frame_when_multi_frame_ai_raises_exception(
@@ -356,7 +359,8 @@ class TestMultiFrameAnalysisIntegration:
             assert result is not None
             assert result.success is True
             assert handler._last_analysis_mode == "single_frame"
-            assert handler._last_fallback_reason == "multi_frame_ai_failed"
+            # Fallback reason now includes the mode prefix
+            assert "ai_failed" in handler._last_fallback_reason
 
     @pytest.mark.asyncio
     async def test_single_frame_when_clip_path_does_not_exist(

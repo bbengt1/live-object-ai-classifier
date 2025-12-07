@@ -908,22 +908,40 @@ class ProtectEventHandler:
             # camera.analysis_mode may not exist yet (added in P3-3.1), so use getattr with default
             configured_mode = getattr(camera, 'analysis_mode', None) or 'single_frame'
 
-            # Story P3-3.5: Non-Protect cameras (RTSP/USB) always use single_frame regardless of config
+            # Story P3-3.5, P3-4.4 AC5: Non-Protect cameras (RTSP/USB) always use single_frame regardless of config
             # They have no clip source, so video_native and multi_frame are not applicable
             if camera.source_type != 'protect':
-                if configured_mode in ('video_native', 'multi_frame'):
+                if configured_mode == 'video_native':
+                    # Story P3-4.4 AC5: Set fallback_reason for non-Protect cameras with video_native mode
+                    self._fallback_chain.append("video_native:no_clip_source")
                     logger.info(
-                        f"Camera '{camera.name}' has {configured_mode} mode but source_type='{camera.source_type}', "
+                        f"Camera '{camera.name}' has video_native mode but source_type='{camera.source_type}', "
                         "using single_frame (no clip source available for non-Protect cameras)",
                         extra={
-                            "event_type": "non_protect_single_frame",
+                            "event_type": "non_protect_video_native_fallback",
                             "camera_id": camera.id,
                             "source_type": camera.source_type,
                             "configured_mode": configured_mode,
-                            "effective_mode": "single_frame"
+                            "effective_mode": "single_frame",
+                            "fallback_reason": "video_native:no_clip_source"
                         }
                     )
-                # For non-Protect cameras, go directly to single-frame (no fallback chain needed)
+                elif configured_mode == 'multi_frame':
+                    # Track multi_frame fallback for non-Protect cameras
+                    self._fallback_chain.append("multi_frame:no_clip_source")
+                    logger.info(
+                        f"Camera '{camera.name}' has multi_frame mode but source_type='{camera.source_type}', "
+                        "using single_frame (no clip source available for non-Protect cameras)",
+                        extra={
+                            "event_type": "non_protect_multi_frame_fallback",
+                            "camera_id": camera.id,
+                            "source_type": camera.source_type,
+                            "configured_mode": configured_mode,
+                            "effective_mode": "single_frame",
+                            "fallback_reason": "multi_frame:no_clip_source"
+                        }
+                    )
+                # For non-Protect cameras, go directly to single-frame
                 return await self._single_frame_analysis(
                     snapshot_result=snapshot_result,
                     camera=camera,
@@ -1020,10 +1038,11 @@ class ProtectEventHandler:
         is_doorbell_ring: bool = False
     ) -> Optional["AIResult"]:
         """
-        Attempt video native analysis (Story P3-3.5 AC1).
+        Attempt video native analysis (Story P3-4.1 AC2, AC3).
 
-        Currently no AI providers fully support video_native in Phase 3 MVP scope
-        (Epic P3-4 is Growth scope), so this immediately fails and records the reason.
+        Checks if any configured providers support video input before attempting.
+        If no video-capable providers are available, immediately falls back to multi_frame
+        with appropriate logging.
 
         Args:
             clip_path: Path to video clip file (may be None)
@@ -1033,28 +1052,436 @@ class ProtectEventHandler:
             is_doorbell_ring: If True, use doorbell-specific AI prompt
 
         Returns:
-            AIResult if video_native succeeded (currently always None - not implemented)
+            AIResult if video_native succeeded, None if should fall back to multi_frame
         """
-        # Story P3-3.5: video_native is not supported in MVP - immediately fall back
-        # Epic P3-4 (Growth) will implement actual video upload to providers
-        reason = "provider_unsupported"
+        from app.services.ai_service import ai_service
 
+        # Story P3-4.1 AC3: Check if clip is available first
         if not clip_path or not clip_path.exists():
             reason = "no_clip_available"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.info(
+                f"video_native analysis not available for camera '{camera.name}': {reason}",
+                extra={
+                    "event_type": "video_native_fallback",
+                    "camera_id": camera.id,
+                    "reason": reason,
+                    "clip_available": False
+                }
+            )
+            return None
 
-        self._fallback_chain.append(f"video_native:{reason}")
+        # Story P3-4.1 AC2, AC3: Check which providers support video
+        video_capable_providers = ai_service.get_video_capable_providers()
+
+        if not video_capable_providers:
+            # AC3: No video-capable providers configured, fall back to multi_frame
+            reason = "no_video_providers_available"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.warning(
+                "No video-capable providers available - falling back to multi_frame",
+                extra={
+                    "event_type": "video_native_fallback",
+                    "camera_id": camera.id,
+                    "camera_name": camera.name,
+                    "reason": reason,
+                    "video_capable_count": 0
+                }
+            )
+            return None
+
+        # Log which providers support video for debugging
+        all_providers = ai_service.get_all_capabilities()
+        skipped_providers = [
+            p for p, caps in all_providers.items()
+            if not caps.get("video") and caps.get("configured")
+        ]
+
+        if skipped_providers:
+            logger.info(
+                f"Skipping non-video providers for video_native: {skipped_providers}",
+                extra={
+                    "event_type": "video_native_provider_filter",
+                    "camera_id": camera.id,
+                    "skipped_providers": skipped_providers,
+                    "video_capable_providers": video_capable_providers
+                }
+            )
+
+        # Story P3-4.2: Route to appropriate video analysis method based on video_method
+        # - frame_extraction: OpenAI, Grok - extract frames and send as images
+        # - native_upload: Gemini - upload video file directly (P3-4.3)
+
+        # Determine which provider to use and its video method
+        # Priority: OpenAI (frame_extraction) -> Grok (frame_extraction) -> Gemini (native_upload)
+        provider_order = ai_service.get_provider_order()
+        selected_provider = None
+        video_method = None
+
+        for provider_name in provider_order:
+            if provider_name in video_capable_providers:
+                caps = ai_service.get_provider_capabilities(provider_name)
+                video_method = caps.get("video_method")
+                selected_provider = provider_name
+                break
+
+        if not selected_provider:
+            reason = "no_suitable_video_provider"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.warning(
+                "No suitable video provider found in fallback order",
+                extra={
+                    "event_type": "video_native_fallback",
+                    "camera_id": camera.id,
+                    "reason": reason,
+                    "video_capable_providers": video_capable_providers
+                }
+            )
+            return None
 
         logger.info(
-            f"video_native analysis not available for camera '{camera.name}': {reason}",
+            f"Using {selected_provider} for video_native analysis (method: {video_method})",
             extra={
-                "event_type": "video_native_fallback",
+                "event_type": "video_native_provider_selected",
                 "camera_id": camera.id,
-                "reason": reason,
-                "clip_available": bool(clip_path and clip_path.exists())
+                "provider": selected_provider,
+                "video_method": video_method,
+                "clip_path": str(clip_path)
             }
         )
 
-        return None
+        # Route based on video method
+        if video_method == "frame_extraction":
+            # Story P3-4.2: OpenAI/Grok use frame extraction + multi-image
+            return await self._try_video_frame_extraction(
+                clip_path=clip_path,
+                camera=camera,
+                event_type=event_type,
+                is_doorbell_ring=is_doorbell_ring,
+                provider_name=selected_provider
+            )
+
+        elif video_method == "native_upload":
+            # Story P3-4.3: Gemini uses native video upload
+            return await self._try_video_native_upload(
+                clip_path=clip_path,
+                camera=camera,
+                event_type=event_type,
+                is_doorbell_ring=is_doorbell_ring,
+                provider_name=selected_provider
+            )
+
+        else:
+            reason = f"unknown_video_method:{video_method}"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.warning(
+                f"Unknown video method '{video_method}' for {selected_provider}",
+                extra={
+                    "event_type": "video_native_fallback",
+                    "camera_id": camera.id,
+                    "provider": selected_provider,
+                    "video_method": video_method,
+                    "reason": reason
+                }
+            )
+            return None
+
+    async def _try_video_frame_extraction(
+        self,
+        clip_path: Path,
+        camera: "Camera",
+        event_type: str,
+        is_doorbell_ring: bool,
+        provider_name: str
+    ) -> Optional["AIResult"]:
+        """
+        Perform video analysis via frame extraction (Story P3-4.2).
+
+        Uses provider's describe_video() method which extracts frames and optionally
+        transcribes audio, then sends to AI for analysis.
+
+        Args:
+            clip_path: Path to video clip file
+            camera: Camera that captured the event
+            event_type: Detection type (person, vehicle, ring, etc.)
+            is_doorbell_ring: If True, use doorbell-specific prompt
+            provider_name: Provider to use (openai, grok)
+
+        Returns:
+            AIResult if successful, None to trigger fallback
+        """
+        from app.services.ai_service import ai_service, AIProvider, PROVIDER_CAPABILITIES
+        from datetime import datetime
+
+        try:
+            # Get provider instance
+            provider_enum = AIProvider(provider_name)
+            provider = ai_service.providers.get(provider_enum)
+
+            if not provider or not hasattr(provider, 'describe_video'):
+                reason = f"provider_missing_describe_video:{provider_name}"
+                self._fallback_chain.append(f"video_native:{reason}")
+                logger.warning(
+                    f"Provider {provider_name} does not have describe_video method",
+                    extra={
+                        "event_type": "video_native_fallback",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "reason": reason
+                    }
+                )
+                return None
+
+            # Check if audio transcription is supported and enabled
+            caps = PROVIDER_CAPABILITIES.get(provider_name, {})
+            include_audio = caps.get("supports_audio_transcription", False)
+
+            # Build custom prompt for event context
+            custom_prompt = None
+            if is_doorbell_ring:
+                custom_prompt = (
+                    "This is a doorbell ring event. Describe who is at the door, "
+                    "their appearance, what they might want, and any packages or items visible."
+                )
+
+            # Story P3-4.4 AC3: 30 second timeout for video analysis
+            VIDEO_ANALYSIS_TIMEOUT_SECONDS = 30
+
+            logger.info(
+                f"Calling describe_video for camera '{camera.name}'",
+                extra={
+                    "event_type": "video_frame_extraction_start",
+                    "camera_id": camera.id,
+                    "provider": provider_name,
+                    "clip_path": str(clip_path),
+                    "include_audio": include_audio,
+                    "is_doorbell_ring": is_doorbell_ring,
+                    "timeout_seconds": VIDEO_ANALYSIS_TIMEOUT_SECONDS
+                }
+            )
+
+            # Call describe_video with timeout (Story P3-4.4 Task 5)
+            result = await asyncio.wait_for(
+                provider.describe_video(
+                    video_path=clip_path,
+                    camera_name=camera.name,
+                    timestamp=datetime.now().isoformat(),
+                    detected_objects=[event_type] if event_type else [],
+                    include_audio=include_audio,
+                    custom_prompt=custom_prompt
+                ),
+                timeout=VIDEO_ANALYSIS_TIMEOUT_SECONDS
+            )
+
+            if result.success:
+                # Story P3-4.4 AC2: Set analysis_mode = 'video_native' and frame_count_used = None on success
+                self._last_analysis_mode = "video_native"
+                self._last_frame_count = None  # Video native uses full video, not frames
+
+                logger.info(
+                    f"video_native analysis (frame_extraction) succeeded for camera '{camera.name}'",
+                    extra={
+                        "event_type": "video_native_success",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "video_method": "frame_extraction",
+                        "tokens_used": result.tokens_used,
+                        "response_time_ms": result.response_time_ms,
+                        "audio_included": include_audio,
+                        "analysis_mode": "video_native"
+                    }
+                )
+                return result
+            else:
+                reason = f"describe_video_failed:{result.error}"
+                self._fallback_chain.append(f"video_native:{reason}")
+                logger.warning(
+                    f"describe_video returned failure for camera '{camera.name}': {result.error}",
+                    extra={
+                        "event_type": "video_native_fallback",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "reason": reason,
+                        "error": result.error
+                    }
+                )
+                return None
+
+        except asyncio.TimeoutError:
+            # Story P3-4.4 AC3: Handle timeout with proper fallback reason
+            reason = "timeout"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.warning(
+                f"Video frame extraction timed out for camera '{camera.name}' after 30s",
+                extra={
+                    "event_type": "video_native_timeout",
+                    "camera_id": camera.id,
+                    "provider": provider_name,
+                    "reason": reason,
+                    "timeout_seconds": 30
+                }
+            )
+            return None
+
+        except Exception as e:
+            reason = f"exception:{type(e).__name__}"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.error(
+                f"Exception during video frame extraction for camera '{camera.name}': {e}",
+                extra={
+                    "event_type": "video_native_error",
+                    "camera_id": camera.id,
+                    "provider": provider_name,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return None
+
+    async def _try_video_native_upload(
+        self,
+        clip_path: Path,
+        camera: "Camera",
+        event_type: str,
+        is_doorbell_ring: bool,
+        provider_name: str
+    ) -> Optional["AIResult"]:
+        """
+        Perform video analysis via native video upload (Story P3-4.3).
+
+        Uses provider's describe_video() method which uploads the video directly
+        to the AI provider (e.g., Gemini) for native video analysis.
+
+        Args:
+            clip_path: Path to video clip file
+            camera: Camera that captured the event
+            event_type: Detection type (person, vehicle, ring, etc.)
+            is_doorbell_ring: If True, use doorbell-specific prompt
+            provider_name: Provider to use (gemini)
+
+        Returns:
+            AIResult if successful, None to trigger fallback
+        """
+        from app.services.ai_service import ai_service, AIProvider, PROVIDER_CAPABILITIES
+        from datetime import datetime
+
+        try:
+            # Get provider instance
+            provider_enum = AIProvider(provider_name)
+            provider = ai_service.providers.get(provider_enum)
+
+            if not provider or not hasattr(provider, 'describe_video'):
+                reason = f"provider_missing_describe_video:{provider_name}"
+                self._fallback_chain.append(f"video_native:{reason}")
+                logger.warning(
+                    f"Provider {provider_name} does not have describe_video method",
+                    extra={
+                        "event_type": "video_native_fallback",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "reason": reason
+                    }
+                )
+                return None
+
+            # Build custom prompt for event context
+            custom_prompt = None
+            if is_doorbell_ring:
+                custom_prompt = (
+                    "This is a doorbell ring event. Describe who is at the door, "
+                    "their appearance, what they might want, and any packages or items visible."
+                )
+
+            # Story P3-4.4 AC3: 30 second timeout for video analysis
+            VIDEO_ANALYSIS_TIMEOUT_SECONDS = 30
+
+            logger.info(
+                f"Calling describe_video (native upload) for camera '{camera.name}'",
+                extra={
+                    "event_type": "video_native_upload_start",
+                    "camera_id": camera.id,
+                    "provider": provider_name,
+                    "clip_path": str(clip_path),
+                    "is_doorbell_ring": is_doorbell_ring,
+                    "timeout_seconds": VIDEO_ANALYSIS_TIMEOUT_SECONDS
+                }
+            )
+
+            # Call describe_video with timeout (Story P3-4.4 Task 5)
+            result = await asyncio.wait_for(
+                provider.describe_video(
+                    video_path=clip_path,
+                    camera_name=camera.name,
+                    timestamp=datetime.now().isoformat(),
+                    detected_objects=[event_type] if event_type else [],
+                    custom_prompt=custom_prompt
+                ),
+                timeout=VIDEO_ANALYSIS_TIMEOUT_SECONDS
+            )
+
+            if result.success:
+                # Story P3-4.4 AC2: Set analysis_mode = 'video_native' and frame_count_used = None on success
+                self._last_analysis_mode = "video_native"
+                self._last_frame_count = None  # Video native uses full video, not frames
+
+                logger.info(
+                    f"video_native analysis (native_upload) succeeded for camera '{camera.name}'",
+                    extra={
+                        "event_type": "video_native_success",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "video_method": "native_upload",
+                        "tokens_used": result.tokens_used,
+                        "response_time_ms": result.response_time_ms,
+                        "analysis_mode": "video_native"
+                    }
+                )
+                return result
+            else:
+                reason = f"describe_video_failed:{result.error}"
+                self._fallback_chain.append(f"video_native:{reason}")
+                logger.warning(
+                    f"describe_video returned failure for camera '{camera.name}': {result.error}",
+                    extra={
+                        "event_type": "video_native_fallback",
+                        "camera_id": camera.id,
+                        "provider": provider_name,
+                        "reason": reason,
+                        "error": result.error
+                    }
+                )
+                return None
+
+        except asyncio.TimeoutError:
+            # Story P3-4.4 AC3: Handle timeout with proper fallback reason
+            reason = "timeout"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.warning(
+                f"Video native upload timed out for camera '{camera.name}' after 30s",
+                extra={
+                    "event_type": "video_native_timeout",
+                    "camera_id": camera.id,
+                    "provider": provider_name,
+                    "reason": reason,
+                    "timeout_seconds": 30
+                }
+            )
+            return None
+
+        except Exception as e:
+            reason = f"exception:{type(e).__name__}"
+            self._fallback_chain.append(f"video_native:{reason}")
+            logger.error(
+                f"Exception during video native upload for camera '{camera.name}': {e}",
+                extra={
+                    "event_type": "video_native_error",
+                    "camera_id": camera.id,
+                    "provider": provider_name,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return None
 
     async def _try_multi_frame_analysis(
         self,
