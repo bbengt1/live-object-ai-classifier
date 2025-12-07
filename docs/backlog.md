@@ -14,7 +14,7 @@ Technical debt, improvements, and future work items identified during developmen
 
 | ID | Date | Priority | Type | Description | Source | Status |
 |----|------|----------|------|-------------|--------|--------|
-| TD-001 | 2025-12-06 | P2 | Infrastructure | **Set up frontend testing framework** - Frontend has no Jest, Vitest, or React Testing Library configured. All frontend component tests are currently blocked. Should be addressed at end of Epic P3-3 or start of next phase. Recommended: Vitest + React Testing Library for consistency with modern React patterns. | Story P3-3.4 Code Review | Open |
+| TD-001 | 2025-12-06 | P2 | Infrastructure | **Set up frontend testing framework** - Frontend has no Jest, Vitest, or React Testing Library configured. All frontend component tests are currently blocked. Should be addressed at end of Epic P3-3 or start of next phase. Recommended: Vitest + React Testing Library for consistency with modern React patterns. | Story P3-3.4 Code Review | Done |
 
 ---
 
