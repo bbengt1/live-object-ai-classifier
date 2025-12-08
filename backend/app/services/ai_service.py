@@ -1052,7 +1052,7 @@ class GeminiProvider(AIProviderBase):
     def __init__(self, api_key: str):
         super().__init__(api_key)
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
         self.cost_per_1k_tokens = 0.0001  # Approximate (free tier available)
 
     async def generate_description(
@@ -1171,7 +1171,7 @@ class GeminiProvider(AIProviderBase):
                 extra={
                     "event_type": "ai_api_multi_image_success",
                     "provider": "gemini",
-                    "model": "gemini-1.5-flash",
+                    "model": "gemini-2.5-flash-preview-05-20",
                     "num_images": len(images_base64),
                     "response_time_ms": elapsed_ms,
                     "tokens_used": tokens_used,
@@ -1198,7 +1198,7 @@ class GeminiProvider(AIProviderBase):
                 extra={
                     "event_type": "ai_api_multi_image_error",
                     "provider": "gemini",
-                    "model": "gemini-1.5-flash",
+                    "model": "gemini-2.5-flash-preview-05-20",
                     "num_images": len(images_base64),
                     "response_time_ms": elapsed_ms,
                     "error_type": type(e).__name__,
@@ -2278,6 +2278,7 @@ class AIService:
                     SystemSetting.key == "ai_provider_order"
                 ).first()
 
+                logger.info(f"Provider order query result: setting exists={order_setting is not None}, value={order_setting.value if order_setting else None}")
                 if order_setting and order_setting.value:
                     try:
                         order_list = json.loads(order_setting.value)
@@ -2294,7 +2295,7 @@ class AIService:
                                 provider_order.append(provider_map[name])
                         # If we got a valid order, use it
                         if provider_order:
-                            logger.debug(f"Using configured provider order: {[p.value for p in provider_order]}")
+                            logger.info(f"Using configured provider order: {[p.value for p in provider_order]}")
                             return provider_order
                     except (json.JSONDecodeError, TypeError) as e:
                         logger.warning(f"Invalid provider order in settings: {e}, using default")
