@@ -1083,6 +1083,12 @@ class GeminiProvider(AIProviderBase):
             )
 
             elapsed_ms = int((time.time() - start_time) * 1000)
+
+            # Check if response was blocked by safety filters
+            if not response.candidates or not response.candidates[0].content.parts:
+                finish_reason = response.candidates[0].finish_reason if response.candidates else "unknown"
+                raise ValueError(f"Response blocked by Gemini (finish_reason: {finish_reason})")
+
             description = response.text.strip()
 
             # Gemini doesn't provide detailed usage stats in all cases
@@ -1156,6 +1162,12 @@ class GeminiProvider(AIProviderBase):
             )
 
             elapsed_ms = int((time.time() - start_time) * 1000)
+
+            # Check if response was blocked by safety filters
+            if not response.candidates or not response.candidates[0].content.parts:
+                finish_reason = response.candidates[0].finish_reason if response.candidates else "unknown"
+                raise ValueError(f"Response blocked by Gemini (finish_reason: {finish_reason})")
+
             description = response.text.strip()
 
             # Gemini doesn't provide detailed usage stats in all cases
@@ -1434,6 +1446,12 @@ class GeminiProvider(AIProviderBase):
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)
+
+        # Check if response was blocked by safety filters
+        if not response.candidates or not response.candidates[0].content.parts:
+            finish_reason = response.candidates[0].finish_reason if response.candidates else "unknown"
+            raise ValueError(f"Response blocked by Gemini (finish_reason: {finish_reason})")
+
         description = response.text.strip()
 
         # Estimate token usage: ~258 tokens/frame at 1fps
@@ -1554,6 +1572,12 @@ class GeminiProvider(AIProviderBase):
         )
 
         elapsed_ms = int((time.time() - start_time) * 1000)
+
+        # Check if response was blocked by safety filters
+        if not response.candidates or not response.candidates[0].content.parts:
+            finish_reason = response.candidates[0].finish_reason if response.candidates else "unknown"
+            raise ValueError(f"Response blocked by Gemini (finish_reason: {finish_reason})")
+
         description = response.text.strip()
 
         # Estimate token usage
