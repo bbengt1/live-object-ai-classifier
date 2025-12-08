@@ -1,14 +1,22 @@
 """
-Unit tests for AudioExtractor (Story P3-5.1)
+Unit tests for AudioExtractor (Story P3-5.1, P3-5.2)
 
 Tests cover:
-- AC1: Returns WAV bytes (16kHz, mono), extraction within 2s
-- AC2: No audio track returns None with appropriate log
-- AC3: Silent audio returns bytes, logs level metrics
-- AC4: Singleton pattern with get/reset functions
-- AC5: Audio level detection (RMS, peak amplitude)
-- Error handling: FileNotFoundError, av.FFmpegError, generic errors
+- P3-5.1 AC1: Returns WAV bytes (16kHz, mono), extraction within 2s
+- P3-5.1 AC2: No audio track returns None with appropriate log
+- P3-5.1 AC3: Silent audio returns bytes, logs level metrics
+- P3-5.1 AC4: Singleton pattern with get/reset functions
+- P3-5.1 AC5: Audio level detection (RMS, peak amplitude)
+- P3-5.1 Error handling: FileNotFoundError, av.FFmpegError, generic errors
+
+P3-5.2 Transcription Tests:
+- P3-5.2 AC1: Transcribe audio bytes using OpenAI Whisper
+- P3-5.2 AC2: Handle audio with speech content
+- P3-5.2 AC3: Handle audio with no speech (ambient noise)
+- P3-5.2 AC4: Handle transcription failures gracefully
+- P3-5.2 AC5: Track transcription usage and costs
 """
+import asyncio
 import pytest
 import io
 import wave
@@ -16,6 +24,7 @@ import struct
 from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
 import numpy as np
+import openai
 
 from app.services.audio_extractor import (
     AudioExtractor,
@@ -26,6 +35,9 @@ from app.services.audio_extractor import (
     AUDIO_SAMPLE_WIDTH,
     SILENCE_RMS_THRESHOLD,
     SILENCE_DB_THRESHOLD,
+    WHISPER_MODEL,
+    WHISPER_COST_PER_MINUTE,
+    WHISPER_TIMEOUT_SECONDS,
 )
 
 
@@ -628,3 +640,434 @@ class TestExtractAudioLogging:
                     # Should have logged success
                     info_calls = [str(c) for c in mock_logger.info.call_args_list]
                     assert any("success" in c.lower() or "complete" in c.lower() for c in info_calls)
+
+
+# ==============================================================================
+# P3-5.2 Transcription Tests
+# ==============================================================================
+
+
+class TestWhisperConstants:
+    """Test Whisper API constants (P3-5.2)"""
+
+    def test_whisper_model(self):
+        """P3-5.2 AC1: Uses whisper-1 model"""
+        assert WHISPER_MODEL == "whisper-1"
+
+    def test_whisper_cost_per_minute(self):
+        """P3-5.2 AC5: Whisper pricing is $0.006/minute"""
+        assert WHISPER_COST_PER_MINUTE == 0.006
+
+    def test_whisper_timeout(self):
+        """P3-5.2 AC4: Timeout is configured"""
+        assert WHISPER_TIMEOUT_SECONDS == 30
+
+
+def _create_wav_bytes(duration_seconds: float = 1.0, silent: bool = False) -> bytes:
+    """Helper to create WAV bytes for testing"""
+    sample_rate = AUDIO_SAMPLE_RATE
+    n_samples = int(sample_rate * duration_seconds)
+
+    if silent:
+        samples = np.zeros(n_samples, dtype=np.int16)
+    else:
+        # Create some audio with RMS above silence threshold
+        samples = (np.random.randn(n_samples) * 5000).astype(np.int16)
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(samples.tobytes())
+
+    return buffer.getvalue()
+
+
+class TestCalculateRmsFromWavBytes:
+    """Test _calculate_rms_from_wav_bytes method (P3-5.2)"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Create extractor for tests"""
+        reset_audio_extractor()
+        self.extractor = AudioExtractor()
+        yield
+        reset_audio_extractor()
+
+    def test_calculate_rms_silent_audio(self):
+        """P3-5.2 AC3: Silent audio returns low RMS"""
+        wav_bytes = _create_wav_bytes(duration_seconds=0.5, silent=True)
+        rms = self.extractor._calculate_rms_from_wav_bytes(wav_bytes)
+
+        assert rms == 0.0
+
+    def test_calculate_rms_audio_with_content(self):
+        """P3-5.2 AC3: Audio with content returns non-zero RMS"""
+        wav_bytes = _create_wav_bytes(duration_seconds=0.5, silent=False)
+        rms = self.extractor._calculate_rms_from_wav_bytes(wav_bytes)
+
+        assert rms > SILENCE_RMS_THRESHOLD
+
+    def test_calculate_rms_invalid_bytes(self):
+        """P3-5.2 AC4: Invalid bytes returns 0.0"""
+        rms = self.extractor._calculate_rms_from_wav_bytes(b"not valid wav")
+
+        assert rms == 0.0
+
+
+class TestCalculateDurationFromWavBytes:
+    """Test _calculate_duration_from_wav_bytes method (P3-5.2)"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Create extractor for tests"""
+        reset_audio_extractor()
+        self.extractor = AudioExtractor()
+        yield
+        reset_audio_extractor()
+
+    def test_calculate_duration_one_second(self):
+        """P3-5.2 AC5: Duration calculation is accurate"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0)
+        duration = self.extractor._calculate_duration_from_wav_bytes(wav_bytes)
+
+        assert abs(duration - 1.0) < 0.01
+
+    def test_calculate_duration_five_seconds(self):
+        """P3-5.2 AC5: Duration works for longer audio"""
+        wav_bytes = _create_wav_bytes(duration_seconds=5.0)
+        duration = self.extractor._calculate_duration_from_wav_bytes(wav_bytes)
+
+        assert abs(duration - 5.0) < 0.01
+
+
+class TestTrackWhisperUsage:
+    """Test _track_whisper_usage method (P3-5.2 AC5)"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Create extractor for tests"""
+        reset_audio_extractor()
+        self.extractor = AudioExtractor()
+        yield
+        reset_audio_extractor()
+
+    @pytest.mark.asyncio
+    async def test_track_usage_success(self):
+        """P3-5.2 AC5: Tracks successful transcription"""
+        with patch("app.core.database.SessionLocal") as mock_session_class:
+            mock_db = MagicMock()
+            mock_session_class.return_value = mock_db
+
+            await self.extractor._track_whisper_usage(
+                duration_seconds=10.0,
+                response_time_ms=500,
+                success=True,
+                error=None
+            )
+
+            # Verify db.add was called
+            mock_db.add.assert_called_once()
+            mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_track_usage_failure(self):
+        """P3-5.2 AC5: Tracks failed transcription"""
+        with patch("app.core.database.SessionLocal") as mock_session_class:
+            mock_db = MagicMock()
+            mock_session_class.return_value = mock_db
+
+            await self.extractor._track_whisper_usage(
+                duration_seconds=10.0,
+                response_time_ms=500,
+                success=False,
+                error="API error"
+            )
+
+            mock_db.add.assert_called_once()
+            mock_db.commit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_track_usage_cost_calculation(self):
+        """P3-5.2 AC5: Cost is calculated correctly ($0.006/minute)"""
+        with patch("app.core.database.SessionLocal") as mock_session_class:
+            mock_db = MagicMock()
+            mock_session_class.return_value = mock_db
+
+            # 60 seconds = 1 minute = $0.006
+            await self.extractor._track_whisper_usage(
+                duration_seconds=60.0,
+                response_time_ms=500,
+                success=True,
+                error=None
+            )
+
+            # Get the AIUsage object that was added
+            call_args = mock_db.add.call_args
+            usage_obj = call_args[0][0]
+
+            assert abs(usage_obj.cost_estimate - 0.006) < 0.0001
+
+
+class TestTranscribe:
+    """Test transcribe method (P3-5.2 AC1-AC5)"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Create extractor for tests"""
+        reset_audio_extractor()
+        self.extractor = AudioExtractor()
+        yield
+        reset_audio_extractor()
+
+    @pytest.mark.asyncio
+    async def test_transcribe_silent_audio_returns_empty_string(self):
+        """P3-5.2 AC3: Silent audio returns empty string without API call"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=True)
+
+        # Mock _get_openai_client to verify it's not called for silent audio
+        with patch.object(self.extractor, '_get_openai_client') as mock_get_client:
+            with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                result = await self.extractor.transcribe(wav_bytes)
+
+                assert result == ""
+                # Client should not be called for silent audio
+                mock_get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_transcribe_silent_audio_logs_no_speech(self):
+        """P3-5.2 AC3: Silent audio logs 'No speech detected'"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=True)
+
+        with patch("app.services.audio_extractor.logger") as mock_logger:
+            with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                await self.extractor.transcribe(wav_bytes)
+
+                info_calls = [str(c) for c in mock_logger.info.call_args_list]
+                assert any("No speech detected" in c or "transcription_silent_audio" in c for c in info_calls)
+
+    @pytest.mark.asyncio
+    async def test_transcribe_no_client_returns_none(self):
+        """P3-5.2 AC4: No OpenAI client returns None"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=None):
+            result = await self.extractor.transcribe(wav_bytes)
+
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_transcribe_success_returns_text(self):
+        """P3-5.2 AC1, AC2: Successful transcription returns text"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.create.return_value = "Hello, this is a test transcription."
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                result = await self.extractor.transcribe(wav_bytes)
+
+                assert result == "Hello, this is a test transcription."
+
+    @pytest.mark.asyncio
+    async def test_transcribe_uses_whisper_model(self):
+        """P3-5.2 AC1: Uses whisper-1 model"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.create.return_value = "Test"
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                await self.extractor.transcribe(wav_bytes)
+
+                # Verify whisper-1 model was used
+                call_args = mock_client.audio.transcriptions.create.call_args
+                assert call_args.kwargs['model'] == "whisper-1"
+
+    @pytest.mark.asyncio
+    async def test_transcribe_empty_response_returns_empty_string(self):
+        """P3-5.2 AC3: Empty Whisper response returns empty string"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.create.return_value = "   "  # Whitespace only
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                result = await self.extractor.transcribe(wav_bytes)
+
+                assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_transcribe_timeout_returns_none(self):
+        """P3-5.2 AC4: Timeout returns None"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+        # Simulate timeout
+        async def timeout_call(*args, **kwargs):
+            raise asyncio.TimeoutError()
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch('asyncio.wait_for', side_effect=asyncio.TimeoutError()):
+                with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                    result = await self.extractor.transcribe(wav_bytes)
+
+                    assert result is None
+
+    @pytest.mark.asyncio
+    async def test_transcribe_rate_limit_returns_none(self):
+        """P3-5.2 AC4: Rate limit error returns None"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch('asyncio.to_thread', side_effect=openai.RateLimitError(
+                message="Rate limit exceeded",
+                response=MagicMock(status_code=429),
+                body={}
+            )):
+                with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                    result = await self.extractor.transcribe(wav_bytes)
+
+                    assert result is None
+
+    @pytest.mark.asyncio
+    async def test_transcribe_api_error_returns_none(self):
+        """P3-5.2 AC4: API error returns None"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch('asyncio.to_thread', side_effect=openai.APIError(
+                message="API error",
+                request=MagicMock(),
+                body={}
+            )):
+                with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                    result = await self.extractor.transcribe(wav_bytes)
+
+                    assert result is None
+
+    @pytest.mark.asyncio
+    async def test_transcribe_generic_error_returns_none(self):
+        """P3-5.2 AC4: Generic exception returns None"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch('asyncio.to_thread', side_effect=RuntimeError("Unexpected error")):
+                with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                    result = await self.extractor.transcribe(wav_bytes)
+
+                    assert result is None
+
+    @pytest.mark.asyncio
+    async def test_transcribe_logs_success(self):
+        """P3-5.2 AC1: Logs successful transcription"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.create.return_value = "Test transcription"
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                with patch("app.services.audio_extractor.logger") as mock_logger:
+                    await self.extractor.transcribe(wav_bytes)
+
+                    info_calls = [str(c) for c in mock_logger.info.call_args_list]
+                    assert any("transcription_success" in c for c in info_calls)
+
+    @pytest.mark.asyncio
+    async def test_transcribe_logs_error(self):
+        """P3-5.2 AC4: Logs error on failure"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch('asyncio.to_thread', side_effect=RuntimeError("Test error")):
+                with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock):
+                    with patch("app.services.audio_extractor.logger") as mock_logger:
+                        await self.extractor.transcribe(wav_bytes)
+
+                        mock_logger.error.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_transcribe_tracks_usage_on_success(self):
+        """P3-5.2 AC5: Tracks usage on successful transcription"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+        mock_client.audio.transcriptions.create.return_value = "Test"
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock) as mock_track:
+                await self.extractor.transcribe(wav_bytes)
+
+                mock_track.assert_called()
+                call_args = mock_track.call_args
+                assert call_args.kwargs['success'] is True
+
+    @pytest.mark.asyncio
+    async def test_transcribe_tracks_usage_on_failure(self):
+        """P3-5.2 AC5: Tracks usage on failed transcription"""
+        wav_bytes = _create_wav_bytes(duration_seconds=1.0, silent=False)
+
+        mock_client = MagicMock()
+
+        with patch.object(self.extractor, '_get_openai_client', return_value=mock_client):
+            with patch('asyncio.to_thread', side_effect=RuntimeError("Error")):
+                with patch.object(self.extractor, '_track_whisper_usage', new_callable=AsyncMock) as mock_track:
+                    await self.extractor.transcribe(wav_bytes)
+
+                    mock_track.assert_called()
+                    call_args = mock_track.call_args
+                    assert call_args.kwargs['success'] is False
+
+
+class TestGetOpenAIClient:
+    """Test _get_openai_client method (P3-5.2)"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Create extractor for tests"""
+        reset_audio_extractor()
+        self.extractor = AudioExtractor()
+        yield
+        reset_audio_extractor()
+
+    def test_get_client_no_api_key(self):
+        """P3-5.2 AC4: No API key returns None"""
+        with patch("app.core.database.SessionLocal") as mock_session_class:
+            mock_db = MagicMock()
+            mock_db.query.return_value.filter.return_value.first.return_value = None
+            mock_session_class.return_value = mock_db
+
+            result = self.extractor._get_openai_client()
+
+            assert result is None
+
+    def test_get_client_caches_instance(self):
+        """P3-5.2: Client is cached after first creation"""
+        mock_client = MagicMock()
+        self.extractor._openai_client = mock_client
+
+        result = self.extractor._get_openai_client()
+
+        assert result is mock_client
+
+    def test_get_client_handles_exception(self):
+        """P3-5.2 AC4: Exception during client init returns None"""
+        with patch("app.core.database.SessionLocal") as mock_session_class:
+            mock_session_class.side_effect = Exception("Database error")
+
+            result = self.extractor._get_openai_client()
+
+            assert result is None

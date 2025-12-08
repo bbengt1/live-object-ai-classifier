@@ -184,7 +184,8 @@ class AIProviderBase(ABC):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description from base64-encoded image
 
@@ -194,6 +195,7 @@ class AIProviderBase(ABC):
             timestamp: ISO 8601 timestamp
             detected_objects: List of detected object types
             custom_prompt: Optional custom prompt to override default (Story P2-4.1)
+            audio_transcription: Optional transcribed speech from doorbell audio (Story P3-5.3)
         """
         pass
 
@@ -204,7 +206,8 @@ class AIProviderBase(ABC):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description from multiple base64-encoded images (Story P3-2.3)
 
@@ -217,6 +220,7 @@ class AIProviderBase(ABC):
             timestamp: ISO 8601 timestamp of the first frame
             detected_objects: List of detected object types
             custom_prompt: Optional custom prompt to override default
+            audio_transcription: Optional transcribed speech from doorbell audio (Story P3-5.3)
 
         Returns:
             AIResult with combined description covering all frames
@@ -228,7 +232,8 @@ class AIProviderBase(ABC):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> str:
         """Build user prompt with context
 
@@ -239,6 +244,7 @@ class AIProviderBase(ABC):
             custom_prompt: Optional custom prompt to override the base description instruction
                           (from Settings → AI Provider Configuration → Description prompt,
                            or from Story P2-4.1 doorbell ring events)
+            audio_transcription: Optional transcribed speech from doorbell audio (Story P3-5.3)
         """
         # Build camera context
         context = f"\nContext: Camera '{camera_name}' at {timestamp}."
@@ -249,7 +255,14 @@ class AIProviderBase(ABC):
         # Otherwise use the default user_prompt_template
         base_prompt = custom_prompt if custom_prompt else self.user_prompt_template
 
-        return base_prompt + context
+        prompt = base_prompt + context
+
+        # Story P3-5.3: Add audio transcription if available
+        # Only include if transcription has actual content (not None, not empty string)
+        if audio_transcription and audio_transcription.strip():
+            prompt += f'\n\nAudio transcription: "{audio_transcription.strip()}"'
+
+        return prompt
 
     def _build_multi_image_prompt(
         self,
@@ -257,9 +270,10 @@ class AIProviderBase(ABC):
         timestamp: str,
         detected_objects: List[str],
         num_images: int,
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> str:
-        """Build user prompt for multi-image analysis (Story P3-2.3, P3-2.4)
+        """Build user prompt for multi-image analysis (Story P3-2.3, P3-2.4, P3-5.3)
 
         Uses MULTI_FRAME_SYSTEM_PROMPT optimized for temporal narrative descriptions.
         Custom prompts are APPENDED after system instructions, not replacing them,
@@ -272,6 +286,7 @@ class AIProviderBase(ABC):
             num_images: Number of images being analyzed
             custom_prompt: Optional custom prompt to APPEND after system instructions
                           (from Settings → multi_frame_description_prompt or per-camera config)
+            audio_transcription: Optional transcribed speech from doorbell audio (Story P3-5.3)
         """
         # Build camera context suffix
         context = f"\n\nContext: Camera '{camera_name}' at {timestamp}."
@@ -286,7 +301,14 @@ class AIProviderBase(ABC):
         if custom_prompt:
             base_prompt += f"\n\nAdditional instructions: {custom_prompt}"
 
-        return base_prompt + context
+        prompt = base_prompt + context
+
+        # Story P3-5.3: Add audio transcription if available
+        # Only include if transcription has actual content (not None, not empty string)
+        if audio_transcription and audio_transcription.strip():
+            prompt += f'\n\nAudio transcription: "{audio_transcription.strip()}"'
+
+        return prompt
 
     def _extract_objects(self, description: str) -> List[str]:
         """Extract object types from description text"""
@@ -326,13 +348,14 @@ class OpenAIProvider(AIProviderBase):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description using OpenAI GPT-4o mini"""
         start_time = time.time()
 
         try:
-            user_prompt = self._build_user_prompt(camera_name, timestamp, detected_objects, custom_prompt)
+            user_prompt = self._build_user_prompt(camera_name, timestamp, detected_objects, custom_prompt, audio_transcription)
 
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -478,14 +501,15 @@ class OpenAIProvider(AIProviderBase):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description from multiple images using OpenAI GPT-4o mini (Story P3-2.3 AC2)"""
         start_time = time.time()
 
         try:
             user_prompt = self._build_multi_image_prompt(
-                camera_name, timestamp, detected_objects, len(images_base64), custom_prompt
+                camera_name, timestamp, detected_objects, len(images_base64), custom_prompt, audio_transcription
             )
 
             # Build content array with text prompt and multiple images
@@ -854,13 +878,14 @@ class ClaudeProvider(AIProviderBase):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description using Claude 3 Haiku"""
         start_time = time.time()
 
         try:
-            user_prompt = self._build_user_prompt(camera_name, timestamp, detected_objects, custom_prompt)
+            user_prompt = self._build_user_prompt(camera_name, timestamp, detected_objects, custom_prompt, audio_transcription)
 
             response = await self.client.messages.create(
                 model=self.model,
@@ -942,14 +967,15 @@ class ClaudeProvider(AIProviderBase):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description from multiple images using Claude 3 Haiku (Story P3-2.3 AC3)"""
         start_time = time.time()
 
         try:
             user_prompt = self._build_multi_image_prompt(
-                camera_name, timestamp, detected_objects, len(images_base64), custom_prompt
+                camera_name, timestamp, detected_objects, len(images_base64), custom_prompt, audio_transcription
             )
 
             # Build content array with multiple image blocks followed by text
@@ -1061,13 +1087,14 @@ class GeminiProvider(AIProviderBase):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description using Gemini Flash"""
         start_time = time.time()
 
         try:
-            user_prompt = self._build_user_prompt(camera_name, timestamp, detected_objects, custom_prompt)
+            user_prompt = self._build_user_prompt(camera_name, timestamp, detected_objects, custom_prompt, audio_transcription)
             full_prompt = f"{self.system_prompt}\n\n{user_prompt}"
 
             # Decode base64 to bytes for Gemini
@@ -1135,14 +1162,15 @@ class GeminiProvider(AIProviderBase):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description from multiple images using Gemini Flash (Story P3-2.3 AC4)"""
         start_time = time.time()
 
         try:
             user_prompt = self._build_multi_image_prompt(
-                camera_name, timestamp, detected_objects, len(images_base64), custom_prompt
+                camera_name, timestamp, detected_objects, len(images_base64), custom_prompt, audio_transcription
             )
             full_prompt = f"{self.system_prompt}\n\n{user_prompt}"
 
@@ -1815,7 +1843,8 @@ class GrokProvider(AIProviderBase):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description from multiple images using Grok Vision (Story P3-2.3 AC5)
 
@@ -1825,7 +1854,7 @@ class GrokProvider(AIProviderBase):
 
         try:
             user_prompt = self._build_multi_image_prompt(
-                camera_name, timestamp, detected_objects, len(images_base64), custom_prompt
+                camera_name, timestamp, detected_objects, len(images_base64), custom_prompt, audio_transcription
             )
 
             # Build content array with text prompt and multiple images (OpenAI-compatible format)
@@ -1924,13 +1953,14 @@ class GrokProvider(AIProviderBase):
         camera_name: str,
         timestamp: str,
         detected_objects: List[str],
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Generate description using xAI Grok Vision API"""
         start_time = time.time()
 
         try:
-            user_prompt = self._build_user_prompt(camera_name, timestamp, detected_objects, custom_prompt)
+            user_prompt = self._build_user_prompt(camera_name, timestamp, detected_objects, custom_prompt, audio_transcription)
 
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -2338,7 +2368,8 @@ class AIService:
         timestamp: Optional[str] = None,
         detected_objects: Optional[List[str]] = None,
         sla_timeout_ms: int = 5000,
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """
         Generate natural language description from camera frame.
@@ -2353,6 +2384,7 @@ class AIService:
             detected_objects: Objects detected by motion detection
             sla_timeout_ms: Maximum time allowed in milliseconds (default: 5000ms = 5s)
             custom_prompt: Optional custom prompt to use instead of default (Story P2-4.1)
+            audio_transcription: Optional transcribed speech from doorbell audio (Story P3-5.3)
 
         Returns:
             AIResult with description, confidence, objects, and usage stats
@@ -2430,7 +2462,8 @@ class AIService:
                 timestamp,
                 detected_objects,
                 custom_prompt=effective_prompt,
-                provider_type=provider_enum
+                provider_type=provider_enum,
+                audio_transcription=audio_transcription
             )
 
             # Track usage with analysis mode (Story P3-2.5)
@@ -2480,7 +2513,8 @@ class AIService:
         timestamp: Optional[str] = None,
         detected_objects: Optional[List[str]] = None,
         sla_timeout_ms: int = 10000,
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """
         Generate natural language description from multiple camera frames (Story P3-2.3 AC1).
@@ -2498,6 +2532,7 @@ class AIService:
             detected_objects: Objects detected by motion detection
             sla_timeout_ms: Maximum time allowed in milliseconds (default: 10000ms = 10s)
             custom_prompt: Optional custom prompt to use instead of default
+            audio_transcription: Optional transcribed speech from doorbell audio (Story P3-5.3)
 
         Returns:
             AIResult with combined description, confidence, objects, and usage stats
@@ -2651,7 +2686,8 @@ class AIService:
                 timestamp,
                 detected_objects,
                 custom_prompt=effective_prompt,
-                provider_type=provider_enum
+                provider_type=provider_enum,
+                audio_transcription=audio_transcription
             )
 
             # Track usage with multi_frame analysis mode (Story P3-2.5)
@@ -3069,7 +3105,8 @@ class AIService:
         detected_objects: List[str],
         max_retries: int = 3,
         custom_prompt: Optional[str] = None,
-        provider_type: Optional[AIProvider] = None
+        provider_type: Optional[AIProvider] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Try API call with backoff for rate limits.
 
@@ -3090,7 +3127,8 @@ class AIService:
                 camera_name,
                 timestamp,
                 detected_objects,
-                custom_prompt=custom_prompt
+                custom_prompt=custom_prompt,
+                audio_transcription=audio_transcription
             )
 
             # Check if rate limited (429) or transient error (500/503)
@@ -3126,7 +3164,8 @@ class AIService:
         detected_objects: List[str],
         max_retries: int = 3,
         custom_prompt: Optional[str] = None,
-        provider_type: Optional[AIProvider] = None
+        provider_type: Optional[AIProvider] = None,
+        audio_transcription: Optional[str] = None
     ) -> AIResult:
         """Try multi-image API call with backoff for rate limits (Story P3-2.3).
 
@@ -3143,6 +3182,7 @@ class AIService:
             max_retries: Maximum number of retry attempts
             custom_prompt: Optional custom prompt
             provider_type: AIProvider enum for provider-specific logic
+            audio_transcription: Optional transcribed speech from doorbell audio (Story P3-5.3)
 
         Returns:
             AIResult from the provider
@@ -3160,7 +3200,8 @@ class AIService:
                 camera_name,
                 timestamp,
                 detected_objects,
-                custom_prompt=custom_prompt
+                custom_prompt=custom_prompt,
+                audio_transcription=audio_transcription
             )
 
             # Check if rate limited (429) or transient error (500/503)

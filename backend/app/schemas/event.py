@@ -30,6 +30,8 @@ class EventCreate(BaseModel):
     # Story P3-2.6: Multi-frame analysis tracking
     analysis_mode: Optional[str] = Field(None, max_length=20, description="Analysis mode used (single_frame/multi_frame/video_native)")
     frame_count_used: Optional[int] = Field(None, ge=1, le=10, description="Number of frames sent to AI for multi-frame analysis")
+    # Story P3-5.3: Audio transcription for doorbell cameras
+    audio_transcription: Optional[str] = Field(None, description="Transcribed speech from doorbell audio")
 
     @field_validator('objects_detected')
     @classmethod
@@ -95,6 +97,8 @@ class EventResponse(BaseModel):
     # Story P3-2.6: Multi-frame analysis tracking
     analysis_mode: Optional[str] = Field(None, description="Analysis mode used (single_frame/multi_frame/video_native)")
     frame_count_used: Optional[int] = Field(None, description="Number of frames sent to AI for multi-frame analysis")
+    # Story P3-5.3: Audio transcription for doorbell cameras
+    audio_transcription: Optional[str] = Field(None, description="Transcribed speech from doorbell audio")
 
     @field_validator('objects_detected', mode='before')
     @classmethod

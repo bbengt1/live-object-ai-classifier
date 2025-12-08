@@ -192,14 +192,14 @@ development_status:
 
   # Epic P3-5: Audio Analysis for Doorbells (Growth)
   epic-p3-5: backlog
-  p3-5-1-implement-audio-extraction-from-video-clips: review
-  p3-5-2-integrate-speech-to-text-transcription: backlog
-  p3-5-3-include-audio-context-in-ai-descriptions: backlog
-  epic-p3-5-retrospective: optional
+  p3-5-1-implement-audio-extraction-from-video-clips: done
+  p3-5-2-integrate-speech-to-text-transcription: done
+  p3-5-3-include-audio-context-in-ai-descriptions: done
+  epic-p3-5-retrospective: done
 
   # Epic P3-6: Confidence Scoring & Quality Indicators (Growth)
   epic-p3-6: backlog
-  p3-6-1-extract-confidence-score-from-ai-responses: backlog
+  p3-6-1-extract-confidence-score-from-ai-responses: ready-for-dev
   p3-6-2-detect-vague-descriptions: backlog
   p3-6-3-display-confidence-indicator-on-event-cards: backlog
   p3-6-4-add-re-analyze-action-for-low-confidence-events: backlog

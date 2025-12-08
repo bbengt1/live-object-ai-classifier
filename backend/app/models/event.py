@@ -32,6 +32,7 @@ class Event(Base):
         fallback_reason: Reason for fallback to snapshot analysis (Story P3-1.4) - e.g., "clip_download_failed"
         analysis_mode: Analysis mode used - "single_frame", "multi_frame", "video_native" (Story P3-2.6)
         frame_count_used: Number of frames sent to AI for multi-frame analysis (Story P3-2.6)
+        audio_transcription: Transcribed speech from doorbell audio (Story P3-5.3)
         created_at: Record creation timestamp (UTC with timezone)
     """
 
@@ -64,6 +65,8 @@ class Event(Base):
     # Story P3-2.6: Multi-frame analysis tracking
     analysis_mode = Column(String(20), nullable=True, index=True)  # "single_frame", "multi_frame", "video_native"
     frame_count_used = Column(Integer, nullable=True)  # Number of frames sent to AI (null for single-frame)
+    # Story P3-5.3: Audio transcription for doorbell cameras
+    audio_transcription = Column(Text, nullable=True)  # Transcribed speech from doorbell audio
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships

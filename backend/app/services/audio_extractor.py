@@ -1,24 +1,29 @@
 """
-AudioExtractor for extracting audio tracks from video clips (Story P3-5.1)
+AudioExtractor for extracting audio tracks from video clips (Story P3-5.1, P3-5.2)
 
 Provides functionality to:
 - Extract audio tracks from video clips for speech transcription
 - Output audio as WAV bytes (16kHz, mono) for OpenAI Whisper compatibility
 - Handle videos without audio tracks gracefully
 - Detect audio levels and log metrics for diagnostics
+- Transcribe audio to text using OpenAI Whisper API (Story P3-5.2)
 
 Architecture Reference: docs/architecture.md#Phase-3-Service-Architecture
 """
+import asyncio
+from datetime import datetime, timezone
 import io
 import logging
 import math
 import struct
+import time
 import wave
 from pathlib import Path
 from typing import Optional, Tuple
 
 import av
 import numpy as np
+import openai
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +36,15 @@ AUDIO_SAMPLE_WIDTH = 2  # 16-bit signed PCM (2 bytes per sample)
 SILENCE_RMS_THRESHOLD = 0.001  # RMS threshold for silence detection (linear scale)
 SILENCE_DB_THRESHOLD = -60  # dB threshold for logging (corresponds to ~0.001 RMS)
 
+# Whisper API configuration (Story P3-5.2)
+WHISPER_MODEL = "whisper-1"
+WHISPER_COST_PER_MINUTE = 0.006  # $0.006 per minute
+WHISPER_TIMEOUT_SECONDS = 30  # Max timeout for transcription
+
 
 class AudioExtractor:
     """
-    Service for extracting audio tracks from video clips.
+    Service for extracting audio tracks from video clips and transcribing speech.
 
     Extracts audio from video files and converts it to WAV format
     suitable for speech transcription with OpenAI Whisper.
@@ -43,6 +53,7 @@ class AudioExtractor:
     - Extracts audio and resamples to 16kHz mono WAV
     - Handles videos without audio tracks (returns None)
     - Detects silence and logs audio level metrics
+    - Transcribes audio to text using OpenAI Whisper (Story P3-5.2)
     - Graceful error handling (returns None, never raises)
     - Follows singleton pattern matching FrameExtractor
 
@@ -50,6 +61,7 @@ class AudioExtractor:
         sample_rate: Target sample rate in Hz (16000)
         channels: Number of audio channels (1 for mono)
         sample_width: Sample width in bytes (2 for 16-bit PCM)
+        openai_client: OpenAI client for Whisper API (initialized lazily)
     """
 
     def __init__(self):
@@ -59,6 +71,7 @@ class AudioExtractor:
         self.sample_rate = AUDIO_SAMPLE_RATE
         self.channels = AUDIO_CHANNELS
         self.sample_width = AUDIO_SAMPLE_WIDTH
+        self._openai_client: Optional[openai.OpenAI] = None
 
         logger.info(
             "AudioExtractor initialized",
@@ -316,6 +329,402 @@ class AudioExtractor:
                     "error": str(e),
                     "error_type": type(e).__name__
                 }
+            )
+            return None
+
+
+    def _get_openai_client(self) -> Optional[openai.OpenAI]:
+        """
+        Get or create OpenAI client for Whisper API.
+
+        Lazily initializes the client on first use, loading API key from database.
+
+        Returns:
+            OpenAI client instance, or None if no API key is configured
+        """
+        if self._openai_client is not None:
+            return self._openai_client
+
+        try:
+            # Import here to avoid circular imports
+            from app.core.database import SessionLocal
+            from app.models.settings import Settings
+            from app.utils.encryption import decrypt_password
+
+            db = SessionLocal()
+            try:
+                # Load OpenAI API key from settings (same pattern as AIService)
+                setting = db.query(Settings).filter(
+                    Settings.key == "ai_api_key_openai"
+                ).first()
+
+                if not setting or not setting.value:
+                    logger.warning(
+                        "OpenAI API key not configured for Whisper transcription",
+                        extra={"event_type": "whisper_no_api_key"}
+                    )
+                    return None
+
+                # Decrypt the API key
+                api_key = setting.value
+                if api_key.startswith("encrypted:"):
+                    api_key = decrypt_password(api_key)
+
+                self._openai_client = openai.OpenAI(api_key=api_key)
+                logger.info(
+                    "OpenAI client initialized for Whisper",
+                    extra={"event_type": "whisper_client_init"}
+                )
+                return self._openai_client
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(
+                f"Failed to initialize OpenAI client: {e}",
+                extra={
+                    "event_type": "whisper_client_init_error",
+                    "error": str(e),
+                    "error_type": type(e).__name__
+                }
+            )
+            return None
+
+    def _calculate_rms_from_wav_bytes(self, audio_bytes: bytes) -> float:
+        """
+        Calculate RMS level from WAV bytes.
+
+        Args:
+            audio_bytes: WAV-encoded audio bytes
+
+        Returns:
+            RMS level as linear value (0.0 to 1.0)
+        """
+        try:
+            # Read WAV header and extract audio samples
+            buffer = io.BytesIO(audio_bytes)
+            with wave.open(buffer, 'rb') as wav_file:
+                n_frames = wav_file.getnframes()
+                if n_frames == 0:
+                    return 0.0
+
+                # Read all frames
+                raw_data = wav_file.readframes(n_frames)
+
+                # Convert to numpy array (16-bit signed PCM)
+                samples = np.frombuffer(raw_data, dtype=np.int16)
+
+                # Normalize to -1.0 to 1.0
+                samples_float = samples.astype(np.float64) / 32768.0
+
+                # Calculate RMS
+                rms = np.sqrt(np.mean(samples_float ** 2))
+                return float(rms)
+
+        except Exception as e:
+            logger.warning(
+                f"Error calculating RMS from WAV bytes: {e}",
+                extra={
+                    "event_type": "rms_calculation_error",
+                    "error": str(e)
+                }
+            )
+            return 0.0
+
+    def _calculate_duration_from_wav_bytes(self, audio_bytes: bytes) -> float:
+        """
+        Calculate audio duration in seconds from WAV bytes.
+
+        Args:
+            audio_bytes: WAV-encoded audio bytes
+
+        Returns:
+            Duration in seconds
+        """
+        try:
+            buffer = io.BytesIO(audio_bytes)
+            with wave.open(buffer, 'rb') as wav_file:
+                n_frames = wav_file.getnframes()
+                framerate = wav_file.getframerate()
+                if framerate == 0:
+                    return 0.0
+                return n_frames / framerate
+        except Exception:
+            # Fallback calculation for raw PCM data
+            # WAV header is typically 44 bytes
+            header_size = 44
+            audio_data_size = len(audio_bytes) - header_size
+            if audio_data_size <= 0:
+                return 0.0
+            # 16-bit mono at 16kHz = 32000 bytes per second
+            return audio_data_size / (self.sample_rate * self.sample_width)
+
+    async def _track_whisper_usage(
+        self,
+        duration_seconds: float,
+        response_time_ms: int,
+        success: bool,
+        error: Optional[str] = None
+    ) -> None:
+        """
+        Track Whisper API usage in the ai_usage table.
+
+        Args:
+            duration_seconds: Audio duration in seconds
+            response_time_ms: API response time in milliseconds
+            success: Whether transcription succeeded
+            error: Error message if failed
+        """
+        try:
+            # Import here to avoid circular imports
+            from app.core.database import SessionLocal
+            from app.models.ai_usage import AIUsage
+
+            # Calculate cost: $0.006 per minute
+            cost_estimate = (duration_seconds / 60.0) * WHISPER_COST_PER_MINUTE
+
+            db = SessionLocal()
+            try:
+                usage = AIUsage(
+                    timestamp=datetime.now(timezone.utc),
+                    provider="whisper",
+                    success=success,
+                    tokens_used=0,  # Whisper doesn't use tokens
+                    response_time_ms=response_time_ms,
+                    cost_estimate=cost_estimate,
+                    error=error[:500] if error else None,
+                    analysis_mode="transcription",
+                    is_estimated=False
+                )
+                db.add(usage)
+                db.commit()
+
+                logger.info(
+                    "Whisper usage tracked",
+                    extra={
+                        "event_type": "whisper_usage_tracked",
+                        "duration_seconds": duration_seconds,
+                        "response_time_ms": response_time_ms,
+                        "cost_estimate": cost_estimate,
+                        "success": success
+                    }
+                )
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            # Don't fail transcription if usage tracking fails
+            logger.warning(
+                f"Failed to track Whisper usage: {e}",
+                extra={
+                    "event_type": "whisper_usage_track_error",
+                    "error": str(e)
+                }
+            )
+
+    async def transcribe(self, audio_bytes: bytes) -> Optional[str]:
+        """
+        Transcribe audio bytes to text using OpenAI Whisper API.
+
+        Takes WAV-encoded audio bytes (16kHz, mono, 16-bit PCM) and returns
+        the transcribed text. Handles silent audio, API errors, and timeouts
+        gracefully.
+
+        Args:
+            audio_bytes: WAV-encoded audio bytes from extract_audio()
+
+        Returns:
+            Transcription text on success
+            Empty string ("") if audio is silent or no speech detected
+            None if transcription fails (API error, timeout, etc.)
+
+        Note:
+            - Uses whisper-1 model
+            - Transcription completes within 5 seconds for typical 10-30s audio
+            - Silent audio (RMS below threshold) skips API call and returns ""
+            - All errors are logged with structured format
+            - Usage is tracked in ai_usage table with provider="whisper"
+        """
+        start_time = time.time()
+
+        # Calculate audio duration for usage tracking
+        duration_seconds = self._calculate_duration_from_wav_bytes(audio_bytes)
+
+        logger.info(
+            "Starting audio transcription",
+            extra={
+                "event_type": "transcription_start",
+                "audio_size_bytes": len(audio_bytes),
+                "duration_seconds": duration_seconds
+            }
+        )
+
+        # Check if audio is silent (AC3: Handle ambient noise)
+        rms_level = self._calculate_rms_from_wav_bytes(audio_bytes)
+        if self._is_silent(rms_level):
+            logger.info(
+                "No speech detected in audio",
+                extra={
+                    "event_type": "transcription_silent_audio",
+                    "rms_level": rms_level,
+                    "threshold": SILENCE_RMS_THRESHOLD
+                }
+            )
+            # Track as successful with 0 cost (no API call made)
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            await self._track_whisper_usage(
+                duration_seconds=duration_seconds,
+                response_time_ms=elapsed_ms,
+                success=True,
+                error=None
+            )
+            return ""
+
+        # Get OpenAI client
+        client = self._get_openai_client()
+        if client is None:
+            logger.error(
+                "Cannot transcribe: OpenAI client not available",
+                extra={"event_type": "transcription_no_client"}
+            )
+            return None
+
+        try:
+            # Create file-like object for OpenAI API
+            audio_file = io.BytesIO(audio_bytes)
+            audio_file.name = "audio.wav"
+
+            # Call Whisper API in thread pool (blocking call)
+            # Use asyncio.wait_for for timeout handling
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.audio.transcriptions.create,
+                    model=WHISPER_MODEL,
+                    file=audio_file,
+                    response_format="text"
+                ),
+                timeout=WHISPER_TIMEOUT_SECONDS
+            )
+
+            elapsed_ms = int((time.time() - start_time) * 1000)
+
+            # Process transcription result
+            transcription = response.strip() if response else ""
+
+            # Handle empty response (no speech in audio)
+            if not transcription:
+                logger.info(
+                    "No speech detected in audio",
+                    extra={
+                        "event_type": "transcription_no_speech",
+                        "response_time_ms": elapsed_ms
+                    }
+                )
+                await self._track_whisper_usage(
+                    duration_seconds=duration_seconds,
+                    response_time_ms=elapsed_ms,
+                    success=True,
+                    error=None
+                )
+                return ""
+
+            # Successful transcription
+            logger.info(
+                "Audio transcription complete",
+                extra={
+                    "event_type": "transcription_success",
+                    "response_time_ms": elapsed_ms,
+                    "transcription_length": len(transcription),
+                    "duration_seconds": duration_seconds
+                }
+            )
+
+            await self._track_whisper_usage(
+                duration_seconds=duration_seconds,
+                response_time_ms=elapsed_ms,
+                success=True,
+                error=None
+            )
+
+            return transcription
+
+        except asyncio.TimeoutError:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            error_msg = f"Transcription timeout after {WHISPER_TIMEOUT_SECONDS}s"
+            logger.error(
+                error_msg,
+                extra={
+                    "event_type": "transcription_timeout",
+                    "timeout_seconds": WHISPER_TIMEOUT_SECONDS,
+                    "response_time_ms": elapsed_ms
+                }
+            )
+            await self._track_whisper_usage(
+                duration_seconds=duration_seconds,
+                response_time_ms=elapsed_ms,
+                success=False,
+                error=error_msg
+            )
+            return None
+
+        except openai.RateLimitError as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            error_msg = f"Whisper rate limit exceeded: {e}"
+            logger.error(
+                error_msg,
+                extra={
+                    "event_type": "transcription_rate_limit",
+                    "error": str(e),
+                    "response_time_ms": elapsed_ms
+                }
+            )
+            await self._track_whisper_usage(
+                duration_seconds=duration_seconds,
+                response_time_ms=elapsed_ms,
+                success=False,
+                error=error_msg
+            )
+            return None
+
+        except openai.APIError as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            error_msg = f"Whisper API error: {e}"
+            logger.error(
+                error_msg,
+                extra={
+                    "event_type": "transcription_api_error",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "response_time_ms": elapsed_ms
+                }
+            )
+            await self._track_whisper_usage(
+                duration_seconds=duration_seconds,
+                response_time_ms=elapsed_ms,
+                success=False,
+                error=error_msg
+            )
+            return None
+
+        except Exception as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            error_msg = f"Transcription failed: {type(e).__name__}: {e}"
+            logger.error(
+                error_msg,
+                extra={
+                    "event_type": "transcription_error",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "response_time_ms": elapsed_ms
+                }
+            )
+            await self._track_whisper_usage(
+                duration_seconds=duration_seconds,
+                response_time_ms=elapsed_ms,
+                success=False,
+                error=error_msg
             )
             return None
 

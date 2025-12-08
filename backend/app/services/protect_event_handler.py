@@ -106,6 +106,8 @@ class ProtectEventHandler:
         """Initialize event handler with empty event tracking."""
         # Track last event time per camera for deduplication (AC9)
         self._last_event_times: Dict[str, datetime] = {}
+        # Story P3-5.3: Track last audio transcription for passing to event storage
+        self._last_audio_transcription: Optional[str] = None
 
     async def handle_event(
         self,
@@ -883,13 +885,15 @@ class ProtectEventHandler:
 
         Returns:
             AIResult with description, or None on complete failure
-            Also sets self._last_analysis_mode, self._last_frame_count, and self._last_fallback_reason for event storage
+            Also sets self._last_analysis_mode, self._last_frame_count, self._last_fallback_reason, and self._last_audio_transcription for event storage
         """
         # Story P3-3.5: Track analysis mode, frame count, and fallback chain for event storage
         self._last_analysis_mode: Optional[str] = None
         self._last_frame_count: Optional[int] = None
         self._last_fallback_reason: Optional[str] = None
         self._fallback_chain: List[str] = []  # Track each failure: ["video_native:provider_unsupported", ...]
+        # Story P3-5.3: Reset audio transcription for this event
+        self._last_audio_transcription: Optional[str] = None
 
         try:
             # Lazy import to avoid circular imports (same pattern as snapshot_service)
@@ -1559,14 +1563,22 @@ class ProtectEventHandler:
                 # Story P2-4.1: Use doorbell-specific prompt for ring events
                 custom_prompt = DOORBELL_RING_PROMPT if is_doorbell_ring else None
 
+                # Story P3-5.3: Extract audio and transcribe for doorbell cameras
+                audio_transcription = None
+                if camera.is_doorbell:
+                    audio_transcription = await self._extract_and_transcribe_audio(clip_path, camera)
+
                 result = await ai_service.describe_images(
                     images=frames,
                     camera_name=camera.name,
                     timestamp=snapshot_result.timestamp.isoformat(),
                     detected_objects=[event_type],
                     sla_timeout_ms=10000,  # 10s SLA for multi-frame (higher than single-frame)
-                    custom_prompt=custom_prompt
+                    custom_prompt=custom_prompt,
+                    audio_transcription=audio_transcription  # Story P3-5.3
                 )
+                # Store transcription for later use when saving event
+                self._last_audio_transcription = audio_transcription
 
                 if result and result.success:
                     # Story P3-2.6 AC4: Record analysis mode and frame count
@@ -1741,10 +1753,11 @@ class ProtectEventHandler:
         protect_event_id: Optional[str],
         is_doorbell_ring: bool = False,
         fallback_reason: Optional[str] = None,
-        event_id_override: Optional[str] = None
+        event_id_override: Optional[str] = None,
+        audio_transcription: Optional[str] = None
     ) -> Optional[Event]:
         """
-        Store Protect event in database (Story P2-3.3 AC5-9, P2-4.1 AC3, AC5, P3-1.4 AC2, P3-2.6 AC4).
+        Store Protect event in database (Story P2-3.3 AC5-9, P2-4.1 AC3, AC5, P3-1.4 AC2, P3-2.6 AC4, P3-5.3 AC6).
 
         Creates Event record with source_type='protect' and all AI/snapshot fields.
 
@@ -1758,6 +1771,7 @@ class ProtectEventHandler:
             is_doorbell_ring: Whether this is a doorbell ring event (Story P2-4.1)
             fallback_reason: Reason for fallback to snapshot (Story P3-1.4, e.g., "clip_download_failed")
             event_id_override: Pre-generated event ID to use (Story P3-1.4)
+            audio_transcription: Transcribed speech from doorbell audio (Story P3-5.3)
 
         Returns:
             Stored Event model or None on failure
@@ -1767,7 +1781,10 @@ class ProtectEventHandler:
             # Use existing fallback_reason if provided (from clip download), otherwise use AI fallback
             effective_fallback_reason = fallback_reason or getattr(self, '_last_fallback_reason', None)
 
-            # Create Event record (AC5-9, P2-4.1 AC3, AC5, P3-1.4 AC2, P3-2.6 AC4)
+            # Story P3-5.3 AC6: Get audio transcription from instance or parameter
+            effective_audio_transcription = audio_transcription or getattr(self, '_last_audio_transcription', None)
+
+            # Create Event record (AC5-9, P2-4.1 AC3, AC5, P3-1.4 AC2, P3-2.6 AC4, P3-5.3 AC6)
             event = Event(
                 camera_id=camera.id,
                 timestamp=snapshot_result.timestamp,
@@ -1785,7 +1802,9 @@ class ProtectEventHandler:
                 fallback_reason=effective_fallback_reason,  # Story P3-1.4 AC2, P3-2.6 AC2/AC3
                 # Story P3-2.6 AC4: Record analysis mode and frame count
                 analysis_mode=getattr(self, '_last_analysis_mode', 'single_frame'),
-                frame_count_used=getattr(self, '_last_frame_count', None)
+                frame_count_used=getattr(self, '_last_frame_count', None),
+                # Story P3-5.3 AC6: Store audio transcription
+                audio_transcription=effective_audio_transcription
             )
 
             # Story P3-1.4: Use pre-generated event ID if provided
@@ -1808,7 +1827,9 @@ class ProtectEventHandler:
                     # Story P3-2.6: Log analysis mode info
                     "analysis_mode": event.analysis_mode,
                     "frame_count_used": event.frame_count_used,
-                    "fallback_reason": event.fallback_reason
+                    "fallback_reason": event.fallback_reason,
+                    # Story P3-5.3: Log audio transcription info
+                    "has_audio_transcription": bool(event.audio_transcription)
                 }
             )
 
@@ -1915,6 +1936,109 @@ class ProtectEventHandler:
                 }
             )
             db.rollback()
+            return None
+
+    async def _extract_and_transcribe_audio(
+        self,
+        clip_path: Path,
+        camera: Camera
+    ) -> Optional[str]:
+        """
+        Extract audio from video clip and transcribe speech (Story P3-5.3 AC4).
+
+        Only runs for doorbell cameras. Audio extraction/transcription failures
+        do NOT block event processing - we simply return None and continue
+        with video-only description.
+
+        Args:
+            clip_path: Path to video clip file
+            camera: Camera that captured the event
+
+        Returns:
+            Transcribed speech text, or None if extraction/transcription failed
+            or no speech detected
+        """
+        try:
+            from app.services.audio_extractor import get_audio_extractor
+
+            audio_extractor = get_audio_extractor()
+
+            logger.info(
+                f"Extracting audio from clip for doorbell camera '{camera.name}'",
+                extra={
+                    "event_type": "audio_extraction_start",
+                    "camera_id": camera.id,
+                    "clip_path": str(clip_path)
+                }
+            )
+
+            # Extract audio from clip (returns WAV bytes or None)
+            audio_bytes = await audio_extractor.extract_audio(clip_path)
+
+            if not audio_bytes:
+                logger.debug(
+                    f"No audio extracted from clip for camera '{camera.name}' (no audio track or error)",
+                    extra={
+                        "event_type": "audio_extraction_no_audio",
+                        "camera_id": camera.id
+                    }
+                )
+                return None
+
+            logger.info(
+                f"Audio extracted ({len(audio_bytes)} bytes), transcribing for camera '{camera.name}'",
+                extra={
+                    "event_type": "audio_transcription_start",
+                    "camera_id": camera.id,
+                    "audio_bytes": len(audio_bytes)
+                }
+            )
+
+            # Transcribe audio (returns text, empty string for silent audio, or None on error)
+            transcription = await audio_extractor.transcribe(audio_bytes)
+
+            if transcription is None:
+                logger.warning(
+                    f"Audio transcription failed for camera '{camera.name}'",
+                    extra={
+                        "event_type": "audio_transcription_failed",
+                        "camera_id": camera.id
+                    }
+                )
+                return None
+
+            if not transcription.strip():
+                logger.debug(
+                    f"Silent audio detected for camera '{camera.name}' (no speech)",
+                    extra={
+                        "event_type": "audio_transcription_silent",
+                        "camera_id": camera.id
+                    }
+                )
+                return None  # Don't pass empty transcription to AI
+
+            logger.info(
+                f"Audio transcription successful for camera '{camera.name}': '{transcription[:50]}...'",
+                extra={
+                    "event_type": "audio_transcription_success",
+                    "camera_id": camera.id,
+                    "transcription_preview": transcription[:100]
+                }
+            )
+
+            return transcription
+
+        except Exception as e:
+            # Audio failures should NEVER block event processing (Story P3-5.3 constraint)
+            logger.warning(
+                f"Audio extraction/transcription error for camera '{camera.name}': {e}",
+                extra={
+                    "event_type": "audio_extraction_error",
+                    "camera_id": camera.id,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
             return None
 
     async def _broadcast_doorbell_ring(
