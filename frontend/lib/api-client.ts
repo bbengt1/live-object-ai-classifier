@@ -20,6 +20,8 @@ import type {
   AIKeyTestRequest,
   AIKeyTestResponse,
   DeleteDataResponse,
+  IAIUsageResponse,
+  IAIUsageQueryParams,
 } from '@/types/settings';
 import type {
   IAlertRule,
@@ -451,6 +453,24 @@ export const apiClient = {
       return apiFetch<DeleteDataResponse>('/events', {
         method: 'DELETE',
       });
+    },
+
+    /**
+     * Get AI usage statistics (Story P3-7.2)
+     * @param params Optional start_date and end_date in YYYY-MM-DD format
+     * @returns AI usage aggregation with breakdown by date, camera, provider, and mode
+     */
+    getAIUsage: async (params?: IAIUsageQueryParams): Promise<IAIUsageResponse> => {
+      const searchParams = new URLSearchParams();
+      if (params?.start_date) {
+        searchParams.append('start_date', params.start_date);
+      }
+      if (params?.end_date) {
+        searchParams.append('end_date', params.end_date);
+      }
+      const queryString = searchParams.toString();
+      const endpoint = `/system/ai-usage${queryString ? `?${queryString}` : ''}`;
+      return apiFetch<IAIUsageResponse>(endpoint);
     },
   },
 
