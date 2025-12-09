@@ -15,6 +15,7 @@ import { SmartDetectionBadge } from './SmartDetectionBadge';
 import { CorrelationIndicator } from './CorrelationIndicator';
 import { AnalysisModeBadge } from './AnalysisModeBadge';
 import { AIProviderBadge } from './AIProviderBadge';
+import { ConfidenceIndicator } from './ConfidenceIndicator';
 import { cn } from '@/lib/utils';
 
 interface EventCardProps {
@@ -139,6 +140,12 @@ export const EventCard = memo(function EventCard({
               />
               {/* Story P3-4.5: AI Provider Badge */}
               <AIProviderBadge provider={event.provider_used} />
+              {/* Story P3-6.3: AI Confidence Indicator (AC1, AC2, AC3, AC4, AC5, AC6) */}
+              <ConfidenceIndicator
+                aiConfidence={event.ai_confidence}
+                lowConfidence={event.low_confidence}
+                vagueReason={event.vague_reason}
+              />
               {event.source_type && (
                 <SourceTypeBadge sourceType={event.source_type} />
               )}

@@ -74,6 +74,10 @@ export const mockEvent = (overrides = {}) => ({
   frame_count_used: 1,
   fallback_reason: null,
   created_at: new Date().toISOString(),
+  // Story P3-6.1 & P3-6.2: AI confidence fields
+  ai_confidence: 85,
+  low_confidence: false,
+  vague_reason: null,
   ...overrides,
 })
 

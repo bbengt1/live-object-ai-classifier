@@ -56,6 +56,11 @@ export interface IEvent {
   analysis_mode?: AnalysisMode | null;  // Analysis mode used: single_frame, multi_frame, video_native
   frame_count_used?: number | null;     // Number of frames sent to AI (for multi_frame mode)
   fallback_reason?: string | null;      // Reason for fallback to lower mode (e.g., "clip_download_failed")
+  // Story P3-6.1: AI confidence scoring
+  ai_confidence?: number | null;        // AI self-reported confidence 0-100
+  // Story P3-6.2: Vague description detection
+  low_confidence?: boolean;             // True if ai_confidence < 50 OR description is vague
+  vague_reason?: string | null;         // Human-readable reason why flagged as vague
 }
 
 /**
@@ -92,18 +97,39 @@ export type DetectedObject = 'person' | 'vehicle' | 'animal' | 'package' | 'unkn
 
 /**
  * Helper to get confidence level classification
+ * Story P3-6.3: Updated thresholds per AC1:
+ * - High: 80-100
+ * - Medium: 50-79
+ * - Low: 0-49
  */
 export function getConfidenceLevel(confidence: number): 'high' | 'medium' | 'low' {
-  if (confidence >= 90) return 'high';
-  if (confidence >= 70) return 'medium';
+  if (confidence >= 80) return 'high';
+  if (confidence >= 50) return 'medium';
   return 'low';
 }
 
 /**
  * Helper to get confidence color class
+ * Story P3-6.3: Updated thresholds per AC1
  */
 export function getConfidenceColor(confidence: number): string {
-  if (confidence >= 90) return 'text-green-600 bg-green-50';
-  if (confidence >= 70) return 'text-yellow-600 bg-yellow-50';
+  if (confidence >= 80) return 'text-green-600 bg-green-50';
+  if (confidence >= 50) return 'text-yellow-600 bg-yellow-50';
   return 'text-red-600 bg-red-50';
+}
+
+/**
+ * Story P3-6.3: AI confidence level type
+ */
+export type AIConfidenceLevel = 'high' | 'medium' | 'low';
+
+/**
+ * Story P3-6.3: Get AI confidence level from ai_confidence score
+ * Uses same thresholds as getConfidenceLevel for consistency
+ */
+export function getAIConfidenceLevel(aiConfidence: number | null | undefined): AIConfidenceLevel | null {
+  if (aiConfidence == null) return null;
+  if (aiConfidence >= 80) return 'high';
+  if (aiConfidence >= 50) return 'medium';
+  return 'low';
 }
