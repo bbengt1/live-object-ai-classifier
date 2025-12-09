@@ -6,7 +6,7 @@ Endpoints for system-level configuration and monitoring:
     - Storage monitoring (GET /storage)
     - Backup and restore (POST /backup, GET /backup/{timestamp}/download, POST /restore)
 """
-from fastapi import APIRouter, HTTPException, status, Depends, File, UploadFile
+from fastapi import APIRouter, HTTPException, status, Depends, File, UploadFile, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
@@ -967,8 +967,44 @@ async def get_ai_provider_stats(
 
 
 # ============================================================================
-# Backup and Restore API (Story 6.4)
+# Backup and Restore API (Story 6.4, FF-007)
 # ============================================================================
+
+
+class BackupOptions(BaseModel):
+    """Options for selective backup (FF-007)"""
+    include_database: bool = Field(default=True, description="Include events, cameras, alert rules")
+    include_thumbnails: bool = Field(default=True, description="Include thumbnail images")
+    include_settings: bool = Field(default=True, description="Include system settings")
+    include_ai_config: bool = Field(default=True, description="Include AI provider config (keys excluded)")
+    include_protect_config: bool = Field(default=True, description="Include Protect controller config")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "include_database": True,
+                "include_thumbnails": True,
+                "include_settings": True,
+                "include_ai_config": True,
+                "include_protect_config": True
+            }
+        }
+
+
+class RestoreOptions(BaseModel):
+    """Options for selective restore (FF-007)"""
+    restore_database: bool = Field(default=True, description="Restore events, cameras, alert rules")
+    restore_thumbnails: bool = Field(default=True, description="Restore thumbnail images")
+    restore_settings: bool = Field(default=True, description="Restore system settings")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "restore_database": True,
+                "restore_thumbnails": True,
+                "restore_settings": True
+            }
+        }
 
 
 class BackupResponse(BaseModel):
@@ -1038,6 +1074,16 @@ class BackupListResponse(BaseModel):
     total_count: int = Field(..., description="Total number of backups")
 
 
+class BackupContentsResponse(BaseModel):
+    """Information about what's contained in a backup (FF-007)"""
+    has_database: bool = Field(default=False, description="Backup includes database")
+    has_thumbnails: bool = Field(default=False, description="Backup includes thumbnails")
+    has_settings: bool = Field(default=False, description="Backup includes settings")
+    database_size_bytes: int = Field(default=0, description="Database size in bytes")
+    thumbnails_count: int = Field(default=0, description="Number of thumbnails")
+    settings_count: int = Field(default=0, description="Number of settings")
+
+
 class ValidationResponse(BaseModel):
     """Response from backup validation"""
     valid: bool = Field(..., description="Whether backup is valid")
@@ -1045,20 +1091,32 @@ class ValidationResponse(BaseModel):
     app_version: Optional[str] = Field(None, description="Backup app version")
     backup_timestamp: Optional[str] = Field(None, description="Backup creation time")
     warnings: List[str] = Field(default_factory=list, description="Validation warnings")
+    contents: Optional[BackupContentsResponse] = Field(None, description="What's in the backup (FF-007)")
 
 
 @router.post("/backup", response_model=BackupResponse)
-async def create_backup():
+async def create_backup(options: Optional[BackupOptions] = None):
     """
-    Create a full system backup
+    Create a system backup with optional selective components (FF-007)
 
-    Creates a ZIP archive containing:
-    - **database.db**: Complete SQLite database
+    Creates a ZIP archive containing selected components:
+    - **database.db**: Complete SQLite database (events, cameras, rules)
     - **thumbnails/**: All event thumbnail images
     - **settings.json**: System settings (API keys excluded for security)
     - **metadata.json**: Backup metadata (timestamp, version, file counts)
 
     The backup can be downloaded using the `download_url` in the response.
+
+    **Request Body (optional):**
+    ```json
+    {
+        "include_database": true,
+        "include_thumbnails": true,
+        "include_settings": true,
+        "include_ai_config": true,
+        "include_protect_config": true
+    }
+    ```
 
     **Response:**
     ```json
@@ -1078,7 +1136,13 @@ async def create_backup():
     """
     try:
         backup_service = get_backup_service()
-        result = await backup_service.create_backup()
+        # Use default options if none provided
+        opts = options or BackupOptions()
+        result = await backup_service.create_backup(
+            include_database=opts.include_database,
+            include_thumbnails=opts.include_thumbnails,
+            include_settings=opts.include_settings
+        )
 
         if not result.success:
             # Check if it's a disk space issue
@@ -1269,12 +1333,25 @@ async def validate_backup(file: UploadFile = File(...)):
             backup_service = get_backup_service()
             result = backup_service.validate_backup(tmp_path)
 
+            # FF-007: Include backup contents info
+            contents = None
+            if result.contents:
+                contents = BackupContentsResponse(
+                    has_database=result.contents.has_database,
+                    has_thumbnails=result.contents.has_thumbnails,
+                    has_settings=result.contents.has_settings,
+                    database_size_bytes=result.contents.database_size_bytes,
+                    thumbnails_count=result.contents.thumbnails_count,
+                    settings_count=result.contents.settings_count
+                )
+
             return ValidationResponse(
                 valid=result.valid,
                 message=result.message,
                 app_version=result.app_version,
                 backup_timestamp=result.backup_timestamp,
-                warnings=result.warnings or []
+                warnings=result.warnings or [],
+                contents=contents
             )
         finally:
             # Cleanup temp file
@@ -1289,22 +1366,30 @@ async def validate_backup(file: UploadFile = File(...)):
 
 
 @router.post("/restore", response_model=RestoreResponse)
-async def restore_from_backup(file: UploadFile = File(...)):
+async def restore_from_backup(
+    file: UploadFile = File(...),
+    restore_database: bool = Form(default=True),
+    restore_thumbnails: bool = Form(default=True),
+    restore_settings: bool = Form(default=True)
+):
     """
-    Restore system from a backup file
+    Restore system from a backup file with selective components (FF-007)
 
-    **WARNING: This operation will replace all existing data!**
+    **WARNING: This operation may replace existing data based on selected components!**
 
     Process:
     1. Validates the backup file
     2. Stops background tasks (camera capture, event processing)
-    3. Creates a backup of current database (for safety)
-    4. Replaces database, thumbnails, and settings
+    3. Creates a backup of current database (if restoring database)
+    4. Replaces selected components (database, thumbnails, settings)
     5. Restarts background tasks
 
     **Request:**
     - Content-Type: multipart/form-data
     - Field: file (ZIP file)
+    - Field: restore_database (boolean, default true)
+    - Field: restore_thumbnails (boolean, default true)
+    - Field: restore_settings (boolean, default true)
 
     **Response:**
     ```json
@@ -1383,11 +1468,14 @@ async def restore_from_backup(file: UploadFile = File(...)):
                 except Exception as e:
                     logger.warning(f"Error restarting tasks: {e}")
 
-            # Perform restore
+            # Perform restore with selective options (FF-007)
             result = await backup_service.restore_from_backup(
                 tmp_path,
                 stop_tasks_callback=stop_tasks,
-                start_tasks_callback=start_tasks
+                start_tasks_callback=start_tasks,
+                restore_database=restore_database,
+                restore_thumbnails=restore_thumbnails,
+                restore_settings=restore_settings
             )
 
             if not result.success:

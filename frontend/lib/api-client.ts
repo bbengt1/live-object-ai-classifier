@@ -59,6 +59,8 @@ import type {
   IRestoreResponse,
   IBackupListResponse,
   IValidationResponse,
+  IBackupOptions,
+  IRestoreOptions,
 } from '@/types/backup';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -875,18 +877,29 @@ export const apiClient = {
   },
 
   /**
-   * Backup and Restore API (Story 6.4)
+   * Backup and Restore API (Story 6.4, FF-007)
    */
   backup: {
     /**
-     * Create a full system backup
+     * Create a system backup with optional selective components (FF-007)
+     * @param options Optional backup options for selective backup
      * @returns Backup result with download URL
      */
-    create: async (): Promise<IBackupResponse> => {
+    create: async (options?: IBackupOptions): Promise<IBackupResponse> => {
       const url = `${API_BASE_URL}${API_V1_PREFIX}/system/backup`;
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      const token = getAuthToken();
+      if (token) {
+        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(url, {
         method: 'POST',
+        headers,
         credentials: 'include',
+        body: options ? JSON.stringify(options) : undefined,
       });
 
       const data = await response.json().catch(() => null);
@@ -964,17 +977,32 @@ export const apiClient = {
     },
 
     /**
-     * Restore from a backup file
+     * Restore from a backup file with optional selective components (FF-007)
      * @param file ZIP file to restore from
+     * @param options Optional restore options for selective restore
      * @returns Restore result
      */
-    restore: async (file: File): Promise<IRestoreResponse> => {
+    restore: async (file: File, options?: IRestoreOptions): Promise<IRestoreResponse> => {
       const url = `${API_BASE_URL}${API_V1_PREFIX}/system/restore`;
       const formData = new FormData();
       formData.append('file', file);
 
+      // FF-007: Add selective restore options as form fields
+      if (options) {
+        formData.append('restore_database', String(options.restore_database));
+        formData.append('restore_thumbnails', String(options.restore_thumbnails));
+        formData.append('restore_settings', String(options.restore_settings));
+      }
+
+      const headers: HeadersInit = {};
+      const token = getAuthToken();
+      if (token) {
+        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(url, {
         method: 'POST',
+        headers,
         body: formData,
         credentials: 'include',
       });
