@@ -1,5 +1,5 @@
 """
-Tests for Push Notification Service (Story P4-1.1)
+Tests for Push Notification Service (Story P4-1.1, P4-1.3)
 
 Tests cover:
 - VAPID key generation and management
@@ -7,6 +7,10 @@ Tests cover:
 - Retry logic with exponential backoff
 - Invalid subscription cleanup
 - Delivery tracking
+- Rich notification formatting (P4-1.3)
+- Thumbnail embedding (P4-1.3)
+- Notification collapse (P4-1.3)
+- Action buttons (P4-1.3)
 """
 import pytest
 from datetime import datetime, timezone
@@ -17,6 +21,8 @@ from app.services.push_notification_service import (
     PushNotificationService,
     NotificationResult,
     send_event_notification,
+    format_rich_notification,
+    DEFAULT_NOTIFICATION_ACTIONS,
     MAX_RETRIES,
 )
 from app.models.push_subscription import PushSubscription
@@ -429,3 +435,401 @@ class TestNotificationPayload:
         assert captured_payload["tag"] == "test-tag"
         assert captured_payload["data"]["event_id"] == "123"
         assert captured_payload["data"]["url"] == "/events"
+
+
+# ============================================================================
+# Story P4-1.3: Rich Notification Formatting Tests
+# ============================================================================
+
+class TestFormatRichNotification:
+    """Tests for format_rich_notification helper function (Story P4-1.3)."""
+
+    def test_format_rich_notification_basic(self):
+        """Basic notification formatting without thumbnail."""
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Front Door",
+            description="Person detected at front door",
+        )
+
+        assert result["title"] == "Front Door: Motion Detected"
+        assert result["body"] == "Person detected at front door"
+        assert result["tag"] == "camera-456"  # Camera ID for collapse
+        assert result["renotify"] is True
+        assert result["actions"] == DEFAULT_NOTIFICATION_ACTIONS
+        assert result["data"]["event_id"] == "event-123"
+        assert result["data"]["camera_id"] == "camera-456"
+        assert result["data"]["url"] == "/events?highlight=event-123"
+        assert "image" not in result  # No thumbnail
+
+    def test_format_rich_notification_with_thumbnail(self):
+        """Notification includes thumbnail URL when provided (AC1)."""
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Front Door",
+            description="Delivery driver",
+            thumbnail_url="/api/v1/thumbnails/2025-12-10/event-123.jpg",
+        )
+
+        assert result["image"] == "/api/v1/thumbnails/2025-12-10/event-123.jpg"
+
+    def test_format_rich_notification_without_thumbnail_graceful(self):
+        """Notification works gracefully without thumbnail (AC8)."""
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Test Camera",
+            description="Motion detected",
+            thumbnail_url=None,
+        )
+
+        # Should not raise, should not include image field
+        assert "image" not in result
+        assert result["title"] is not None
+        assert result["body"] is not None
+
+    def test_format_rich_notification_person_detection(self):
+        """Title reflects person detection type."""
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Front Porch",
+            description="Person with package",
+            smart_detection_type="person",
+        )
+
+        assert result["title"] == "Front Porch: Person Detected"
+        assert result["data"]["smart_detection_type"] == "person"
+
+    def test_format_rich_notification_vehicle_detection(self):
+        """Title reflects vehicle detection type."""
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Driveway",
+            description="Car arriving",
+            smart_detection_type="vehicle",
+        )
+
+        assert result["title"] == "Driveway: Vehicle Detected"
+
+    def test_format_rich_notification_package_detection(self):
+        """Title reflects package detection type."""
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Front Door",
+            description="Package delivered",
+            smart_detection_type="package",
+        )
+
+        assert result["title"] == "Front Door: Package Detected"
+
+    def test_format_rich_notification_doorbell_ring(self):
+        """Title reflects doorbell ring event."""
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Doorbell",
+            description="Someone at the door",
+            smart_detection_type="ring",
+        )
+
+        assert result["title"] == "Doorbell: Doorbell Ring"
+
+    def test_format_rich_notification_truncates_long_description(self):
+        """Long descriptions are truncated at 100 chars."""
+        long_description = "A" * 200
+
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Test",
+            description=long_description,
+        )
+
+        assert len(result["body"]) == 100
+        assert result["body"].endswith("...")
+
+    def test_format_rich_notification_collapse_tag_is_camera_id(self):
+        """Tag uses camera_id for notification collapse (AC4)."""
+        result = format_rich_notification(
+            event_id="event-789",
+            camera_id="camera-unique-id",
+            camera_name="Test Camera",
+            description="Motion detected",
+        )
+
+        assert result["tag"] == "camera-unique-id"
+
+    def test_format_rich_notification_includes_actions(self):
+        """Notification includes action buttons (AC2, AC3)."""
+        result = format_rich_notification(
+            event_id="event-123",
+            camera_id="camera-456",
+            camera_name="Test",
+            description="Test event",
+        )
+
+        assert "actions" in result
+        assert len(result["actions"]) == 2
+
+        # Verify View action
+        view_action = next(a for a in result["actions"] if a["action"] == "view")
+        assert view_action["title"] == "View"
+
+        # Verify Dismiss action
+        dismiss_action = next(a for a in result["actions"] if a["action"] == "dismiss")
+        assert dismiss_action["title"] == "Dismiss"
+
+    def test_format_rich_notification_deep_link_url(self):
+        """Data includes deep link URL (AC5)."""
+        result = format_rich_notification(
+            event_id="event-abc-123",
+            camera_id="camera-456",
+            camera_name="Test",
+            description="Test",
+        )
+
+        assert result["data"]["url"] == "/events?highlight=event-abc-123"
+
+
+class TestRichNotificationPayload:
+    """Tests for rich notification payload structure sent via Web Push (Story P4-1.3)."""
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.webpush')
+    async def test_notification_includes_image_field(self, mock_webpush, db_session):
+        """Verify image field is included in payload when provided."""
+        import json
+
+        ensure_vapid_keys(db_session)
+
+        captured_payload = None
+        def capture_webpush(**kwargs):
+            nonlocal captured_payload
+            captured_payload = json.loads(kwargs['data'])
+            return MagicMock()
+
+        mock_webpush.side_effect = capture_webpush
+
+        subscription = PushSubscription(
+            endpoint="https://test.com/push",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        service = PushNotificationService(db_session)
+        await service.send_notification(
+            subscription_id=subscription.id,
+            title="Test",
+            body="Test",
+            image="/thumbnails/test.jpg",
+        )
+
+        assert captured_payload is not None
+        assert captured_payload["image"] == "/thumbnails/test.jpg"
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.webpush')
+    async def test_notification_includes_actions_field(self, mock_webpush, db_session):
+        """Verify actions array is included in payload."""
+        import json
+
+        ensure_vapid_keys(db_session)
+
+        captured_payload = None
+        def capture_webpush(**kwargs):
+            nonlocal captured_payload
+            captured_payload = json.loads(kwargs['data'])
+            return MagicMock()
+
+        mock_webpush.side_effect = capture_webpush
+
+        subscription = PushSubscription(
+            endpoint="https://test.com/push",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        actions = [
+            {"action": "view", "title": "View Event"},
+            {"action": "dismiss", "title": "Dismiss"},
+        ]
+
+        service = PushNotificationService(db_session)
+        await service.send_notification(
+            subscription_id=subscription.id,
+            title="Test",
+            body="Test",
+            actions=actions,
+        )
+
+        assert captured_payload is not None
+        assert captured_payload["actions"] == actions
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.webpush')
+    async def test_notification_includes_renotify_field(self, mock_webpush, db_session):
+        """Verify renotify field is included in payload."""
+        import json
+
+        ensure_vapid_keys(db_session)
+
+        captured_payload = None
+        def capture_webpush(**kwargs):
+            nonlocal captured_payload
+            captured_payload = json.loads(kwargs['data'])
+            return MagicMock()
+
+        mock_webpush.side_effect = capture_webpush
+
+        subscription = PushSubscription(
+            endpoint="https://test.com/push",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        service = PushNotificationService(db_session)
+        await service.send_notification(
+            subscription_id=subscription.id,
+            title="Test",
+            body="Test",
+            tag="camera-123",
+            renotify=True,
+        )
+
+        assert captured_payload is not None
+        assert captured_payload["renotify"] is True
+
+
+class TestSendEventNotificationRich:
+    """Tests for send_event_notification with rich payload (Story P4-1.3)."""
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.PushNotificationService')
+    async def test_send_event_notification_with_camera_id(self, MockService, db_session):
+        """send_event_notification uses camera_id for collapse tag (AC4)."""
+        mock_instance = MagicMock()
+        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        MockService.return_value = mock_instance
+
+        await send_event_notification(
+            event_id="event-123",
+            camera_name="Front Door",
+            description="Person detected",
+            thumbnail_url="/thumbnails/test.jpg",
+            camera_id="camera-456",
+            db=db_session
+        )
+
+        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+
+        # Tag should be camera_id for collapse
+        assert call_kwargs["tag"] == "camera-456"
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.PushNotificationService')
+    async def test_send_event_notification_with_smart_detection_type(self, MockService, db_session):
+        """send_event_notification includes smart detection in title."""
+        mock_instance = MagicMock()
+        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        MockService.return_value = mock_instance
+
+        await send_event_notification(
+            event_id="event-123",
+            camera_name="Front Door",
+            description="Delivery person",
+            smart_detection_type="person",
+            db=db_session
+        )
+
+        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+
+        # Title should reflect detection type
+        assert "Person Detected" in call_kwargs["title"]
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.PushNotificationService')
+    async def test_send_event_notification_includes_actions(self, MockService, db_session):
+        """send_event_notification includes action buttons."""
+        mock_instance = MagicMock()
+        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        MockService.return_value = mock_instance
+
+        await send_event_notification(
+            event_id="event-123",
+            camera_name="Test",
+            description="Test",
+            db=db_session
+        )
+
+        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+
+        assert call_kwargs["actions"] == DEFAULT_NOTIFICATION_ACTIONS
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.PushNotificationService')
+    async def test_send_event_notification_includes_image(self, MockService, db_session):
+        """send_event_notification includes thumbnail as image (AC1)."""
+        mock_instance = MagicMock()
+        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        MockService.return_value = mock_instance
+
+        await send_event_notification(
+            event_id="event-123",
+            camera_name="Test",
+            description="Test",
+            thumbnail_url="/thumbnails/event-123.jpg",
+            db=db_session
+        )
+
+        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+
+        assert call_kwargs["image"] == "/thumbnails/event-123.jpg"
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.PushNotificationService')
+    async def test_send_event_notification_renotify_enabled(self, MockService, db_session):
+        """send_event_notification has renotify=True for updates."""
+        mock_instance = MagicMock()
+        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        MockService.return_value = mock_instance
+
+        await send_event_notification(
+            event_id="event-123",
+            camera_name="Test",
+            description="Test",
+            db=db_session
+        )
+
+        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+
+        assert call_kwargs["renotify"] is True
+
+    @pytest.mark.asyncio
+    @patch('app.services.push_notification_service.PushNotificationService')
+    async def test_send_event_notification_deep_link_in_data(self, MockService, db_session):
+        """send_event_notification includes deep link URL (AC5)."""
+        mock_instance = MagicMock()
+        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        MockService.return_value = mock_instance
+
+        await send_event_notification(
+            event_id="event-abc-123",
+            camera_name="Test",
+            description="Test",
+            db=db_session
+        )
+
+        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+
+        assert call_kwargs["data"]["url"] == "/events?highlight=event-abc-123"

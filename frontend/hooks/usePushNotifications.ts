@@ -1,8 +1,9 @@
 /**
- * Push Notifications Hook (Story P4-1.2)
+ * Push Notifications Hook (Story P4-1.2, P4-1.3)
  *
  * Custom hook for managing Web Push notification subscriptions.
  * Handles:
+ * - Service worker registration and lifecycle (P4-1.3)
  * - Permission state management
  * - Push subscription lifecycle
  * - VAPID key fetching
@@ -11,9 +12,14 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient, ApiError } from '@/lib/api-client';
 import type { PushNotificationStatus } from '@/types/push';
+
+/**
+ * Service worker path - must be at root to handle all notifications
+ */
+const SERVICE_WORKER_PATH = '/sw.js';
 
 interface UsePushNotificationsReturn {
   /**
@@ -64,6 +70,14 @@ interface UsePushNotificationsReturn {
    * Check if service worker is registered
    */
   hasServiceWorker: boolean;
+  /**
+   * Service worker registration (P4-1.3)
+   */
+  swRegistration: ServiceWorkerRegistration | null;
+  /**
+   * Register service worker manually (P4-1.3)
+   */
+  registerServiceWorker: () => Promise<ServiceWorkerRegistration | null>;
 }
 
 /**
@@ -130,6 +144,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
   const [deviceInfo, setDeviceInfo] = useState<string | null>(null);
   const [subscriptionEndpoint, setSubscriptionEndpoint] = useState<string | null>(null);
   const [currentSubscription, setCurrentSubscription] = useState<PushSubscription | null>(null);
+  const [swRegistration, setSwRegistration] = useState<ServiceWorkerRegistration | null>(null);
+
+  // Track if SW registration is in progress to avoid duplicate registrations
+  const swRegistrationInProgress = useRef(false);
 
   // Check browser support
   const isPushSupported = typeof window !== 'undefined' &&
@@ -141,7 +159,87 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     'serviceWorker' in navigator;
 
   /**
+   * Register service worker (P4-1.3)
+   * Called automatically on mount, but can be called manually if needed
+   */
+  const registerServiceWorker = useCallback(async (): Promise<ServiceWorkerRegistration | null> => {
+    if (!hasServiceWorker) {
+      console.warn('[Push] Service workers not supported');
+      return null;
+    }
+
+    // Prevent duplicate registration attempts
+    if (swRegistrationInProgress.current) {
+      console.log('[Push] SW registration already in progress');
+      // Wait for existing registration
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        return registration;
+      } catch {
+        return null;
+      }
+    }
+
+    swRegistrationInProgress.current = true;
+
+    try {
+      console.log('[Push] Registering service worker:', SERVICE_WORKER_PATH);
+
+      // Check for existing registration first
+      const existingRegistration = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_PATH);
+
+      if (existingRegistration) {
+        console.log('[Push] Found existing SW registration');
+        setSwRegistration(existingRegistration);
+
+        // Check for updates in background
+        existingRegistration.update().catch((err) => {
+          console.warn('[Push] SW update check failed:', err);
+        });
+
+        return existingRegistration;
+      }
+
+      // Register new service worker
+      const registration = await navigator.serviceWorker.register(SERVICE_WORKER_PATH, {
+        scope: '/',
+      });
+
+      console.log('[Push] SW registered successfully:', registration.scope);
+      setSwRegistration(registration);
+
+      // Handle SW updates
+      registration.addEventListener('updatefound', () => {
+        console.log('[Push] SW update found');
+        const newWorker = registration.installing;
+
+        if (newWorker) {
+          newWorker.addEventListener('statechange', () => {
+            console.log('[Push] SW state changed:', newWorker.state);
+            if (newWorker.state === 'activated') {
+              console.log('[Push] New SW activated');
+            }
+          });
+        }
+      });
+
+      // Wait for SW to be ready
+      await navigator.serviceWorker.ready;
+      console.log('[Push] SW is ready');
+
+      return registration;
+    } catch (err) {
+      console.error('[Push] SW registration failed:', err);
+      setError(`Service worker registration failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      return null;
+    } finally {
+      swRegistrationInProgress.current = false;
+    }
+  }, [hasServiceWorker]);
+
+  /**
    * Initialize and check current state
+   * Also registers service worker if not already registered (P4-1.3)
    */
   const checkStatus = useCallback(async () => {
     // Check if push is supported
@@ -160,11 +258,17 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       return;
     }
 
-    // Check if service worker is registered
-    try {
-      const registration = await navigator.serviceWorker.ready;
+    // Register service worker if not already registered (P4-1.3)
+    const registration = await registerServiceWorker();
 
-      // Check for existing subscription
+    if (!registration) {
+      console.warn('[Push] Service worker registration failed');
+      setStatus('no-service-worker');
+      return;
+    }
+
+    // Check for existing subscription
+    try {
       const subscription = await registration.pushManager.getSubscription();
 
       if (subscription) {
@@ -176,11 +280,10 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         setStatus('unsubscribed');
       }
     } catch (err) {
-      // Service worker not registered yet - that's OK for now (P4-1.5 will add it)
-      console.warn('Service worker not ready:', err);
-      setStatus('no-service-worker');
+      console.warn('[Push] Error checking subscription:', err);
+      setStatus('unsubscribed');
     }
-  }, [isPushSupported]);
+  }, [isPushSupported, registerServiceWorker]);
 
   // Run initial check
   useEffect(() => {
@@ -217,11 +320,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         }
       }
 
-      // Get service worker registration
-      let registration: ServiceWorkerRegistration;
-      try {
-        registration = await navigator.serviceWorker.ready;
-      } catch {
+      // Get service worker registration (P4-1.3: use registerServiceWorker)
+      const registration = swRegistration || await registerServiceWorker();
+      if (!registration) {
         setStatus('no-service-worker');
         setError('Service worker is not registered. Push notifications require a service worker.');
         return false;
@@ -275,7 +376,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [isPushSupported]);
+  }, [isPushSupported, swRegistration, registerServiceWorker]);
 
   /**
    * Unsubscribe from push notifications
@@ -370,5 +471,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     sendTestNotification,
     isPushSupported,
     hasServiceWorker,
+    swRegistration,
+    registerServiceWorker,
   };
 }

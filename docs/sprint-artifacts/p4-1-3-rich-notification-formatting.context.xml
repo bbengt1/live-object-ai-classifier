@@ -1,0 +1,267 @@
+<story-context id="p4-1-3-rich-notification-formatting" v="1.0">
+  <metadata>
+    <epicId>P4-1</epicId>
+    <storyId>P4-1.3</storyId>
+    <title>Rich Notification Formatting</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-10</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p4-1-3-rich-notification-formatting.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>user receiving push notifications</asA>
+    <iWant>notifications to include event thumbnails, action buttons, and deep links</iWant>
+    <soThat>I can quickly assess events and take action directly from the notification without opening the full app</soThat>
+    <tasks>
+      <task id="1" ac="2,3,5,7">Create service worker for push notifications
+        <subtask>Create frontend/public/sw.js service worker file</subtask>
+        <subtask>Register service worker in app initialization</subtask>
+        <subtask>Implement push event handler to display notifications</subtask>
+        <subtask>Implement notificationclick event handler for body click</subtask>
+        <subtask>Implement notificationclose event handler for analytics</subtask>
+        <subtask>Handle action button clicks (view, dismiss)</subtask>
+      </task>
+      <task id="2" ac="1,2,3,4,5,6">Enhance notification payload structure
+        <subtask>Update PushNotificationService.send_notification() for rich payload</subtask>
+        <subtask>Create format_rich_notification() helper function</subtask>
+        <subtask>Add thumbnail fetching from event record</subtask>
+      </task>
+      <task id="3" ac="1,8">Implement thumbnail embedding in notifications
+        <subtask>Fetch event thumbnail from database when sending notification</subtask>
+        <subtask>Convert thumbnail to base64 data URL for image field</subtask>
+        <subtask>Handle missing thumbnails gracefully (omit image field)</subtask>
+        <subtask>Optimize thumbnail size for notifications (max 512x512)</subtask>
+      </task>
+      <task id="4" ac="4">Implement notification collapse/update
+        <subtask>Use tag field with camera_id as key</subtask>
+        <subtask>Set renotify: true to alert on updates</subtask>
+        <subtask>Include event count in notification body when multiple events</subtask>
+      </task>
+      <task id="5" ac="5">Add deep linking support
+        <subtask>Store event URL in notification data payload</subtask>
+        <subtask>Service worker opens URL on notification click</subtask>
+        <subtask>Handle case when app is already open (focus existing tab)</subtask>
+        <subtask>Handle case when app is closed (open new tab)</subtask>
+      </task>
+      <task id="6" ac="2,3">Add action buttons
+        <subtask>Define actions array in notification payload</subtask>
+        <subtask>Create action icons (16x16 or 24x24 PNG)</subtask>
+        <subtask>Handle view action in service worker</subtask>
+        <subtask>Handle dismiss action in service worker</subtask>
+      </task>
+      <task id="7" ac="6">Create notification icons
+        <subtask>Create badge icon frontend/public/icons/badge-72.png</subtask>
+        <subtask>Create notification icon frontend/public/icons/notification-192.png</subtask>
+        <subtask>Create action icons for View and Dismiss</subtask>
+      </task>
+      <task id="8" ac="7">Update frontend notification handling
+        <subtask>Update usePushNotifications hook to register service worker</subtask>
+        <subtask>Add service worker registration check before enabling push</subtask>
+        <subtask>Handle service worker update/activation lifecycle</subtask>
+      </task>
+      <task id="9" ac="all">Write tests
+        <subtask>Unit tests for format_rich_notification() function</subtask>
+        <subtask>Unit tests for service worker event handlers</subtask>
+        <subtask>Test thumbnail base64 conversion</subtask>
+        <subtask>Test notification collapse behavior</subtask>
+        <subtask>Integration test for full notification flow</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1" verification="Visual verification on Chrome/Firefox">Notifications include event thumbnail image inline</criterion>
+    <criterion id="2" verification="Manual testing on desktop and mobile">"View" action button opens event detail page in app</criterion>
+    <criterion id="3" verification="Manual testing">"Dismiss" action button clears notification without opening app</criterion>
+    <criterion id="4" verification="Test rapid events from same camera">Multiple notifications for same camera collapse/update instead of stacking</criterion>
+    <criterion id="5" verification="Manual verification">Clicking notification body deep links to /events?highlight={event_id}</criterion>
+    <criterion id="6" verification="Visual verification on mobile">Notification badge shows on app icon (where supported)</criterion>
+    <criterion id="7" verification="Unit tests for SW event handlers">Service worker handles notification click and action events</criterion>
+    <criterion id="8" verification="Test with events missing thumbnails">Fallback works gracefully when thumbnail unavailable</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epics-phase4.md</path>
+        <title>Phase 4 Epics</title>
+        <section>Story P4-1.3: Rich Notification Formatting</section>
+        <snippet>Include thumbnail in notifications, add action buttons (View, Dismiss), implement notification collapse (same event updates), deep link to event details.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD-phase4.md</path>
+        <title>Phase 4 PRD</title>
+        <section>Push Notifications</section>
+        <snippet>FR11: Notifications include thumbnail preview. FR14: PWA is installable on mobile devices. Web Push API integration for browser notifications.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture</title>
+        <section>Push Notification Flow (Phase 4)</section>
+        <snippet>Event Created → Check Preferences → Format Notification (create rich notification with thumbnail) → Push Service (send via Web Push API, track delivery).</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p4-1-1-implement-web-push-backend.md</path>
+        <title>Story P4-1.1</title>
+        <section>Dev Agent Record</section>
+        <snippet>PushNotificationService with send_notification() method, broadcast_notification(), retry logic, Prometheus metrics. Backend implementation complete.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p4-1-2-create-push-subscription-ui.md</path>
+        <title>Story P4-1.2</title>
+        <section>Dev Agent Record</section>
+        <snippet>usePushNotifications hook, PushNotificationSettings component, test notification endpoint. Frontend subscription UI complete but notes service worker prerequisite.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>backend/app/services/push_notification_service.py</path>
+        <kind>service</kind>
+        <symbol>PushNotificationService</symbol>
+        <lines>44-368</lines>
+        <reason>Core service to enhance with rich notification payload (image, actions, tag, renotify fields). send_notification() and broadcast_notification() methods need updates.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/push_notification_service.py</path>
+        <kind>function</kind>
+        <symbol>send_event_notification</symbol>
+        <lines>394-451</lines>
+        <reason>Convenience function called from event_processor. Needs enhancement to include thumbnail, camera_id tag for collapse, and rich payload fields.</reason>
+      </file>
+      <file>
+        <path>backend/app/api/v1/push.py</path>
+        <kind>router</kind>
+        <symbol>router</symbol>
+        <lines>1-491</lines>
+        <reason>Push API endpoints. May need additional endpoints or modifications for rich notification testing.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/event_processor.py</path>
+        <kind>service</kind>
+        <symbol>send_event_notification integration</symbol>
+        <lines>695-723</lines>
+        <reason>Event processor step 6 triggers push notifications. Currently passes thumbnail_url - verify integration point for enhanced notifications.</reason>
+      </file>
+      <file>
+        <path>backend/app/models/event.py</path>
+        <kind>model</kind>
+        <symbol>Event</symbol>
+        <lines>1-107</lines>
+        <reason>Event model with thumbnail_base64 and thumbnail_path fields. Source of thumbnail data for rich notifications.</reason>
+      </file>
+      <file>
+        <path>frontend/hooks/usePushNotifications.ts</path>
+        <kind>hook</kind>
+        <symbol>usePushNotifications</symbol>
+        <lines>125-374</lines>
+        <reason>Push notifications hook. Needs enhancement to register service worker, check SW registration status, handle SW lifecycle.</reason>
+      </file>
+      <file>
+        <path>frontend/types/push.ts</path>
+        <kind>types</kind>
+        <symbol>PushNotificationStatus</symbol>
+        <lines>1-96</lines>
+        <reason>TypeScript types for push API. May need extension for rich notification payload types.</reason>
+      </file>
+      <file>
+        <path>frontend/components/settings/PushNotificationSettings.tsx</path>
+        <kind>component</kind>
+        <symbol>PushNotificationSettings</symbol>
+        <reason>Settings UI component for push notifications. May need updates if service worker registration affects UI states.</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <backend>
+        <package version=">=2.0.0">pywebpush</package>
+        <package version="0.115.0">fastapi</package>
+        <package version=">=2.0.36">sqlalchemy</package>
+        <package version=">=10.0.0">pillow</package>
+      </backend>
+      <frontend>
+        <package version="16.0.7">next</package>
+        <package version="19.2.0">react</package>
+        <package version="^5.90.10">@tanstack/react-query</package>
+        <note>No new npm dependencies - uses native Service Worker API and Notification API</note>
+      </frontend>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="architecture">Service worker must be at root (/sw.js) to handle all notifications - cannot be in src folder</constraint>
+    <constraint type="protocol">Web Push payloads limited to ~4KB - use image URL for thumbnails, not base64 embed in payload</constraint>
+    <constraint type="browser">Action buttons may display differently across browsers - Chrome shows icons, Firefox may not</constraint>
+    <constraint type="security">Service workers only work over HTTPS (or localhost for development)</constraint>
+    <constraint type="cors">Thumbnail URLs must be same-origin or CORS-enabled for notification image field</constraint>
+    <constraint type="pattern">Follow existing fire-and-forget pattern in event_processor.py - push notifications must not block event processing</constraint>
+    <constraint type="graceful-degradation">Missing thumbnails or failed image loads must not break notification display - omit image field</constraint>
+    <constraint type="testing">Service worker tests require mocking self.registration and clients API - cannot use actual browser APIs in unit tests</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>PushNotificationService.send_notification</name>
+      <kind>method</kind>
+      <signature>async def send_notification(self, subscription_id: str, title: str, body: str, data: Optional[Dict[str, Any]] = None, icon: str = "/icons/notification-192.png", badge: str = "/icons/badge-72.png", tag: Optional[str] = None) -> NotificationResult</signature>
+      <path>backend/app/services/push_notification_service.py:87-133</path>
+      <note>Needs extension: add image, actions, renotify parameters</note>
+    </interface>
+    <interface>
+      <name>PushNotificationService.broadcast_notification</name>
+      <kind>method</kind>
+      <signature>async def broadcast_notification(self, title: str, body: str, data: Optional[Dict[str, Any]] = None, icon: str = "/icons/notification-192.png", badge: str = "/icons/badge-72.png", tag: Optional[str] = None) -> List[NotificationResult]</signature>
+      <path>backend/app/services/push_notification_service.py:135-206</path>
+      <note>Needs extension: add image, actions, renotify parameters</note>
+    </interface>
+    <interface>
+      <name>send_event_notification</name>
+      <kind>function</kind>
+      <signature>async def send_event_notification(event_id: str, camera_name: str, description: str, thumbnail_url: Optional[str] = None, db: Optional[Session] = None) -> List[NotificationResult]</signature>
+      <path>backend/app/services/push_notification_service.py:394-451</path>
+      <note>Enhance to use camera_id as tag for collapse, include actions, fetch actual thumbnail for image field</note>
+    </interface>
+    <interface>
+      <name>Web Push Notification Options</name>
+      <kind>browser API</kind>
+      <signature>ServiceWorkerRegistration.showNotification(title, { body, icon, image, badge, tag, renotify, actions, data })</signature>
+      <path>frontend/public/sw.js (to be created)</path>
+      <note>Standard Web Push API - see MDN documentation</note>
+    </interface>
+    <interface>
+      <name>usePushNotifications</name>
+      <kind>React hook</kind>
+      <signature>function usePushNotifications(): UsePushNotificationsReturn</signature>
+      <path>frontend/hooks/usePushNotifications.ts:125</path>
+      <note>Extend to handle service worker registration and lifecycle</note>
+    </interface>
+    <interface>
+      <name>GET /api/v1/events/{id}/thumbnail</name>
+      <kind>REST endpoint</kind>
+      <signature>GET /api/v1/events/{id}/thumbnail -> image/jpeg</signature>
+      <path>backend/app/api/v1/events.py</path>
+      <note>Existing endpoint to fetch event thumbnail - use URL in notification image field</note>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend: pytest with pytest-asyncio for async tests, mock webpush() function to avoid external calls, use test fixtures for subscription data.
+      Frontend: Vitest with React Testing Library, mock Service Worker API (self.registration, clients), mock Notification API.
+      Integration: Mock push delivery, test notification collapse with rapid events, visual verification across browsers.
+    </standards>
+    <locations>
+      <location>backend/tests/test_services/test_push_notification_service.py</location>
+      <location>backend/tests/test_api/test_push.py</location>
+      <location>frontend/__tests__/ (to be created for SW tests)</location>
+    </locations>
+    <ideas>
+      <idea ac="1,8">Test format_rich_notification() with and without thumbnail - verify image field omitted when thumbnail missing</idea>
+      <idea ac="2,3,5">Test service worker notificationclick handler - mock clients.matchAll() and clients.openWindow()</idea>
+      <idea ac="4">Test notification collapse - send 5 notifications with same tag, verify only 1 displayed with updated body</idea>
+      <idea ac="7">Test service worker push event handler - verify showNotification called with correct options</idea>
+      <idea ac="all">Integration test: create event with thumbnail, verify notification includes image URL, actions, tag</idea>
+    </ideas>
+  </tests>
+</story-context>

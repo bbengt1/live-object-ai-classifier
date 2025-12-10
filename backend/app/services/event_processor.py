@@ -692,7 +692,7 @@ class EventProcessor:
                     extra={"error": str(alert_error)}
                 )
 
-            # Step 6: Send push notifications (Story P4-1.1)
+            # Step 6: Send push notifications (Story P4-1.1, P4-1.3)
             try:
                 from app.services.push_notification_service import send_event_notification
 
@@ -702,13 +702,23 @@ class EventProcessor:
                     date_str = event.timestamp.strftime("%Y-%m-%d")
                     push_thumbnail_url = f"/api/v1/thumbnails/{date_str}/{event_id}.jpg"
 
+                # P4-1.3: Extract smart detection type from metadata or detected objects
+                smart_detection_type = event.metadata.get("smart_detection_type")
+                if not smart_detection_type and event.detected_objects:
+                    # Map detected objects to smart detection type
+                    obj = event.detected_objects[0].lower() if event.detected_objects else None
+                    if obj in ("person", "vehicle", "package", "animal"):
+                        smart_detection_type = obj
+
                 # Fire and forget - don't await to avoid blocking
                 asyncio.create_task(
                     send_event_notification(
                         event_id=event_id,
                         camera_name=event.camera_name,
                         description=ai_result.description,
-                        thumbnail_url=push_thumbnail_url
+                        thumbnail_url=push_thumbnail_url,
+                        camera_id=event.camera_id,  # P4-1.3: For notification collapse
+                        smart_detection_type=smart_detection_type,  # P4-1.3: For better title
                     )
                 )
                 logger.debug(
