@@ -17,6 +17,7 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 
 from pywebpush import webpush, WebPushException
+from py_vapid import Vapid
 from sqlalchemy.orm import Session
 
 from app.models.push_subscription import PushSubscription
@@ -273,20 +274,26 @@ class PushNotificationService:
         last_status_code = None
         start_time = time.time()
 
+        # Create Vapid instance from PEM key once (outside retry loop)
+        # Using Vapid.from_pem() is more reliable than passing raw key string
+        vapid_instance = Vapid.from_pem(private_key.encode('utf-8'))
+
         while retries <= MAX_RETRIES:
             try:
                 # Send notification using pywebpush
                 # Run in executor since webpush is synchronous
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    None,
-                    lambda: webpush(
+
+                # Define sync function to call webpush (avoids lambda capture issues)
+                def send_push():
+                    return webpush(
                         subscription_info=subscription_info,
                         data=payload_json,
-                        vapid_private_key=private_key,
-                        vapid_claims={"sub": VAPID_CLAIMS_EMAIL}
+                        vapid_claims={"sub": VAPID_CLAIMS_EMAIL},
+                        vapid_private_key=vapid_instance,  # Pass the Vapid instance
                     )
-                )
+
+                await loop.run_in_executor(None, send_push)
 
                 # Success - update last_used_at
                 subscription.last_used_at = datetime.now(timezone.utc)
