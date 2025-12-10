@@ -41,6 +41,7 @@ from app.services.ai_service import AIService
 from app.services.camera_service import CameraService
 from app.services.motion_detection_service import MotionDetectionService
 from app.services.cost_cap_service import get_cost_cap_service
+from app.services.cost_alert_service import get_cost_alert_service
 from app.core.database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -673,6 +674,23 @@ class EventProcessor:
 
             # Step 4 (Stub): WebSocket broadcast (Epic 4 feature)
             # TODO: Integrate with websocket_manager.broadcast_event(event)
+
+            # Step 5: Check cost thresholds and send alerts (Story P3-7.4)
+            try:
+                cost_alert_service = get_cost_alert_service()
+                with SessionLocal() as db:
+                    alerts = await cost_alert_service.check_and_notify(db)
+                    if alerts:
+                        logger.info(
+                            f"Cost alerts triggered: {len(alerts)} notifications sent",
+                            extra={"alert_count": len(alerts)}
+                        )
+            except Exception as alert_error:
+                # Cost alert failures should not block event processing
+                logger.warning(
+                    f"Failed to check cost alerts: {alert_error}",
+                    extra={"error": str(alert_error)}
+                )
 
             logger.info(
                 f"Event processed successfully for camera {event.camera_name}",

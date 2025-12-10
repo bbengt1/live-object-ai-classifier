@@ -245,6 +245,9 @@ class SystemSettingsUpdate(BaseModel):
     ai_daily_cost_cap: Optional[float] = Field(None, ge=0, description="Daily cost cap in USD (null = no limit)")
     ai_monthly_cost_cap: Optional[float] = Field(None, ge=0, description="Monthly cost cap in USD (null = no limit)")
 
+    # Story P3-7.5: Key Frames Storage Setting
+    store_analysis_frames: Optional[bool] = Field(None, description="Store key frames used for AI analysis (default: true)")
+
 
 # Story P3-7.1: AI Usage Response Schemas for Cost Tracking
 

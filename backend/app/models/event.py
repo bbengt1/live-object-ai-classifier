@@ -40,6 +40,8 @@ class Event(Base):
         reanalysis_count: Number of re-analyses performed for rate limiting (Story P3-6.4)
         ai_cost: Estimated cost in USD for AI analysis (Story P3-7.1)
         analysis_skipped_reason: Reason AI analysis was skipped - "cost_cap_daily"/"cost_cap_monthly" (Story P3-7.3)
+        key_frames_base64: JSON array of base64-encoded frame thumbnails for gallery display (Story P3-7.5)
+        frame_timestamps: JSON array of float seconds from video start for each frame (Story P3-7.5)
         created_at: Record creation timestamp (UTC with timezone)
     """
 
@@ -86,6 +88,9 @@ class Event(Base):
     ai_cost = Column(Float, nullable=True)  # Estimated cost in USD for AI analysis (null = not tracked)
     # Story P3-7.3: Cost cap enforcement - analysis skip reason
     analysis_skipped_reason = Column(String(50), nullable=True)  # "cost_cap_daily", "cost_cap_monthly" (null = not skipped)
+    # Story P3-7.5: Key frames storage for event detail gallery
+    key_frames_base64 = Column(Text, nullable=True)  # JSON array of base64-encoded frame thumbnails (null = not stored)
+    frame_timestamps = Column(Text, nullable=True)  # JSON array of float seconds from video start (null = not stored)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships

@@ -910,6 +910,9 @@ class ProtectEventHandler:
         self._fallback_chain: List[str] = []  # Track each failure: ["video_native:provider_unsupported", ...]
         # Story P3-5.3: Reset audio transcription for this event
         self._last_audio_transcription: Optional[str] = None
+        # Story P3-7.5: Track extracted frames and timestamps for gallery storage
+        self._last_extracted_frames: List[bytes] = []
+        self._last_frame_timestamps: List[float] = []
 
         try:
             # Lazy import to avoid circular imports (same pattern as snapshot_service)
@@ -1542,7 +1545,8 @@ class ProtectEventHandler:
                 }
             )
 
-            frames = await frame_extractor.extract_frames(
+            # Story P3-7.5: Use extract_frames_with_timestamps to get both frames and timestamps
+            frames, timestamps = await frame_extractor.extract_frames_with_timestamps(
                 clip_path=clip_path,
                 frame_count=5,  # Default frame count
                 strategy="evenly_spaced",
@@ -1600,6 +1604,9 @@ class ProtectEventHandler:
                     # Story P3-2.6 AC4: Record analysis mode and frame count
                     self._last_analysis_mode = "multi_frame"
                     self._last_frame_count = len(frames)
+                    # Story P3-7.5: Store frames and timestamps for gallery storage
+                    self._last_extracted_frames = frames
+                    self._last_frame_timestamps = timestamps
 
                     logger.info(
                         f"Multi-frame AI description generated for camera '{camera.name}': {result.description[:50]}...",
@@ -1840,7 +1847,56 @@ class ProtectEventHandler:
             # Story P3-6.1/P3-6.2 AC3: Combine AI confidence AND vagueness for final low_confidence flag
             low_confidence = low_confidence_from_ai or low_confidence_from_vague
 
-            # Create Event record (AC5-9, P2-4.1 AC3, AC5, P3-1.4 AC2, P3-2.6 AC4, P3-5.3 AC6, P3-6.1 AC3/AC6, P3-6.2 AC3/AC4, P3-7.1 AC6)
+            # Story P3-7.5: Check if we should store key frames for gallery display
+            key_frames_base64 = None
+            frame_timestamps = None
+            extracted_frames = getattr(self, '_last_extracted_frames', [])
+            extracted_timestamps = getattr(self, '_last_frame_timestamps', [])
+
+            if extracted_frames:
+                # Check store_analysis_frames setting (default: true)
+                from app.models.system_setting import SystemSetting
+                store_frames_setting = db.query(SystemSetting).filter(
+                    SystemSetting.key == 'store_analysis_frames'
+                ).first()
+                # Default to True if setting doesn't exist
+                store_frames = store_frames_setting is None or store_frames_setting.value.lower() == 'true'
+
+                if store_frames:
+                    try:
+                        frame_extractor = get_frame_extractor()
+                        # Encode frames as smaller thumbnails (320px max width, 70% quality)
+                        encoded_frames = []
+                        for frame_bytes in extracted_frames:
+                            encoded = frame_extractor.encode_frame_for_storage(frame_bytes)
+                            if encoded:
+                                encoded_frames.append(encoded)
+
+                        if encoded_frames:
+                            key_frames_base64 = json.dumps(encoded_frames)
+                            frame_timestamps = json.dumps(extracted_timestamps)
+                            logger.info(
+                                f"Stored {len(encoded_frames)} key frames for event on camera '{camera.name}'",
+                                extra={
+                                    "event_type": "key_frames_stored",
+                                    "camera_id": camera.id,
+                                    "frame_count": len(encoded_frames),
+                                    "timestamps": extracted_timestamps
+                                }
+                            )
+                    except Exception as e:
+                        # Don't fail event storage if frame encoding fails
+                        logger.warning(
+                            f"Failed to encode key frames for storage: {e}",
+                            extra={
+                                "event_type": "key_frames_encode_error",
+                                "camera_id": camera.id,
+                                "error_type": type(e).__name__,
+                                "error_message": str(e)
+                            }
+                        )
+
+            # Create Event record (AC5-9, P2-4.1 AC3, AC5, P3-1.4 AC2, P3-2.6 AC4, P3-5.3 AC6, P3-6.1 AC3/AC6, P3-6.2 AC3/AC4, P3-7.1 AC6, P3-7.5 AC4)
             event = Event(
                 camera_id=camera.id,
                 timestamp=snapshot_result.timestamp,
@@ -1867,7 +1923,10 @@ class ProtectEventHandler:
                 # Story P3-6.2 AC4: Store vagueness detection reason
                 vague_reason=vague_reason,
                 # Story P3-7.1 AC6: Store AI cost estimate
-                ai_cost=ai_result.cost_estimate
+                ai_cost=ai_result.cost_estimate,
+                # Story P3-7.5 AC4: Store key frames for gallery display
+                key_frames_base64=key_frames_base64,
+                frame_timestamps=frame_timestamps
             )
 
             # Story P3-1.4: Use pre-generated event ID if provided
@@ -1897,7 +1956,9 @@ class ProtectEventHandler:
                     "ai_confidence": event.ai_confidence,
                     "low_confidence": event.low_confidence,
                     # Story P3-6.2: Log vagueness detection info
-                    "vague_reason": event.vague_reason
+                    "vague_reason": event.vague_reason,
+                    # Story P3-7.5: Log key frames info
+                    "has_key_frames": bool(event.key_frames_base64)
                 }
             )
 

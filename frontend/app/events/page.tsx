@@ -52,6 +52,22 @@ function parseFiltersFromURL(searchParams: URLSearchParams): IEventFilters {
     filters.smart_detection_type = smartDetectionType as 'person' | 'vehicle' | 'package' | 'animal' | 'motion' | 'ring';
   }
 
+  // Story P3-7.6: Analysis mode filters
+  const analysisMode = searchParams.get('analysis_mode');
+  if (analysisMode && ['single_frame', 'multi_frame', 'video_native'].includes(analysisMode)) {
+    filters.analysis_mode = analysisMode as 'single_frame' | 'multi_frame' | 'video_native';
+  }
+
+  const hasFallback = searchParams.get('has_fallback');
+  if (hasFallback === 'true') {
+    filters.has_fallback = true;
+  }
+
+  const lowConfidence = searchParams.get('low_confidence');
+  if (lowConfidence === 'true') {
+    filters.low_confidence = true;
+  }
+
   return filters;
 }
 
@@ -74,6 +90,16 @@ function filtersToURLParams(filters: IEventFilters): URLSearchParams {
   }
   if (filters.smart_detection_type) {
     params.set('smart_detection_type', filters.smart_detection_type);
+  }
+  // Story P3-7.6: Analysis mode filters
+  if (filters.analysis_mode) {
+    params.set('analysis_mode', filters.analysis_mode);
+  }
+  if (filters.has_fallback) {
+    params.set('has_fallback', 'true');
+  }
+  if (filters.low_confidence) {
+    params.set('low_confidence', 'true');
   }
 
   return params;

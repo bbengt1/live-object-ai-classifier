@@ -67,6 +67,9 @@ export interface IEvent {
   reanalysis_count?: number;            // Number of re-analyses performed
   // Story P3-7.1: AI cost tracking
   ai_cost?: number | null;              // Estimated cost in USD for AI analysis
+  // Story P3-7.5: Key frames for gallery display
+  key_frames_base64?: string[] | null;  // Base64-encoded key frames used for AI analysis
+  frame_timestamps?: number[] | null;   // Timestamps in seconds for each key frame
 }
 
 /**
@@ -81,6 +84,10 @@ export interface IEventFilters {
   min_confidence?: number;        // Minimum confidence score (0-100)
   source_type?: SourceType;       // Filter by event source (Phase 2)
   smart_detection_type?: SmartDetectionType; // Filter by smart detection type (Phase 2)
+  // Story P3-7.6: Analysis mode filtering
+  analysis_mode?: AnalysisMode;   // Filter by analysis mode
+  has_fallback?: boolean;         // Filter events with fallback_reason (True = has fallback)
+  low_confidence?: boolean;       // Filter by low confidence flag (True = uncertain descriptions)
 }
 
 /**

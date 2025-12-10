@@ -507,6 +507,7 @@ async def update_settings(
             'ai_provider_order',
             'ai_daily_cost_cap',   # Story P3-7.3
             'ai_monthly_cost_cap',  # Story P3-7.3
+            'store_analysis_frames',  # Story P3-7.5
         }
 
         for field_name, value in update_data.items():

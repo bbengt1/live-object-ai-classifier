@@ -263,6 +263,10 @@ def list_events(
     search_query: Optional[str] = Query(None, min_length=1, max_length=500, description="Full-text search in descriptions"),
     source_type: Optional[str] = Query(None, description="Filter by event source type: 'rtsp', 'usb', 'protect' (comma-separated for multiple)"),
     smart_detection_type: Optional[str] = Query(None, description="Filter by smart detection type: 'person', 'vehicle', 'package', 'animal', 'motion', 'ring' (comma-separated for multiple)"),
+    # Story P3-7.6: Analysis mode filtering
+    analysis_mode: Optional[str] = Query(None, description="Filter by analysis mode: 'single_frame', 'multi_frame', 'video_native' (comma-separated for multiple)"),
+    has_fallback: Optional[bool] = Query(None, description="Filter events with fallback (True = has fallback_reason, False = no fallback)"),
+    low_confidence: Optional[bool] = Query(None, description="Filter by low confidence flag (True = uncertain descriptions)"),
     limit: int = Query(50, ge=1, le=500, description="Number of results per page"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort by timestamp"),
@@ -362,6 +366,31 @@ def list_events(
                         query = query.filter(Event.smart_detection_type == detection_type_list[0])
                     else:
                         query = query.filter(Event.smart_detection_type.in_(detection_type_list))
+
+        # Story P3-7.6: Apply analysis mode filter
+        if analysis_mode:
+            mode_list = [m.strip().lower() for m in analysis_mode.split(',')]
+            # Validate analysis modes
+            valid_modes = {'single_frame', 'multi_frame', 'video_native'}
+            mode_list = [m for m in mode_list if m in valid_modes]
+            if mode_list:
+                if len(mode_list) == 1:
+                    query = query.filter(Event.analysis_mode == mode_list[0])
+                else:
+                    query = query.filter(Event.analysis_mode.in_(mode_list))
+
+        # Story P3-7.6: Apply fallback filter
+        if has_fallback is not None:
+            if has_fallback:
+                # Events that fell back to a simpler mode (have fallback_reason)
+                query = query.filter(Event.fallback_reason.isnot(None))
+            else:
+                # Events without fallback
+                query = query.filter(Event.fallback_reason.is_(None))
+
+        # Story P3-7.6: Apply low confidence filter
+        if low_confidence is not None:
+            query = query.filter(Event.low_confidence == low_confidence)
 
         # Apply full-text search using FTS5
         if search_query:

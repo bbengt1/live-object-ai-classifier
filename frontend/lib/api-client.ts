@@ -323,6 +323,16 @@ export const apiClient = {
       if (filters?.smart_detection_type) {
         params.append('smart_detection_type', filters.smart_detection_type);
       }
+      // Story P3-7.6: Analysis mode filtering
+      if (filters?.analysis_mode) {
+        params.append('analysis_mode', filters.analysis_mode);
+      }
+      if (filters?.has_fallback !== undefined) {
+        params.append('has_fallback', String(filters.has_fallback));
+      }
+      if (filters?.low_confidence !== undefined) {
+        params.append('low_confidence', String(filters.low_confidence));
+      }
 
       const queryString = params.toString();
       const endpoint = `/events${queryString ? `?${queryString}` : ''}`;

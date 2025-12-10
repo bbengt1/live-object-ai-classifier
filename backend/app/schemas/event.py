@@ -115,11 +115,32 @@ class EventResponse(BaseModel):
     reanalysis_count: int = Field(default=0, ge=0, description="Number of re-analyses performed")
     # Story P3-7.1: AI cost tracking
     ai_cost: Optional[float] = Field(None, description="Estimated cost in USD for AI analysis")
+    # Story P3-7.5: Key frames gallery display
+    key_frames_base64: Optional[List[str]] = Field(None, description="Base64-encoded key frames used for AI analysis")
+    frame_timestamps: Optional[List[float]] = Field(None, description="Timestamps in seconds for each key frame")
 
     @field_validator('objects_detected', mode='before')
     @classmethod
     def parse_objects_detected(cls, v):
         """Parse JSON string into list if needed"""
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+    @field_validator('key_frames_base64', mode='before')
+    @classmethod
+    def parse_key_frames_base64(cls, v):
+        """Parse JSON string into list if needed (Story P3-7.5)"""
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+    @field_validator('frame_timestamps', mode='before')
+    @classmethod
+    def parse_frame_timestamps(cls, v):
+        """Parse JSON string into list if needed (Story P3-7.5)"""
         if isinstance(v, str):
             import json
             return json.loads(v)
@@ -232,6 +253,10 @@ class EventFilterParams(BaseModel):
     object_types: Optional[List[str]] = Field(None, description="Filter by detected object types")
     alert_triggered: Optional[bool] = Field(None, description="Filter by alert status")
     search_query: Optional[str] = Field(None, min_length=1, max_length=500, description="Full-text search in descriptions")
+    # Story P3-7.6: Analysis mode filtering
+    analysis_mode: Optional[str] = Field(None, description="Filter by analysis mode (single_frame, multi_frame, video_native - comma-separated for multiple)")
+    has_fallback: Optional[bool] = Field(None, description="Filter events with non-null fallback_reason (True = has fallback)")
+    low_confidence: Optional[bool] = Field(None, description="Filter events with low_confidence flag (True = uncertain descriptions)")
     limit: int = Field(50, ge=1, le=500, description="Number of results per page")
     offset: int = Field(0, ge=0, description="Pagination offset")
     sort_order: Literal["asc", "desc"] = Field("desc", description="Sort by timestamp (newest first by default)")
