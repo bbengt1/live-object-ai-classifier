@@ -223,8 +223,8 @@ development_status:
 
   # Epic P4-1: Push Notifications & PWA
   epic-p4-1: backlog
-  p4-1-1-implement-web-push-backend: backlog
-  p4-1-2-create-push-subscription-ui: backlog
+  p4-1-1-implement-web-push-backend: done
+  p4-1-2-create-push-subscription-ui: in-progress
   p4-1-3-rich-notification-formatting: backlog
   p4-1-4-notification-preferences: backlog
   p4-1-5-pwa-manifest-and-service-worker: backlog

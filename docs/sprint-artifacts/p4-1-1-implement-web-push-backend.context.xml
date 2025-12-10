@@ -1,0 +1,659 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Story Context for P4-1.1: Implement Web Push Backend
+  Generated: 2025-12-10
+
+  This context file provides dev agents with all relevant information
+  for implementing the story without needing to search the codebase.
+-->
+<story-context story-id="p4-1-1-implement-web-push-backend">
+
+  <!-- ============================================================ -->
+  <!-- SECTION 1: STORY SUMMARY -->
+  <!-- ============================================================ -->
+  <story-summary>
+    <title>Implement Web Push Backend</title>
+    <status>drafted</status>
+    <epic>P4-1: Push Notifications &amp; PWA</epic>
+    <phase>Phase 4: Intelligent Context &amp; Smart Home Integration</phase>
+
+    <user-story>
+      As a system administrator,
+      I want the backend to support Web Push notifications with VAPID authentication,
+      so that users can receive real-time alerts on their mobile and desktop devices
+      without keeping the app open.
+    </user-story>
+
+    <acceptance-criteria>
+      <criterion id="AC1">VAPID key pair is generated and stored securely in settings</criterion>
+      <criterion id="AC2">Push subscription API endpoint accepts browser subscription data</criterion>
+      <criterion id="AC3">Push subscription data is stored in database with user association</criterion>
+      <criterion id="AC4">Notifications can be sent to subscribed endpoints</criterion>
+      <criterion id="AC5">Failed notification deliveries are retried with exponential backoff</criterion>
+      <criterion id="AC6">Delivery success/failure metrics are tracked</criterion>
+      <criterion id="AC7">Unsubscribe endpoint removes subscription from database</criterion>
+    </acceptance-criteria>
+  </story-summary>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 2: TASK BREAKDOWN -->
+  <!-- ============================================================ -->
+  <tasks>
+    <task id="1" name="Add pywebpush dependency">
+      <description>Add pywebpush>=2.0.0 to requirements.txt and verify installation</description>
+      <acceptance-criteria>AC1, AC4</acceptance-criteria>
+      <subtasks>
+        <subtask>Add pywebpush>=2.0.0 to requirements.txt</subtask>
+        <subtask>Verify installation in virtualenv</subtask>
+      </subtasks>
+    </task>
+
+    <task id="2" name="Create PushSubscription database model">
+      <description>Create SQLAlchemy model for storing push subscriptions</description>
+      <acceptance-criteria>AC2, AC3</acceptance-criteria>
+      <subtasks>
+        <subtask>Create backend/app/models/push_subscription.py with fields: id, user_id, endpoint, p256dh_key, auth_key, user_agent, created_at, last_used_at</subtask>
+        <subtask>Create Alembic migration for push_subscriptions table</subtask>
+        <subtask>Add model to __init__.py exports</subtask>
+      </subtasks>
+    </task>
+
+    <task id="3" name="Implement VAPID key management">
+      <description>Generate and securely store VAPID key pair for push authentication</description>
+      <acceptance-criteria>AC1</acceptance-criteria>
+      <subtasks>
+        <subtask>Add vapid_private_key and vapid_public_key to system settings</subtask>
+        <subtask>Create utility function to generate VAPID key pair if not exists</subtask>
+        <subtask>Add API endpoint GET /api/v1/push/vapid-public-key</subtask>
+        <subtask>Ensure private key is never exposed via API</subtask>
+      </subtasks>
+    </task>
+
+    <task id="4" name="Create push subscription API endpoints">
+      <description>REST API for subscription management</description>
+      <acceptance-criteria>AC2, AC7</acceptance-criteria>
+      <subtasks>
+        <subtask>Create backend/app/api/v1/push.py router</subtask>
+        <subtask>Implement POST /api/v1/push/subscribe endpoint</subtask>
+        <subtask>Implement DELETE /api/v1/push/subscribe endpoint</subtask>
+        <subtask>Implement GET /api/v1/push/subscriptions (admin only)</subtask>
+        <subtask>Register router in main app</subtask>
+      </subtasks>
+    </task>
+
+    <task id="5" name="Implement PushNotificationService">
+      <description>Core service for sending push notifications</description>
+      <acceptance-criteria>AC4, AC5, AC6</acceptance-criteria>
+      <subtasks>
+        <subtask>Create backend/app/services/push_notification_service.py</subtask>
+        <subtask>Implement send_notification(subscription_id, title, body, data) method</subtask>
+        <subtask>Implement broadcast_notification(title, body, data) for all subscriptions</subtask>
+        <subtask>Add retry logic with exponential backoff (max 3 retries)</subtask>
+        <subtask>Handle WebPushException for expired/invalid subscriptions</subtask>
+        <subtask>Remove invalid subscriptions automatically</subtask>
+        <subtask>Log delivery success/failure with subscription ID</subtask>
+      </subtasks>
+    </task>
+
+    <task id="6" name="Integrate with event pipeline">
+      <description>Hook push notifications into event processing</description>
+      <acceptance-criteria>AC4</acceptance-criteria>
+      <subtasks>
+        <subtask>Add hook in event_processor.py to trigger push notification on new event</subtask>
+        <subtask>Check if push notifications are enabled before sending</subtask>
+        <subtask>Format notification payload with event summary</subtask>
+        <subtask>Include thumbnail URL in notification data</subtask>
+      </subtasks>
+    </task>
+
+    <task id="7" name="Add delivery tracking">
+      <description>Track notification delivery success/failure</description>
+      <acceptance-criteria>AC6</acceptance-criteria>
+      <subtasks>
+        <subtask>Add last_used_at update on successful delivery</subtask>
+        <subtask>Add delivery metrics to existing logging system</subtask>
+        <subtask>Consider adding push_delivery_log table for detailed tracking (optional)</subtask>
+      </subtasks>
+    </task>
+
+    <task id="8" name="Write tests">
+      <description>Comprehensive test coverage for all components</description>
+      <acceptance-criteria>All</acceptance-criteria>
+      <subtasks>
+        <subtask>Unit tests for VAPID key generation</subtask>
+        <subtask>Unit tests for PushNotificationService (mock webpush)</subtask>
+        <subtask>API integration tests for subscribe/unsubscribe endpoints</subtask>
+        <subtask>Test retry logic with simulated failures</subtask>
+      </subtasks>
+    </task>
+  </tasks>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 3: DOCUMENTATION REFERENCES -->
+  <!-- ============================================================ -->
+  <documentation>
+    <doc type="prd" path="docs/PRD-phase4.md">
+      <excerpt name="push-notifications-section">
+        <![CDATA[
+### 1. Push Notifications & PWA (P4-1)
+
+**Scope:** Web Push notifications with VAPID, PWA manifest for mobile install
+
+**Functional Requirements:**
+- FR-4.1.1: Generate and store VAPID key pair on first run
+- FR-4.1.2: Accept push subscription registration from browsers
+- FR-4.1.3: Store subscriptions with user association (optional)
+- FR-4.1.4: Send push notifications on qualifying events
+- FR-4.1.5: Retry failed deliveries with exponential backoff
+- FR-4.1.6: Track delivery success/failure metrics
+- FR-4.1.7: Automatically remove invalid/expired subscriptions
+- FR-4.1.8: Allow users to unsubscribe
+
+**API Endpoints:**
+- GET /api/v1/push/vapid-public-key - Get VAPID public key
+- POST /api/v1/push/subscribe - Register push subscription
+- DELETE /api/v1/push/subscribe - Unsubscribe
+- GET /api/v1/push/subscriptions - List subscriptions (admin)
+        ]]>
+      </excerpt>
+    </doc>
+
+    <doc type="architecture" path="docs/architecture.md">
+      <excerpt name="phase4-database-schema">
+        <![CDATA[
+### Phase 4 Database Schema Additions
+
+#### push_subscriptions Table
+```sql
+CREATE TABLE push_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh_key TEXT NOT NULL,
+    auth_key TEXT NOT NULL,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP
+);
+```
+
+#### System Settings Keys (Phase 4)
+- `vapid_private_key` - VAPID private key (encrypted)
+- `vapid_public_key` - VAPID public key (exposed to frontend)
+- `push_notifications_enabled` - Global enable/disable
+        ]]>
+      </excerpt>
+
+      <excerpt name="push-notification-flow">
+        <![CDATA[
+### Push Notification Flow
+
+```
+Event Created → Check push_enabled → Get subscriptions →
+For each subscription:
+  → Build payload → webpush.send() →
+  → Success: Update last_used_at
+  → Failure (410/404): Delete subscription
+  → Failure (5xx): Queue retry (max 3)
+```
+        ]]>
+      </excerpt>
+    </doc>
+
+    <doc type="epic" path="docs/epics-phase4.md">
+      <excerpt name="story-p4-1-1">
+        <![CDATA[
+#### Story P4-1.1: Implement Web Push Backend
+- Add VAPID key generation and storage
+- Create push subscription management API
+- Implement notification queue with delivery tracking
+- Add retry logic for failed deliveries
+- Track delivery success metrics
+        ]]>
+      </excerpt>
+    </doc>
+  </documentation>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 4: CODE ARTIFACTS -->
+  <!-- ============================================================ -->
+  <code-artifacts>
+    <!-- Existing model patterns to follow -->
+    <artifact type="model-pattern" path="backend/app/models/notification.py">
+      <description>Example of notification model with similar structure - follow this pattern for PushSubscription</description>
+      <key-patterns>
+        <pattern>UUID primary key with default lambda</pattern>
+        <pattern>Foreign key to users table with CASCADE delete</pattern>
+        <pattern>Index definitions in __table_args__</pattern>
+        <pattern>to_dict() method for API responses</pattern>
+      </key-patterns>
+    </artifact>
+
+    <artifact type="model-pattern" path="backend/app/models/system_setting.py">
+      <description>Key-value settings storage for VAPID keys</description>
+      <key-patterns>
+        <pattern>String key as primary key</pattern>
+        <pattern>Value column supports encrypted: prefix for sensitive data</pattern>
+      </key-patterns>
+    </artifact>
+
+    <artifact type="api-pattern" path="backend/app/api/v1/system.py">
+      <description>Reference for settings management and encryption patterns</description>
+      <key-patterns>
+        <pattern>SENSITIVE_SETTING_KEYS list for auto-encryption</pattern>
+        <pattern>_set_setting_in_db() encrypts sensitive values</pattern>
+        <pattern>_get_setting_from_db() returns raw value</pattern>
+        <pattern>decrypt_password() for reading encrypted values</pattern>
+        <pattern>mask_sensitive() for API responses</pattern>
+      </key-patterns>
+      <relevant-code>
+        <![CDATA[
+# Keys that contain sensitive data and should be encrypted
+SENSITIVE_SETTING_KEYS = [
+    "settings_primary_api_key",
+    "ai_api_key_openai",
+    "ai_api_key_claude",
+    "ai_api_key_gemini",
+    "ai_api_key_grok",
+]
+
+def _set_setting_in_db(db: Session, key: str, value: any):
+    """Set a single setting value in database, encrypting sensitive values"""
+    str_value = str(value) if not isinstance(value, str) else value
+
+    # Encrypt sensitive values
+    if key in SENSITIVE_SETTING_KEYS and str_value and not is_encrypted(str_value):
+        str_value = encrypt_password(str_value)
+
+    setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    if setting:
+        setting.value = str_value
+    else:
+        setting = SystemSetting(key=key, value=str_value)
+        db.add(setting)
+    db.commit()
+        ]]>
+      </relevant-code>
+    </artifact>
+
+    <artifact type="service-pattern" path="backend/app/services/webhook_service.py">
+      <description>Reference for retry logic with exponential backoff</description>
+      <key-patterns>
+        <pattern>Async HTTP delivery with httpx</pattern>
+        <pattern>Retry logic with exponential backoff</pattern>
+        <pattern>Error handling and logging</pattern>
+        <pattern>Delivery result tracking</pattern>
+      </key-patterns>
+    </artifact>
+
+    <artifact type="integration-point" path="backend/app/services/event_processor.py">
+      <description>Event pipeline integration point for triggering push notifications</description>
+      <integration-location>_process_event() method, after event storage</integration-location>
+      <relevant-code>
+        <![CDATA[
+async def _process_event(self, event: ProcessingEvent, worker_id: int) -> bool:
+    # ... existing event processing ...
+
+    # Step 5: Check cost thresholds and send alerts (Story P3-7.4)
+    try:
+        cost_alert_service = get_cost_alert_service()
+        with SessionLocal() as db:
+            alerts = await cost_alert_service.check_and_notify(db)
+            # ...
+    except Exception as alert_error:
+        # Cost alert failures should not block event processing
+        logger.warning(f"Failed to check cost alerts: {alert_error}")
+
+    # NEW: Step 6: Send push notifications (Story P4-1.1)
+    # Add hook here following same pattern as cost alerts
+        ]]>
+      </relevant-code>
+    </artifact>
+
+    <artifact type="router-registration" path="backend/main.py">
+      <description>Router registration pattern</description>
+      <relevant-code>
+        <![CDATA[
+# Existing router registrations to follow:
+app.include_router(notifications_router, prefix=settings.API_V1_PREFIX)  # Story 5.4
+app.include_router(system_notifications_router, prefix=settings.API_V1_PREFIX)  # Story P3-7.4
+
+# Add push router following same pattern:
+# from app.api.v1.push import router as push_router
+# app.include_router(push_router, prefix=settings.API_V1_PREFIX)
+        ]]>
+      </relevant-code>
+    </artifact>
+
+    <artifact type="model-exports" path="backend/app/models/__init__.py">
+      <description>Model export pattern</description>
+      <relevant-code>
+        <![CDATA[
+# Add PushSubscription to exports:
+from app.models.push_subscription import PushSubscription
+
+__all__ = ["ProtectController", "Camera", "MotionEvent", "SystemSetting",
+           "AIUsage", "Event", "AlertRule", "WebhookLog", "User",
+           "SystemNotification", "PushSubscription"]
+        ]]>
+      </relevant-code>
+    </artifact>
+
+    <artifact type="user-model" path="backend/app/models/user.py">
+      <description>User model for push subscription association</description>
+      <key-fields>
+        <field>id: String(36), primary key</field>
+        <field>username: String(50), unique</field>
+        <field>is_active: Boolean</field>
+      </key-fields>
+    </artifact>
+  </code-artifacts>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 5: DEPENDENCIES -->
+  <!-- ============================================================ -->
+  <dependencies>
+    <new-dependencies>
+      <dependency name="pywebpush" version=">=2.0.0">
+        <purpose>Web Push notifications with VAPID authentication</purpose>
+        <documentation>https://github.com/web-push-libs/pywebpush</documentation>
+        <usage-example>
+          <![CDATA[
+from pywebpush import webpush, WebPushException
+
+# Send notification
+webpush(
+    subscription_info={
+        "endpoint": "https://fcm.googleapis.com/...",
+        "keys": {
+            "p256dh": "...",
+            "auth": "..."
+        }
+    },
+    data=json.dumps({
+        "title": "Motion Detected",
+        "body": "Person at front door",
+        "icon": "/icons/notification-192.png"
+    }),
+    vapid_private_key="-----BEGIN EC PRIVATE KEY-----...",
+    vapid_claims={
+        "sub": "mailto:admin@example.com"
+    }
+)
+          ]]>
+        </usage-example>
+      </dependency>
+    </new-dependencies>
+
+    <existing-dependencies>
+      <dependency name="cryptography" version="44.0.1">
+        <purpose>Used for VAPID key generation and settings encryption</purpose>
+      </dependency>
+      <dependency name="sqlalchemy" version=">=2.0.36">
+        <purpose>ORM for PushSubscription model</purpose>
+      </dependency>
+      <dependency name="alembic" version=">=1.14.0">
+        <purpose>Database migrations for new table</purpose>
+      </dependency>
+      <dependency name="fastapi" version="0.115.0">
+        <purpose>API endpoints</purpose>
+      </dependency>
+      <dependency name="httpx" version="0.25.2">
+        <purpose>Async HTTP client (used in tests)</purpose>
+      </dependency>
+    </existing-dependencies>
+  </dependencies>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 6: TESTING STANDARDS -->
+  <!-- ============================================================ -->
+  <testing-standards>
+    <test-location>backend/tests/test_services/test_push_notification_service.py</test-location>
+    <test-api-location>backend/tests/test_api/test_push.py</test-api-location>
+
+    <fixture-pattern path="backend/tests/conftest.py">
+      <![CDATA[
+@pytest.fixture(scope="function")
+def db_session():
+    """Create an in-memory SQLite database for testing"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+        Base.metadata.drop_all(engine)
+      ]]>
+    </fixture-pattern>
+
+    <mock-patterns>
+      <pattern name="mock-webpush">
+        <![CDATA[
+from unittest.mock import patch, MagicMock
+
+@patch('app.services.push_notification_service.webpush')
+def test_send_notification_success(mock_webpush, db_session):
+    """Test successful notification delivery"""
+    mock_webpush.return_value = MagicMock()  # Success
+    service = PushNotificationService(db_session)
+    # ... test implementation
+        ]]>
+      </pattern>
+
+      <pattern name="mock-webpush-failure">
+        <![CDATA[
+from pywebpush import WebPushException
+
+@patch('app.services.push_notification_service.webpush')
+def test_send_notification_expired_subscription(mock_webpush, db_session):
+    """Test handling of expired subscription (410 response)"""
+    mock_webpush.side_effect = WebPushException("Gone", response=MagicMock(status_code=410))
+    service = PushNotificationService(db_session)
+    # Verify subscription is deleted
+        ]]>
+      </pattern>
+    </mock-patterns>
+
+    <test-categories>
+      <category name="unit-tests">
+        <test>VAPID key generation</test>
+        <test>Subscription validation</test>
+        <test>Notification payload building</test>
+        <test>Retry logic with exponential backoff</test>
+      </category>
+      <category name="integration-tests">
+        <test>Subscribe endpoint creates subscription in DB</test>
+        <test>Unsubscribe endpoint removes subscription</test>
+        <test>VAPID public key endpoint returns valid key</test>
+        <test>Admin list subscriptions endpoint</test>
+      </category>
+    </test-categories>
+
+    <coverage-requirement>70% minimum for new code</coverage-requirement>
+
+    <run-command>
+      <![CDATA[
+cd backend
+source venv/bin/activate
+pytest tests/test_services/test_push_notification_service.py -v
+pytest tests/test_api/test_push.py -v
+pytest tests/ --cov=app/services/push_notification_service --cov-report=html
+      ]]>
+    </run-command>
+  </testing-standards>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 7: SECURITY CONSIDERATIONS -->
+  <!-- ============================================================ -->
+  <security>
+    <consideration id="S1" severity="high">
+      <title>VAPID Private Key Protection</title>
+      <description>Private key must be encrypted at rest using Fernet encryption</description>
+      <implementation>Store in system_settings with encrypted: prefix</implementation>
+    </consideration>
+
+    <consideration id="S2" severity="medium">
+      <title>Subscription Endpoint Privacy</title>
+      <description>Push endpoints contain tokens that should not be logged in full</description>
+      <implementation>Truncate or hash endpoints in log messages</implementation>
+    </consideration>
+
+    <consideration id="S3" severity="medium">
+      <title>User Association</title>
+      <description>Subscriptions may be associated with users for targeting</description>
+      <implementation>user_id is nullable, CASCADE delete when user deleted</implementation>
+    </consideration>
+
+    <consideration id="S4" severity="low">
+      <title>Rate Limiting</title>
+      <description>Prevent abuse of subscription endpoints</description>
+      <implementation>Use existing slowapi rate limiter</implementation>
+    </consideration>
+  </security>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 8: API CONTRACTS -->
+  <!-- ============================================================ -->
+  <api-contracts>
+    <endpoint method="GET" path="/api/v1/push/vapid-public-key">
+      <description>Get VAPID public key for browser subscription</description>
+      <response status="200">
+        <![CDATA[
+{
+  "public_key": "BEl62iUYgUivxIkv69yViEuiBIa-..."
+}
+        ]]>
+      </response>
+    </endpoint>
+
+    <endpoint method="POST" path="/api/v1/push/subscribe">
+      <description>Register push subscription</description>
+      <request>
+        <![CDATA[
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/...",
+  "keys": {
+    "p256dh": "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_...",
+    "auth": "tBHItJI5svbpez7KI4CCXg=="
+  },
+  "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0...)"
+}
+        ]]>
+      </request>
+      <response status="201">
+        <![CDATA[
+{
+  "id": "uuid-of-subscription",
+  "endpoint": "https://fcm.googleapis.com/...",  // truncated
+  "created_at": "2025-12-10T10:30:00Z"
+}
+        ]]>
+      </response>
+    </endpoint>
+
+    <endpoint method="DELETE" path="/api/v1/push/subscribe">
+      <description>Unsubscribe from push notifications</description>
+      <request>
+        <![CDATA[
+{
+  "endpoint": "https://fcm.googleapis.com/fcm/send/..."
+}
+        ]]>
+      </request>
+      <response status="204">No content</response>
+    </endpoint>
+
+    <endpoint method="GET" path="/api/v1/push/subscriptions">
+      <description>List all subscriptions (admin only)</description>
+      <response status="200">
+        <![CDATA[
+{
+  "subscriptions": [
+    {
+      "id": "uuid",
+      "user_id": "uuid-or-null",
+      "endpoint": "...truncated...",
+      "user_agent": "Mozilla/5.0...",
+      "created_at": "2025-12-10T10:30:00Z",
+      "last_used_at": "2025-12-10T14:22:00Z"
+    }
+  ],
+  "total": 42
+}
+        ]]>
+      </response>
+    </endpoint>
+  </api-contracts>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 9: NOTIFICATION PAYLOAD STRUCTURE -->
+  <!-- ============================================================ -->
+  <notification-payload>
+    <structure>
+      <![CDATA[
+{
+  "title": "Front Door: Person Detected",
+  "body": "Delivery driver with package",
+  "icon": "/icons/notification-192.png",
+  "badge": "/icons/badge-72.png",
+  "tag": "event-uuid",  // Collapse similar notifications
+  "data": {
+    "event_id": "uuid",
+    "camera_name": "Front Door",
+    "url": "/events?highlight=uuid",
+    "thumbnail_url": "/api/v1/thumbnails/2025-12-10/uuid.jpg"
+  }
+}
+      ]]>
+    </structure>
+    <notes>
+      <note>tag field used to collapse/replace similar notifications</note>
+      <note>data.url is the deep link for notification click</note>
+      <note>Frontend service worker will fetch thumbnail for rich notification</note>
+    </notes>
+  </notification-payload>
+
+  <!-- ============================================================ -->
+  <!-- SECTION 10: IMPLEMENTATION NOTES -->
+  <!-- ============================================================ -->
+  <implementation-notes>
+    <note priority="high">
+      <title>Async Notification Sending</title>
+      <detail>Push notification sending should be async and non-blocking.
+      Event processing should not wait for notification delivery. Consider
+      using asyncio.create_task() for fire-and-forget notification sending.</detail>
+    </note>
+
+    <note priority="high">
+      <title>Graceful Degradation</title>
+      <detail>Push notification failures should NEVER affect event processing
+      pipeline. Wrap all push notification code in try/except with logging.</detail>
+    </note>
+
+    <note priority="medium">
+      <title>VAPID Key Generation</title>
+      <detail>Generate VAPID keys lazily on first use. Use cryptography library
+      to generate EC P-256 key pair. Store both public and private key in
+      system_settings (private key encrypted).</detail>
+    </note>
+
+    <note priority="medium">
+      <title>Subscription Cleanup</title>
+      <detail>When webpush returns 410 (Gone) or 404 (Not Found), automatically
+      delete the subscription from database. These indicate expired or invalid
+      subscriptions.</detail>
+    </note>
+
+    <note priority="low">
+      <title>Metrics Integration</title>
+      <detail>Add Prometheus counters for push_notifications_sent_total and
+      push_notifications_failed_total with labels for camera_id.</detail>
+    </note>
+  </implementation-notes>
+
+</story-context>

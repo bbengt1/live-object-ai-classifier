@@ -165,6 +165,30 @@ webhook_duration_seconds = Histogram(
 )
 
 # ============================================================================
+# Push Notification Metrics (Story P4-1.1)
+# ============================================================================
+
+push_notifications_sent_total = Counter(
+    'push_notifications_sent_total',
+    'Total push notifications sent',
+    ['status'],  # success, failure
+    registry=REGISTRY
+)
+
+push_notification_duration_seconds = Histogram(
+    'push_notification_duration_seconds',
+    'Push notification delivery duration in seconds',
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+    registry=REGISTRY
+)
+
+push_subscriptions_active = Gauge(
+    'push_subscriptions_active',
+    'Number of active push subscriptions',
+    registry=REGISTRY
+)
+
+# ============================================================================
 # System Resource Metrics
 # ============================================================================
 
@@ -343,6 +367,29 @@ def record_alert_triggered(rule_id: str, action_type: str):
         action_type: Type of action (notification, webhook)
     """
     alerts_triggered_total.labels(rule_id=rule_id, action_type=action_type).inc()
+
+
+def record_push_notification_sent(status: str, duration_seconds: float = 0.0):
+    """
+    Record push notification delivery metrics.
+
+    Args:
+        status: Delivery status (success, failure)
+        duration_seconds: Delivery duration
+    """
+    push_notifications_sent_total.labels(status=status).inc()
+    if duration_seconds > 0:
+        push_notification_duration_seconds.observe(duration_seconds)
+
+
+def update_push_subscription_count(count: int):
+    """
+    Update active push subscription count.
+
+    Args:
+        count: Number of active subscriptions
+    """
+    push_subscriptions_active.set(count)
 
 
 def update_system_metrics():

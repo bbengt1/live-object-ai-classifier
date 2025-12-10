@@ -659,9 +659,9 @@ class EventProcessor:
             }
 
             logger.info(f"Storing event for camera {event.camera_name}: {ai_result.description[:50]}...")
-            success = await self._store_event_with_retry(event_data, max_retries=3)
+            event_id = await self._store_event_with_retry(event_data, max_retries=3)
 
-            if not success:
+            if not event_id:
                 logger.error(
                     f"Failed to store event for camera {event.camera_name}",
                     extra={"camera_id": event.camera_id}
@@ -690,6 +690,36 @@ class EventProcessor:
                 logger.warning(
                     f"Failed to check cost alerts: {alert_error}",
                     extra={"error": str(alert_error)}
+                )
+
+            # Step 6: Send push notifications (Story P4-1.1)
+            try:
+                from app.services.push_notification_service import send_event_notification
+
+                # Construct thumbnail URL if we have a thumbnail
+                push_thumbnail_url = None
+                if thumbnail_base64:
+                    date_str = event.timestamp.strftime("%Y-%m-%d")
+                    push_thumbnail_url = f"/api/v1/thumbnails/{date_str}/{event_id}.jpg"
+
+                # Fire and forget - don't await to avoid blocking
+                asyncio.create_task(
+                    send_event_notification(
+                        event_id=event_id,
+                        camera_name=event.camera_name,
+                        description=ai_result.description,
+                        thumbnail_url=push_thumbnail_url
+                    )
+                )
+                logger.debug(
+                    f"Push notification task created for event {event_id}",
+                    extra={"event_id": event_id, "camera_name": event.camera_name}
+                )
+            except Exception as push_error:
+                # Push notification failures should not block event processing
+                logger.warning(
+                    f"Failed to create push notification task: {push_error}",
+                    extra={"error": str(push_error)}
                 )
 
             logger.info(
@@ -721,7 +751,7 @@ class EventProcessor:
         self,
         event_data: Dict,
         max_retries: int = 3
-    ) -> bool:
+    ) -> Optional[str]:
         """
         Store event directly to database (bypasses HTTP auth)
 
@@ -730,7 +760,7 @@ class EventProcessor:
             max_retries: Maximum number of retry attempts
 
         Returns:
-            True if event stored successfully, False otherwise
+            Event ID string if stored successfully, None otherwise
         """
         import uuid
         from datetime import datetime
@@ -806,7 +836,7 @@ class EventProcessor:
                     f"Event {event_id} stored successfully",
                     extra={"event_id": event_id, "camera_id": event_data["camera_id"]}
                 )
-                return True
+                return event_id  # Return event_id instead of True
 
             except Exception as e:
                 db.rollback()
@@ -825,7 +855,7 @@ class EventProcessor:
                 await asyncio.sleep(wait_time)
 
         logger.error(f"Event storage failed after {max_retries + 1} attempts")
-        return False
+        return None
 
     async def _drain_queue(self):
         """

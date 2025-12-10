@@ -1381,6 +1381,103 @@ export const apiClient = {
       });
     },
   },
+
+  // ============================================================================
+  // Push Notifications (Story P4-1.2)
+  // ============================================================================
+  push: {
+    /**
+     * Get VAPID public key for push subscription
+     * The frontend uses this key as applicationServerKey when calling pushManager.subscribe()
+     * @returns VAPID public key in URL-safe base64 format
+     */
+    getVapidPublicKey: async (): Promise<{ public_key: string }> => {
+      return apiFetch<{ public_key: string }>('/push/vapid-public-key');
+    },
+
+    /**
+     * Register a push subscription
+     * Stores the browser's push subscription for receiving notifications
+     * If the endpoint already exists, the subscription is updated (upsert)
+     * @param subscription Browser PushSubscription data
+     * @returns Created/updated subscription with ID
+     */
+    subscribe: async (subscription: {
+      endpoint: string;
+      keys: { p256dh: string; auth: string };
+      user_agent?: string;
+    }): Promise<{ id: string; endpoint: string; created_at: string }> => {
+      return apiFetch<{ id: string; endpoint: string; created_at: string }>('/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(subscription),
+      });
+    },
+
+    /**
+     * Unsubscribe from push notifications
+     * Removes the push subscription from the database
+     * @param endpoint Push service endpoint URL to unsubscribe
+     */
+    unsubscribe: async (endpoint: string): Promise<void> => {
+      const url = `${API_BASE_URL}${API_V1_PREFIX}/push/subscribe`;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      const token = getAuthToken();
+      if (token) {
+        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ endpoint }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
+        throw new ApiError(errorMessage, response.status, data);
+      }
+    },
+
+    /**
+     * List all push subscriptions (admin endpoint)
+     * Returns all registered push subscriptions for debugging
+     * @returns List of subscriptions with metadata
+     */
+    listSubscriptions: async (): Promise<{
+      subscriptions: Array<{
+        id: string;
+        user_id: string | null;
+        endpoint: string;
+        user_agent: string | null;
+        created_at: string | null;
+        last_used_at: string | null;
+      }>;
+      total: number;
+    }> => {
+      return apiFetch('/push/subscriptions');
+    },
+
+    /**
+     * Send a test push notification
+     * Sends a test notification to all subscribed devices
+     * @returns Test result with delivery status
+     */
+    sendTest: async (): Promise<{
+      success: boolean;
+      message: string;
+      results?: Array<{
+        subscription_id: string;
+        success: boolean;
+        error?: string;
+      }>;
+    }> => {
+      return apiFetch('/push/test', {
+        method: 'POST',
+      });
+    },
+  },
 };
 
 // Story P2-2.1: Camera Discovery Types
@@ -1431,3 +1528,13 @@ export interface ProtectCameraFiltersData {
   smart_detection_types: string[];
   is_enabled_for_ai: boolean;
 }
+
+// Story P4-1.2: Push Notification Types (re-exported from types/push.ts)
+export type {
+  IVapidPublicKeyResponse,
+  IPushSubscribeRequest,
+  IPushSubscriptionResponse,
+  IPushUnsubscribeRequest,
+  IPushSubscriptionsListResponse,
+  IPushTestResponse,
+} from '@/types/push';

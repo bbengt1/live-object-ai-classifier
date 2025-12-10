@@ -8,5 +8,18 @@ from app.models.event import Event
 from app.models.alert_rule import AlertRule, WebhookLog
 from app.models.user import User
 from app.models.system_notification import SystemNotification
+from app.models.push_subscription import PushSubscription
 
-__all__ = ["ProtectController", "Camera", "MotionEvent", "SystemSetting", "AIUsage", "Event", "AlertRule", "WebhookLog", "User", "SystemNotification"]
+__all__ = [
+    "ProtectController",
+    "Camera",
+    "MotionEvent",
+    "SystemSetting",
+    "AIUsage",
+    "Event",
+    "AlertRule",
+    "WebhookLog",
+    "User",
+    "SystemNotification",
+    "PushSubscription",
+]
