@@ -33,6 +33,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { NotificationPreferences } from './NotificationPreferences';
 
 /**
  * Notification Preview Component
@@ -177,6 +178,7 @@ export function PushNotificationSettings() {
     error,
     isLoading,
     deviceInfo,
+    subscriptionEndpoint,
     subscribe,
     unsubscribe,
     sendTestNotification,
@@ -328,6 +330,12 @@ export function PushNotificationSettings() {
             </Button>
           </div>
         )}
+
+        {/* Notification Preferences (when subscribed) - P4-1.4 */}
+        <NotificationPreferences
+          endpoint={subscriptionEndpoint}
+          isSubscribed={isSubscribed}
+        />
 
         {/* Error Display */}
         {error && status !== 'permission-denied' && (

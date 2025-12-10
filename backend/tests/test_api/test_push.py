@@ -408,3 +408,242 @@ class TestTestNotificationEndpoint:
             result = data["results"][0]
             assert "subscription_id" in result
             assert "success" in result
+
+
+# ============================================================================
+# Story P4-1.4: Notification Preferences API Tests
+# ============================================================================
+
+
+class TestGetPreferencesEndpoint:
+    """Tests for POST /api/v1/push/preferences (get preferences) (Story P4-1.4)."""
+
+    def test_get_preferences_for_new_subscription(self, db_session):
+        """Returns default preferences for subscription that just subscribed."""
+        # Create subscription which should auto-create preferences
+        response = client.post("/api/v1/push/subscribe", json={
+            "endpoint": "https://fcm.googleapis.com/fcm/send/prefs_test_1",
+            "keys": {
+                "p256dh": "test_key_1",
+                "auth": "test_auth_1"
+            }
+        })
+        assert response.status_code == 201
+
+        # Get preferences
+        response = client.post("/api/v1/push/preferences", json={
+            "endpoint": "https://fcm.googleapis.com/fcm/send/prefs_test_1"
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "id" in data
+        assert "subscription_id" in data
+        # Default values
+        assert data["enabled_cameras"] is None  # All cameras
+        assert data["enabled_object_types"] is None  # All types
+        assert data["quiet_hours_enabled"] is False
+        assert data["sound_enabled"] is True
+        assert data["timezone"] == "UTC"
+
+    def test_get_preferences_not_found(self):
+        """Returns 404 for non-existent subscription."""
+        response = client.post("/api/v1/push/preferences", json={
+            "endpoint": "https://example.com/non_existent"
+        })
+
+        assert response.status_code == 404
+
+    def test_get_preferences_validates_endpoint(self):
+        """Returns 400 or 404 for invalid endpoint format."""
+        response = client.post("/api/v1/push/preferences", json={
+            "endpoint": "not-a-valid-url"
+        })
+
+        # Invalid endpoint is caught either by validation (400) or not found (404)
+        assert response.status_code in [400, 404]
+
+
+class TestUpdatePreferencesEndpoint:
+    """Tests for PUT /api/v1/push/preferences (update preferences) (Story P4-1.4)."""
+
+    @pytest.fixture
+    def subscription_with_preferences(self, db_session):
+        """Create a subscription with default preferences."""
+        from app.models.notification_preference import NotificationPreference
+
+        # Create subscription
+        response = client.post("/api/v1/push/subscribe", json={
+            "endpoint": "https://fcm.googleapis.com/fcm/send/update_prefs_test",
+            "keys": {
+                "p256dh": "test_key",
+                "auth": "test_auth"
+            }
+        })
+        assert response.status_code == 201
+
+        return "https://fcm.googleapis.com/fcm/send/update_prefs_test"
+
+    def test_update_preferences_cameras(self, subscription_with_preferences):
+        """Updates enabled_cameras successfully."""
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "enabled_cameras": ["camera-1", "camera-2"],
+            "quiet_hours_enabled": False,
+            "timezone": "UTC",
+            "sound_enabled": True
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled_cameras"] == ["camera-1", "camera-2"]
+
+    def test_update_preferences_object_types(self, subscription_with_preferences):
+        """Updates enabled_object_types successfully."""
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "enabled_object_types": ["person", "vehicle"],
+            "quiet_hours_enabled": False,
+            "timezone": "UTC",
+            "sound_enabled": True
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled_object_types"] == ["person", "vehicle"]
+
+    def test_update_preferences_quiet_hours(self, subscription_with_preferences):
+        """Updates quiet hours settings successfully."""
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "quiet_hours_enabled": True,
+            "quiet_hours_start": "22:00",
+            "quiet_hours_end": "06:00",
+            "timezone": "America/New_York",
+            "sound_enabled": True
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["quiet_hours_enabled"] is True
+        assert data["quiet_hours_start"] == "22:00"
+        assert data["quiet_hours_end"] == "06:00"
+        assert data["timezone"] == "America/New_York"
+
+    def test_update_preferences_sound_toggle(self, subscription_with_preferences):
+        """Updates sound_enabled successfully."""
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "quiet_hours_enabled": False,
+            "timezone": "UTC",
+            "sound_enabled": False
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["sound_enabled"] is False
+
+    def test_update_preferences_not_found(self):
+        """Returns 404 for non-existent subscription."""
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": "https://example.com/non_existent",
+            "quiet_hours_enabled": False,
+            "timezone": "UTC",
+            "sound_enabled": True
+        })
+
+        assert response.status_code == 404
+
+    def test_update_preferences_invalid_object_type(self, subscription_with_preferences):
+        """Returns 400 for invalid object type."""
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "enabled_object_types": ["person", "invalid_type"],
+            "quiet_hours_enabled": False,
+            "timezone": "UTC",
+            "sound_enabled": True
+        })
+
+        assert response.status_code == 400
+        assert "object type" in response.json()["detail"].lower()
+
+    def test_update_preferences_invalid_time_format(self, subscription_with_preferences):
+        """Returns 400 for invalid time format."""
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "quiet_hours_enabled": True,
+            "quiet_hours_start": "25:00",  # Invalid hour
+            "quiet_hours_end": "06:00",
+            "timezone": "UTC",
+            "sound_enabled": True
+        })
+
+        assert response.status_code == 400
+        # Error message contains format info
+        detail = response.json()["detail"].lower()
+        assert "format" in detail or "hh:mm" in detail
+
+    def test_update_preferences_invalid_timezone(self, subscription_with_preferences):
+        """Returns 400 for invalid timezone."""
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "quiet_hours_enabled": False,
+            "timezone": "Invalid/Timezone",
+            "sound_enabled": True
+        })
+
+        assert response.status_code == 400
+        assert "timezone" in response.json()["detail"].lower()
+
+    def test_update_preferences_null_cameras_means_all(self, subscription_with_preferences):
+        """Setting enabled_cameras to null enables all cameras."""
+        # First set specific cameras
+        client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "enabled_cameras": ["camera-1"],
+            "quiet_hours_enabled": False,
+            "timezone": "UTC",
+            "sound_enabled": True
+        })
+
+        # Then set to null (all)
+        response = client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "enabled_cameras": None,
+            "quiet_hours_enabled": False,
+            "timezone": "UTC",
+            "sound_enabled": True
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled_cameras"] is None
+
+    def test_update_preferences_persists_across_requests(self, subscription_with_preferences):
+        """Updated preferences are persisted and returned on subsequent get."""
+        # Update preferences
+        client.put("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences,
+            "enabled_cameras": ["my-camera"],
+            "enabled_object_types": ["person"],
+            "quiet_hours_enabled": True,
+            "quiet_hours_start": "23:00",
+            "quiet_hours_end": "07:00",
+            "timezone": "America/Los_Angeles",
+            "sound_enabled": False
+        })
+
+        # Get preferences
+        response = client.post("/api/v1/push/preferences", json={
+            "endpoint": subscription_with_preferences
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["enabled_cameras"] == ["my-camera"]
+        assert data["enabled_object_types"] == ["person"]
+        assert data["quiet_hours_enabled"] is True
+        assert data["quiet_hours_start"] == "23:00"
+        assert data["quiet_hours_end"] == "07:00"
+        assert data["timezone"] == "America/Los_Angeles"
+        assert data["sound_enabled"] is False

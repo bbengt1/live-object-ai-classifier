@@ -1477,6 +1477,65 @@ export const apiClient = {
         method: 'POST',
       });
     },
+
+    /**
+     * Get notification preferences for a subscription (Story P4-1.4)
+     * Returns preferences identified by the subscription endpoint
+     * Creates default preferences if none exist
+     * @param endpoint Push subscription endpoint URL
+     * @returns Notification preferences
+     */
+    getPreferences: async (endpoint: string): Promise<{
+      id: string;
+      subscription_id: string;
+      enabled_cameras: string[] | null;
+      enabled_object_types: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start: string | null;
+      quiet_hours_end: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+      created_at: string | null;
+      updated_at: string | null;
+    }> => {
+      return apiFetch('/push/preferences', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint }),
+      });
+    },
+
+    /**
+     * Update notification preferences for a subscription (Story P4-1.4)
+     * @param preferences Notification preferences to update
+     * @returns Updated preferences
+     */
+    updatePreferences: async (preferences: {
+      endpoint: string;
+      enabled_cameras?: string[] | null;
+      enabled_object_types?: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start?: string | null;
+      quiet_hours_end?: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+    }): Promise<{
+      id: string;
+      subscription_id: string;
+      enabled_cameras: string[] | null;
+      enabled_object_types: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start: string | null;
+      quiet_hours_end: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+      created_at: string | null;
+      updated_at: string | null;
+    }> => {
+      return apiFetch('/push/preferences', {
+        method: 'PUT',
+        body: JSON.stringify(preferences),
+      });
+    },
   },
 };
 

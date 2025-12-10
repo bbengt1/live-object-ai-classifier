@@ -344,7 +344,7 @@ class TestSendEventNotification:
     async def test_send_event_notification_formats_correctly(self, MockService, db_session):
         """send_event_notification formats notification correctly."""
         mock_instance = MagicMock()
-        mock_instance.broadcast_notification = AsyncMock(return_value=[
+        mock_instance.broadcast_event_notification = AsyncMock(return_value=[
             NotificationResult(subscription_id="test", success=True)
         ])
         MockService.return_value = mock_instance
@@ -358,10 +358,10 @@ class TestSendEventNotification:
         )
 
         assert len(results) == 1
-        mock_instance.broadcast_notification.assert_called_once()
+        mock_instance.broadcast_event_notification.assert_called_once()
 
         # Verify call arguments
-        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+        call_kwargs = mock_instance.broadcast_event_notification.call_args.kwargs
         assert "Front Door" in call_kwargs["title"]
         assert call_kwargs["data"]["event_id"] == "event-123"
         assert call_kwargs["tag"] == "event-123"
@@ -371,7 +371,7 @@ class TestSendEventNotification:
     async def test_send_event_notification_truncates_long_description(self, MockService, db_session):
         """Long descriptions are truncated."""
         mock_instance = MagicMock()
-        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        mock_instance.broadcast_event_notification = AsyncMock(return_value=[])
         MockService.return_value = mock_instance
 
         long_description = "A" * 200  # 200 chars
@@ -383,7 +383,7 @@ class TestSendEventNotification:
             db=db_session
         )
 
-        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+        call_kwargs = mock_instance.broadcast_event_notification.call_args.kwargs
         assert len(call_kwargs["body"]) <= 100
         assert call_kwargs["body"].endswith("...")
 
@@ -719,7 +719,7 @@ class TestSendEventNotificationRich:
     async def test_send_event_notification_with_camera_id(self, MockService, db_session):
         """send_event_notification uses camera_id for collapse tag (AC4)."""
         mock_instance = MagicMock()
-        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        mock_instance.broadcast_event_notification = AsyncMock(return_value=[])
         MockService.return_value = mock_instance
 
         await send_event_notification(
@@ -731,7 +731,7 @@ class TestSendEventNotificationRich:
             db=db_session
         )
 
-        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+        call_kwargs = mock_instance.broadcast_event_notification.call_args.kwargs
 
         # Tag should be camera_id for collapse
         assert call_kwargs["tag"] == "camera-456"
@@ -741,7 +741,7 @@ class TestSendEventNotificationRich:
     async def test_send_event_notification_with_smart_detection_type(self, MockService, db_session):
         """send_event_notification includes smart detection in title."""
         mock_instance = MagicMock()
-        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        mock_instance.broadcast_event_notification = AsyncMock(return_value=[])
         MockService.return_value = mock_instance
 
         await send_event_notification(
@@ -752,7 +752,7 @@ class TestSendEventNotificationRich:
             db=db_session
         )
 
-        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+        call_kwargs = mock_instance.broadcast_event_notification.call_args.kwargs
 
         # Title should reflect detection type
         assert "Person Detected" in call_kwargs["title"]
@@ -762,7 +762,7 @@ class TestSendEventNotificationRich:
     async def test_send_event_notification_includes_actions(self, MockService, db_session):
         """send_event_notification includes action buttons."""
         mock_instance = MagicMock()
-        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        mock_instance.broadcast_event_notification = AsyncMock(return_value=[])
         MockService.return_value = mock_instance
 
         await send_event_notification(
@@ -772,7 +772,7 @@ class TestSendEventNotificationRich:
             db=db_session
         )
 
-        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+        call_kwargs = mock_instance.broadcast_event_notification.call_args.kwargs
 
         assert call_kwargs["actions"] == DEFAULT_NOTIFICATION_ACTIONS
 
@@ -781,7 +781,7 @@ class TestSendEventNotificationRich:
     async def test_send_event_notification_includes_image(self, MockService, db_session):
         """send_event_notification includes thumbnail as image (AC1)."""
         mock_instance = MagicMock()
-        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        mock_instance.broadcast_event_notification = AsyncMock(return_value=[])
         MockService.return_value = mock_instance
 
         await send_event_notification(
@@ -792,7 +792,7 @@ class TestSendEventNotificationRich:
             db=db_session
         )
 
-        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+        call_kwargs = mock_instance.broadcast_event_notification.call_args.kwargs
 
         assert call_kwargs["image"] == "/thumbnails/event-123.jpg"
 
@@ -801,7 +801,7 @@ class TestSendEventNotificationRich:
     async def test_send_event_notification_renotify_enabled(self, MockService, db_session):
         """send_event_notification has renotify=True for updates."""
         mock_instance = MagicMock()
-        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        mock_instance.broadcast_event_notification = AsyncMock(return_value=[])
         MockService.return_value = mock_instance
 
         await send_event_notification(
@@ -811,7 +811,7 @@ class TestSendEventNotificationRich:
             db=db_session
         )
 
-        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+        call_kwargs = mock_instance.broadcast_event_notification.call_args.kwargs
 
         assert call_kwargs["renotify"] is True
 
@@ -820,7 +820,7 @@ class TestSendEventNotificationRich:
     async def test_send_event_notification_deep_link_in_data(self, MockService, db_session):
         """send_event_notification includes deep link URL (AC5)."""
         mock_instance = MagicMock()
-        mock_instance.broadcast_notification = AsyncMock(return_value=[])
+        mock_instance.broadcast_event_notification = AsyncMock(return_value=[])
         MockService.return_value = mock_instance
 
         await send_event_notification(
@@ -830,6 +830,466 @@ class TestSendEventNotificationRich:
             db=db_session
         )
 
-        call_kwargs = mock_instance.broadcast_notification.call_args.kwargs
+        call_kwargs = mock_instance.broadcast_event_notification.call_args.kwargs
 
         assert call_kwargs["data"]["url"] == "/events?highlight=event-abc-123"
+
+
+# ============================================================================
+# Story P4-1.4: Notification Preferences Tests
+# ============================================================================
+
+
+class TestIsWithinQuietHours:
+    """Tests for is_within_quiet_hours helper function (Story P4-1.4)."""
+
+    def test_within_normal_quiet_hours(self):
+        """Returns True when current time is within normal quiet hours (09:00-17:00)."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        # Test at 12:00 UTC
+        now = datetime(2025, 1, 15, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
+        result = is_within_quiet_hours("09:00", "17:00", "UTC", now)
+        assert result is True
+
+    def test_outside_normal_quiet_hours(self):
+        """Returns False when current time is outside normal quiet hours."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        # Test at 20:00 UTC (outside 09:00-17:00)
+        now = datetime(2025, 1, 15, 20, 0, 0, tzinfo=ZoneInfo("UTC"))
+        result = is_within_quiet_hours("09:00", "17:00", "UTC", now)
+        assert result is False
+
+    def test_overnight_quiet_hours_late_night(self):
+        """Returns True when in overnight quiet hours (22:00-06:00) during late night."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        # Test at 23:30 (after 22:00 start)
+        now = datetime(2025, 1, 15, 23, 30, 0, tzinfo=ZoneInfo("UTC"))
+        result = is_within_quiet_hours("22:00", "06:00", "UTC", now)
+        assert result is True
+
+    def test_overnight_quiet_hours_early_morning(self):
+        """Returns True when in overnight quiet hours (22:00-06:00) during early morning."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        # Test at 04:00 (before 06:00 end)
+        now = datetime(2025, 1, 15, 4, 0, 0, tzinfo=ZoneInfo("UTC"))
+        result = is_within_quiet_hours("22:00", "06:00", "UTC", now)
+        assert result is True
+
+    def test_outside_overnight_quiet_hours(self):
+        """Returns False when outside overnight quiet hours (22:00-06:00)."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        # Test at 12:00 (between 06:00 and 22:00)
+        now = datetime(2025, 1, 15, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
+        result = is_within_quiet_hours("22:00", "06:00", "UTC", now)
+        assert result is False
+
+    def test_timezone_conversion(self):
+        """Correctly converts UTC time to local timezone for comparison."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        # UTC 15:00 = NYC 10:00 (EST, UTC-5)
+        now = datetime(2025, 1, 15, 15, 0, 0, tzinfo=ZoneInfo("UTC"))
+
+        # Quiet hours 09:00-11:00 NYC time
+        result = is_within_quiet_hours("09:00", "11:00", "America/New_York", now)
+        assert result is True
+
+    def test_at_boundary_start(self):
+        """Returns True when exactly at quiet hours start time."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        now = datetime(2025, 1, 15, 22, 0, 0, tzinfo=ZoneInfo("UTC"))
+        result = is_within_quiet_hours("22:00", "06:00", "UTC", now)
+        assert result is True
+
+    def test_at_boundary_end(self):
+        """Returns False when exactly at quiet hours end time."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        # At exactly 06:00, should be outside quiet hours (end is exclusive)
+        now = datetime(2025, 1, 15, 6, 0, 0, tzinfo=ZoneInfo("UTC"))
+        result = is_within_quiet_hours("22:00", "06:00", "UTC", now)
+        assert result is False
+
+    def test_invalid_timezone_returns_false(self):
+        """Returns False (fail-open) for invalid timezone."""
+        from app.services.push_notification_service import is_within_quiet_hours
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        now = datetime(2025, 1, 15, 23, 0, 0, tzinfo=ZoneInfo("UTC"))
+        result = is_within_quiet_hours("22:00", "06:00", "Invalid/Timezone", now)
+        assert result is False
+
+
+class TestShouldSendNotification:
+    """Tests for should_send_notification filtering logic (Story P4-1.4)."""
+
+    def test_no_preferences_sends_with_sound(self, db_session):
+        """Returns (True, True) when no preferences exist."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+
+        # Create subscription without preferences
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/no-prefs",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, "camera-1", "person"
+        )
+
+        assert should_send is True
+        assert sound_enabled is True
+
+    def test_camera_enabled_allows_notification(self, db_session):
+        """Allows notification when camera is in enabled list."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/camera-enabled",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            enabled_cameras=["camera-1", "camera-2"],
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, "camera-1", None
+        )
+
+        assert should_send is True
+        assert sound_enabled is True
+
+    def test_camera_disabled_blocks_notification(self, db_session):
+        """Blocks notification when camera is not in enabled list."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/camera-disabled",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            enabled_cameras=["camera-1", "camera-2"],
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, "camera-3", None
+        )
+
+        assert should_send is False
+        assert sound_enabled is None
+
+    def test_null_cameras_means_all_enabled(self, db_session):
+        """Null enabled_cameras means all cameras are enabled."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/all-cameras",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            enabled_cameras=None,  # All cameras
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, "any-camera-id", None
+        )
+
+        assert should_send is True
+
+    def test_object_type_enabled_allows_notification(self, db_session):
+        """Allows notification when object type is in enabled list."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/type-enabled",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            enabled_object_types=["person", "vehicle"],
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, None, "person"
+        )
+
+        assert should_send is True
+
+    def test_object_type_disabled_blocks_notification(self, db_session):
+        """Blocks notification when object type is not in enabled list."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/type-disabled",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            enabled_object_types=["person", "vehicle"],
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, None, "package"
+        )
+
+        assert should_send is False
+
+    def test_null_object_types_means_all_enabled(self, db_session):
+        """Null enabled_object_types means all types are enabled."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/all-types",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            enabled_object_types=None,  # All types
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, None, "animal"
+        )
+
+        assert should_send is True
+
+    def test_quiet_hours_blocks_notification(self, db_session):
+        """Blocks notification when within quiet hours."""
+        from app.services.push_notification_service import should_send_notification, is_within_quiet_hours
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+        from unittest.mock import patch
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/quiet-hours",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            quiet_hours_enabled=True,
+            quiet_hours_start="22:00",
+            quiet_hours_end="06:00",
+            timezone="UTC",
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        # Mock is_within_quiet_hours to return True (within quiet hours)
+        with patch('app.services.push_notification_service.is_within_quiet_hours', return_value=True):
+            should_send, sound_enabled = should_send_notification(
+                db_session, subscription.id, None, None
+            )
+
+        assert should_send is False
+
+    def test_quiet_hours_disabled_allows_notification(self, db_session):
+        """Allows notification when quiet hours are disabled."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/no-quiet-hours",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            quiet_hours_enabled=False,
+            quiet_hours_start="22:00",
+            quiet_hours_end="06:00",
+            timezone="UTC",
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, None, None
+        )
+
+        assert should_send is True
+
+    def test_sound_disabled_in_preferences(self, db_session):
+        """Returns sound_enabled=False when disabled in preferences."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/sound-disabled",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            sound_enabled=False
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, None, None
+        )
+
+        assert should_send is True
+        assert sound_enabled is False
+
+    def test_combined_filters_all_pass(self, db_session):
+        """Allows notification when camera, object type, and time all pass filters."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/combined",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            enabled_cameras=["camera-1"],
+            enabled_object_types=["person"],
+            quiet_hours_enabled=False,
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, "camera-1", "person"
+        )
+
+        assert should_send is True
+        assert sound_enabled is True
+
+    def test_combined_filters_camera_fails(self, db_session):
+        """Blocks notification when camera filter fails."""
+        from app.services.push_notification_service import should_send_notification
+        from app.models.push_subscription import PushSubscription
+        from app.models.notification_preference import NotificationPreference
+
+        subscription = PushSubscription(
+            endpoint="https://example.com/push/combined-cam-fail",
+            p256dh_key="test",
+            auth_key="test"
+        )
+        db_session.add(subscription)
+        db_session.commit()
+
+        preference = NotificationPreference(
+            subscription_id=subscription.id,
+            enabled_cameras=["camera-1"],
+            enabled_object_types=["person"],
+            quiet_hours_enabled=False,
+            sound_enabled=True
+        )
+        db_session.add(preference)
+        db_session.commit()
+
+        # Camera filter fails (camera-2 not in list)
+        should_send, sound_enabled = should_send_notification(
+            db_session, subscription.id, "camera-2", "person"
+        )
+
+        assert should_send is False

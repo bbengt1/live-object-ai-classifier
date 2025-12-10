@@ -1,5 +1,5 @@
 """
-Push Notification Service for Web Push notifications (Story P4-1.1, P4-1.3)
+Push Notification Service for Web Push notifications (Story P4-1.1, P4-1.3, P4-1.4)
 
 Handles sending push notifications to subscribed browsers with:
 - VAPID authentication
@@ -7,6 +7,7 @@ Handles sending push notifications to subscribed browsers with:
 - Automatic cleanup of invalid subscriptions
 - Delivery tracking and metrics
 - Rich notifications with thumbnails, actions, and deep links (P4-1.3)
+- Preference filtering: camera, object type, quiet hours, sound (P4-1.4)
 """
 import asyncio
 import json
@@ -21,6 +22,7 @@ from py_vapid import Vapid
 from sqlalchemy.orm import Session
 
 from app.models.push_subscription import PushSubscription
+from app.models.notification_preference import NotificationPreference
 from app.utils.vapid import ensure_vapid_keys
 from app.core.database import SessionLocal
 from app.core.metrics import record_push_notification_sent, update_push_subscription_count
@@ -31,6 +33,124 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_BASE_DELAY_SECONDS = 2  # Exponential backoff: 2s, 4s, 8s
 VAPID_CLAIMS_EMAIL = "mailto:admin@liveobject.local"
+
+
+# ============================================================================
+# Preference Filtering Helpers (Story P4-1.4)
+# ============================================================================
+
+
+def is_within_quiet_hours(
+    start: str,
+    end: str,
+    tz_name: str,
+    now: Optional[datetime] = None
+) -> bool:
+    """
+    Check if current time is within quiet hours (Story P4-1.4).
+
+    Handles overnight quiet hours that span midnight (e.g., 22:00 - 06:00).
+
+    Args:
+        start: Start time in HH:MM format (e.g., "22:00")
+        end: End time in HH:MM format (e.g., "06:00")
+        tz_name: IANA timezone string (e.g., "America/New_York")
+        now: Optional datetime for testing; defaults to current time
+
+    Returns:
+        True if current time is within quiet hours, False otherwise
+    """
+    try:
+        from zoneinfo import ZoneInfo
+
+        tz = ZoneInfo(tz_name)
+
+        if now is None:
+            now = datetime.now(tz)
+        else:
+            # Convert to target timezone
+            now = now.astimezone(tz)
+
+        current_time = now.time()
+        start_time = datetime.strptime(start, "%H:%M").time()
+        end_time = datetime.strptime(end, "%H:%M").time()
+
+        # Handle overnight quiet hours (e.g., 22:00 - 06:00)
+        if start_time > end_time:
+            # Quiet hours span midnight
+            return current_time >= start_time or current_time < end_time
+        else:
+            # Normal range (e.g., 09:00 - 17:00)
+            return start_time <= current_time < end_time
+
+    except Exception as e:
+        logger.warning(f"Error checking quiet hours: {e}, defaulting to not-in-quiet-hours")
+        return False
+
+
+def should_send_notification(
+    db: Session,
+    subscription_id: str,
+    camera_id: Optional[str] = None,
+    smart_detection_type: Optional[str] = None,
+) -> tuple[bool, Optional[bool]]:
+    """
+    Check if notification should be sent based on subscription preferences (Story P4-1.4).
+
+    Args:
+        db: Database session
+        subscription_id: UUID of the push subscription
+        camera_id: Optional camera UUID to check against enabled cameras
+        smart_detection_type: Optional object type to check against enabled types
+
+    Returns:
+        Tuple of (should_send: bool, sound_enabled: Optional[bool])
+        - should_send: True if notification should be sent
+        - sound_enabled: True if sound is enabled, None if no preferences found
+    """
+    try:
+        preference = db.query(NotificationPreference).filter(
+            NotificationPreference.subscription_id == subscription_id
+        ).first()
+
+        if not preference:
+            # No preferences = send all notifications with sound
+            return (True, True)
+
+        # Check camera filter
+        if camera_id and not preference.is_camera_enabled(camera_id):
+            logger.debug(
+                f"Notification blocked: camera {camera_id} not enabled for subscription {subscription_id}"
+            )
+            return (False, None)
+
+        # Check object type filter
+        if smart_detection_type and not preference.is_object_type_enabled(smart_detection_type):
+            logger.debug(
+                f"Notification blocked: object type {smart_detection_type} not enabled for subscription {subscription_id}"
+            )
+            return (False, None)
+
+        # Check quiet hours
+        if preference.quiet_hours_enabled:
+            if preference.quiet_hours_start and preference.quiet_hours_end:
+                if is_within_quiet_hours(
+                    preference.quiet_hours_start,
+                    preference.quiet_hours_end,
+                    preference.timezone
+                ):
+                    logger.debug(
+                        f"Notification blocked: within quiet hours for subscription {subscription_id}"
+                    )
+                    return (False, None)
+
+        # All checks passed - return sound preference
+        return (True, preference.sound_enabled)
+
+    except Exception as e:
+        logger.error(f"Error checking notification preferences: {e}", exc_info=True)
+        # On error, send notification (fail open) with sound
+        return (True, True)
 
 
 @dataclass
@@ -154,6 +274,7 @@ class PushNotificationService:
         image: Optional[str] = None,
         actions: Optional[List[Dict[str, str]]] = None,
         renotify: bool = True,
+        silent: bool = False,
     ) -> List[NotificationResult]:
         """
         Send a push notification to all subscriptions.
@@ -168,6 +289,7 @@ class PushNotificationService:
             image: Large image URL for rich notification (P4-1.3)
             actions: List of action buttons [{action, title, icon}] (P4-1.3)
             renotify: Alert again even if same tag (P4-1.3)
+            silent: Suppress notification sound (P4-1.4)
 
         Returns:
             List of NotificationResult for each subscription
@@ -192,7 +314,8 @@ class PushNotificationService:
                 tag=tag,
                 image=image,
                 actions=actions,
-                renotify=renotify
+                renotify=renotify,
+                silent=silent
             )
             for sub in subscriptions
         ]
@@ -225,6 +348,132 @@ class PushNotificationService:
 
         return notification_results
 
+    async def broadcast_event_notification(
+        self,
+        title: str,
+        body: str,
+        camera_id: Optional[str] = None,
+        smart_detection_type: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+        icon: str = "/icons/notification-192.svg",
+        badge: str = "/icons/badge-72.svg",
+        tag: Optional[str] = None,
+        image: Optional[str] = None,
+        actions: Optional[List[Dict[str, str]]] = None,
+        renotify: bool = True,
+    ) -> List[NotificationResult]:
+        """
+        Send an event notification with preference filtering (Story P4-1.4).
+
+        For each subscription, checks preferences before sending:
+        - Camera enabled
+        - Object type enabled
+        - Not in quiet hours
+        - Respects sound preference
+
+        Args:
+            title: Notification title
+            body: Notification body text
+            camera_id: Camera UUID for preference filtering
+            smart_detection_type: Object type for preference filtering
+            data: Additional data payload
+            icon: Icon URL for notification
+            badge: Badge icon URL
+            tag: Tag for notification grouping/collapse
+            image: Large image URL for rich notification
+            actions: List of action buttons
+            renotify: Alert again even if same tag
+
+        Returns:
+            List of NotificationResult for each subscription (skipped subscriptions included)
+        """
+        subscriptions = self.db.query(PushSubscription).all()
+
+        if not subscriptions:
+            logger.info("No push subscriptions to broadcast to")
+            return []
+
+        logger.info(f"Broadcasting event notification to {len(subscriptions)} subscriptions (with preference filtering)")
+
+        # Build list of (subscription, should_send, sound_enabled) tuples
+        send_list = []
+        skipped_count = 0
+
+        for sub in subscriptions:
+            should_send, sound_enabled = should_send_notification(
+                self.db,
+                sub.id,
+                camera_id=camera_id,
+                smart_detection_type=smart_detection_type
+            )
+
+            if should_send:
+                send_list.append((sub, sound_enabled))
+            else:
+                skipped_count += 1
+
+        if not send_list:
+            logger.info(f"All {skipped_count} subscriptions filtered by preferences")
+            return []
+
+        logger.info(
+            f"Sending to {len(send_list)} subscriptions ({skipped_count} skipped by preferences)",
+            extra={
+                "camera_id": camera_id,
+                "smart_detection_type": smart_detection_type,
+                "subscriptions_to_send": len(send_list),
+                "subscriptions_skipped": skipped_count
+            }
+        )
+
+        # Send notifications concurrently with per-subscription sound preference
+        tasks = [
+            self._send_to_subscription(
+                subscription=sub,
+                title=title,
+                body=body,
+                data=data,
+                icon=icon,
+                badge=badge,
+                tag=tag,
+                image=image,
+                actions=actions,
+                renotify=renotify,
+                silent=not sound_enabled if sound_enabled is not None else False
+            )
+            for sub, sound_enabled in send_list
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results and handle exceptions
+        notification_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Broadcast exception for subscription: {result}")
+                notification_results.append(NotificationResult(
+                    subscription_id=send_list[i][0].id,
+                    success=False,
+                    error=str(result)
+                ))
+            else:
+                notification_results.append(result)
+
+        # Log summary
+        success_count = sum(1 for r in notification_results if r.success)
+        logger.info(
+            f"Event broadcast complete: {success_count}/{len(send_list)} successful ({skipped_count} skipped by preferences)",
+            extra={
+                "total_subscriptions": len(subscriptions),
+                "subscriptions_filtered": skipped_count,
+                "subscriptions_attempted": len(send_list),
+                "successful_deliveries": success_count,
+                "failed_deliveries": len(send_list) - success_count
+            }
+        )
+
+        return notification_results
+
     async def _send_to_subscription(
         self,
         subscription: PushSubscription,
@@ -237,6 +486,7 @@ class PushNotificationService:
         image: Optional[str] = None,
         actions: Optional[List[Dict[str, str]]] = None,
         renotify: bool = True,
+        silent: bool = False,
     ) -> NotificationResult:
         """
         Send notification to a single subscription with retry logic.
@@ -244,6 +494,7 @@ class PushNotificationService:
         Implements exponential backoff for transient failures.
         Automatically removes invalid/expired subscriptions.
         Supports rich notifications with images, actions, and collapse (P4-1.3).
+        Supports silent mode for sound preference (P4-1.4).
         """
         private_key, _ = self._ensure_vapid_keys()
 
@@ -254,6 +505,7 @@ class PushNotificationService:
             "icon": icon,
             "badge": badge,
             "renotify": renotify,
+            "silent": silent,  # P4-1.4: sound preference
         }
         if tag:
             payload["tag"] = tag
@@ -527,17 +779,21 @@ async def send_event_notification(
     db: Optional[Session] = None
 ) -> List[NotificationResult]:
     """
-    Convenience function to send rich notification for a new event (P4-1.3).
+    Convenience function to send rich notification for a new event (P4-1.3, P4-1.4).
 
     This is the main entry point for event pipeline integration.
-    Sends to all subscriptions with event context, thumbnail, and action buttons.
+    Sends to subscriptions with preference filtering:
+    - Per-camera enable/disable (P4-1.4)
+    - Object type filtering (P4-1.4)
+    - Quiet hours (P4-1.4)
+    - Sound preference (P4-1.4)
 
     Args:
         event_id: UUID of the event
         camera_name: Name of the camera that detected the event
         description: AI-generated event description
         thumbnail_url: Optional URL to event thumbnail
-        camera_id: Optional camera UUID (for notification collapse)
+        camera_id: Optional camera UUID (for notification collapse and preference filtering)
         smart_detection_type: Optional smart detection type (person, vehicle, etc.)
         db: Optional database session
 
@@ -563,9 +819,12 @@ async def send_event_notification(
             smart_detection_type=smart_detection_type,
         )
 
-        return await service.broadcast_notification(
+        # Use broadcast_event_notification for preference filtering (P4-1.4)
+        return await service.broadcast_event_notification(
             title=notification["title"],
             body=notification["body"],
+            camera_id=camera_id,  # For preference filtering
+            smart_detection_type=smart_detection_type,  # For preference filtering
             data=notification["data"],
             tag=notification["tag"],
             image=notification.get("image"),

@@ -1,4 +1,4 @@
-"""Push Subscription SQLAlchemy ORM model for Web Push notifications (Story P4-1.1)"""
+"""Push Subscription SQLAlchemy ORM model for Web Push notifications (Story P4-1.1, P4-1.4)"""
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -44,6 +44,14 @@ class PushSubscription(Base):
         default=lambda: datetime.now(timezone.utc)
     )
     last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    # One-to-one relationship with NotificationPreference (Story P4-1.4)
+    preference = relationship(
+        "NotificationPreference",
+        back_populates="subscription",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index('idx_push_subscriptions_user', 'user_id'),
