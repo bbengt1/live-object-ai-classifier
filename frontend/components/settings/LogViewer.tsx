@@ -52,7 +52,19 @@ function LogEntryRow({ entry, isExpanded, onToggle }: LogEntryRowProps) {
   const config = LEVEL_CONFIG[entry.level] || LEVEL_CONFIG.INFO;
   const Icon = config.icon;
 
-  const timestamp = entry.timestamp ? format(new Date(entry.timestamp), 'HH:mm:ss.SSS') : '--';
+  // Safely parse timestamp - handle invalid or malformed values
+  let timestamp = '--';
+  if (entry.timestamp) {
+    try {
+      const date = new Date(entry.timestamp);
+      // Check if date is valid (Invalid Date has NaN for getTime())
+      if (!isNaN(date.getTime())) {
+        timestamp = format(date, 'HH:mm:ss.SSS');
+      }
+    } catch {
+      // Keep default '--' on parse error
+    }
+  }
   const hasExtra = entry.extra && Object.keys(entry.extra).length > 0;
 
   return (
