@@ -1,10 +1,11 @@
 """
-Context API endpoints for Temporal Context Engine (Story P4-3.1, P4-3.2)
+Context API endpoints for Temporal Context Engine (Stories P4-3.1, P4-3.2, P4-3.3)
 
 Provides endpoints for:
 - Batch processing of embeddings for existing events
 - Embedding status retrieval
 - Similarity search for finding visually similar past events (P4-3.2)
+- Entity management for recurring visitor detection (P4-3.3)
 """
 import base64
 import logging
@@ -21,6 +22,7 @@ from app.models.event import Event
 from app.models.event_embedding import EventEmbedding
 from app.services.embedding_service import get_embedding_service, EmbeddingService
 from app.services.similarity_service import get_similarity_service, SimilarityService
+from app.services.entity_service import get_entity_service, EntityService
 
 logger = logging.getLogger(__name__)
 
@@ -401,3 +403,255 @@ async def find_similar_events(
             extra={"event_id": event_id, "error": str(e)}
         )
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# Story P4-3.3: Entity Management Response Models
+class EntitySummary(BaseModel):
+    """Summary of an entity for embedding in event responses."""
+    id: str = Field(description="Entity UUID")
+    entity_type: str = Field(description="Entity type: person, vehicle, or unknown")
+    name: Optional[str] = Field(default=None, description="User-assigned name")
+    first_seen_at: datetime = Field(description="First occurrence timestamp")
+    occurrence_count: int = Field(description="Number of times this entity has been seen")
+    similarity_score: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Match similarity score for this occurrence"
+    )
+
+
+class EntityResponse(BaseModel):
+    """Response model for an entity."""
+    id: str = Field(description="Entity UUID")
+    entity_type: str = Field(description="Entity type: person, vehicle, or unknown")
+    name: Optional[str] = Field(default=None, description="User-assigned name")
+    first_seen_at: datetime = Field(description="First occurrence timestamp")
+    last_seen_at: datetime = Field(description="Most recent occurrence timestamp")
+    occurrence_count: int = Field(description="Number of times this entity has been seen")
+
+
+class EventSummaryForEntity(BaseModel):
+    """Event summary for entity detail responses."""
+    id: str = Field(description="Event UUID")
+    timestamp: datetime = Field(description="Event timestamp")
+    description: str = Field(description="AI-generated event description")
+    thumbnail_url: Optional[str] = Field(default=None, description="Thumbnail URL")
+    camera_id: str = Field(description="Camera UUID")
+    similarity_score: float = Field(description="Similarity score when matched")
+
+
+class EntityDetailResponse(EntityResponse):
+    """Detailed entity response with recent events."""
+    created_at: datetime = Field(description="Record creation timestamp")
+    updated_at: datetime = Field(description="Record update timestamp")
+    recent_events: list[EventSummaryForEntity] = Field(
+        default=[],
+        description="Recent events associated with this entity"
+    )
+
+
+class EntityListResponse(BaseModel):
+    """Response model for entity list."""
+    entities: list[EntityResponse] = Field(description="List of entities")
+    total: int = Field(description="Total entity count")
+
+
+class EntityUpdateRequest(BaseModel):
+    """Request model for updating an entity."""
+    name: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="New name for the entity"
+    )
+
+
+@router.get("/entities", response_model=EntityListResponse)
+async def list_entities(
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=100,
+        description="Maximum number of entities to return"
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+        description="Pagination offset"
+    ),
+    entity_type: Optional[str] = Query(
+        default=None,
+        description="Filter by entity type (person, vehicle)"
+    ),
+    named_only: bool = Query(
+        default=False,
+        description="Only return named entities"
+    ),
+    db: Session = Depends(get_db),
+    entity_service: EntityService = Depends(get_entity_service),
+):
+    """
+    Get all recognized entities with pagination.
+
+    Story P4-3.3: Recurring Visitor Detection (AC7)
+
+    Returns a list of all entities that have been recognized, sorted by
+    most recently seen. Supports filtering by type and named-only.
+
+    Args:
+        limit: Maximum number of entities (1-100, default 50)
+        offset: Pagination offset
+        entity_type: Filter by entity type
+        named_only: Only return entities that have been named
+        db: Database session
+        entity_service: Entity service instance
+
+    Returns:
+        EntityListResponse with entities and total count
+    """
+    entities, total = await entity_service.get_all_entities(
+        db=db,
+        limit=limit,
+        offset=offset,
+        entity_type=entity_type,
+        named_only=named_only,
+    )
+
+    return EntityListResponse(
+        entities=[EntityResponse(**e) for e in entities],
+        total=total,
+    )
+
+
+@router.get("/entities/{entity_id}", response_model=EntityDetailResponse)
+async def get_entity(
+    entity_id: str,
+    event_limit: int = Query(
+        default=10,
+        ge=1,
+        le=50,
+        description="Maximum number of recent events to include"
+    ),
+    db: Session = Depends(get_db),
+    entity_service: EntityService = Depends(get_entity_service),
+):
+    """
+    Get a single entity with its associated events.
+
+    Story P4-3.3: Recurring Visitor Detection (AC8)
+
+    Returns detailed information about an entity, including recent events
+    that have been associated with it.
+
+    Args:
+        entity_id: UUID of the entity
+        event_limit: Maximum number of recent events (1-50, default 10)
+        db: Database session
+        entity_service: Entity service instance
+
+    Returns:
+        EntityDetailResponse with entity details and recent events
+
+    Raises:
+        404: If entity not found
+    """
+    entity = await entity_service.get_entity(
+        db=db,
+        entity_id=entity_id,
+        include_events=True,
+        event_limit=event_limit,
+    )
+
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    return EntityDetailResponse(
+        id=entity["id"],
+        entity_type=entity["entity_type"],
+        name=entity["name"],
+        first_seen_at=entity["first_seen_at"],
+        last_seen_at=entity["last_seen_at"],
+        occurrence_count=entity["occurrence_count"],
+        created_at=entity["created_at"],
+        updated_at=entity["updated_at"],
+        recent_events=[
+            EventSummaryForEntity(
+                id=e["id"],
+                timestamp=e["timestamp"],
+                description=e["description"],
+                thumbnail_url=e["thumbnail_url"],
+                camera_id=e["camera_id"],
+                similarity_score=e["similarity_score"],
+            )
+            for e in entity.get("recent_events", [])
+        ],
+    )
+
+
+@router.put("/entities/{entity_id}", response_model=EntityResponse)
+async def update_entity(
+    entity_id: str,
+    request: EntityUpdateRequest,
+    db: Session = Depends(get_db),
+    entity_service: EntityService = Depends(get_entity_service),
+):
+    """
+    Update an entity's name.
+
+    Story P4-3.3: Recurring Visitor Detection (AC9)
+
+    Allows users to assign a name to an entity, e.g., "Mail Carrier",
+    "Neighbor Bob", "Amazon Van".
+
+    Args:
+        entity_id: UUID of the entity
+        request: Update request with new name
+        db: Database session
+        entity_service: Entity service instance
+
+    Returns:
+        Updated EntityResponse
+
+    Raises:
+        404: If entity not found
+    """
+    entity = await entity_service.update_entity(
+        db=db,
+        entity_id=entity_id,
+        name=request.name,
+    )
+
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    return EntityResponse(**entity)
+
+
+@router.delete("/entities/{entity_id}", status_code=204)
+async def delete_entity(
+    entity_id: str,
+    db: Session = Depends(get_db),
+    entity_service: EntityService = Depends(get_entity_service),
+):
+    """
+    Delete an entity.
+
+    Story P4-3.3: Recurring Visitor Detection (AC10)
+
+    Deletes an entity and unlinks all associated events. Events themselves
+    are not deleted, only the entity-event associations.
+
+    Args:
+        entity_id: UUID of the entity
+        db: Database session
+        entity_service: Entity service instance
+
+    Raises:
+        404: If entity not found
+    """
+    deleted = await entity_service.delete_entity(db=db, entity_id=entity_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    # Return 204 No Content on success (implicit)

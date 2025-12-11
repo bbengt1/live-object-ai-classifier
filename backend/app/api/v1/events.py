@@ -1052,7 +1052,7 @@ async def delete_event(
 
 
 @router.get("/{event_id}", response_model=EventResponse)
-def get_event(
+async def get_event(
     event_id: str,
     db: Session = Depends(get_db)
 ):
@@ -1064,7 +1064,8 @@ def get_event(
         db: Database session
 
     Returns:
-        Event with full details including thumbnail and correlated events (Story P2-4.4)
+        Event with full details including thumbnail, correlated events (Story P2-4.4),
+        and matched entity (Story P4-3.3)
 
     Raises:
         404: Event not found
@@ -1073,7 +1074,8 @@ def get_event(
     Example:
         GET /events/123e4567-e89b-12d3-a456-426614174000
     """
-    from app.schemas.event import CorrelatedEventResponse
+    from app.schemas.event import CorrelatedEventResponse, MatchedEntitySummary
+    from app.services.entity_service import get_entity_service
 
     try:
         event = db.query(Event).filter(Event.id == event_id).first()
@@ -1148,6 +1150,22 @@ def get_event(
             "reanalyzed_at": event.reanalyzed_at,
             "reanalysis_count": event.reanalysis_count or 0,
         }
+
+        # Story P4-3.3: Add matched entity if available (AC12)
+        try:
+            entity_service = get_entity_service()
+            entity_data = await entity_service.get_entity_for_event(db, event_id)
+            if entity_data:
+                event_dict["matched_entity"] = MatchedEntitySummary(
+                    id=entity_data["id"],
+                    entity_type=entity_data["entity_type"],
+                    name=entity_data["name"],
+                    first_seen_at=entity_data["first_seen_at"],
+                    occurrence_count=entity_data["occurrence_count"],
+                    similarity_score=entity_data.get("similarity_score"),
+                )
+        except Exception as entity_error:
+            logger.debug(f"Could not get entity for event {event_id}: {entity_error}")
 
         return EventResponse(**event_dict)
 

@@ -4,6 +4,31 @@ from datetime import datetime
 from typing import List, Optional, Literal
 
 
+class MatchedEntitySummary(BaseModel):
+    """Summary of a matched entity for event responses (Story P4-3.3)"""
+    id: str = Field(..., description="Entity UUID")
+    entity_type: str = Field(..., description="Entity type: person, vehicle, or unknown")
+    name: Optional[str] = Field(None, description="User-assigned name for the entity")
+    first_seen_at: datetime = Field(..., description="Timestamp of first occurrence")
+    occurrence_count: int = Field(..., ge=1, description="Number of times this entity has been seen")
+    similarity_score: Optional[float] = Field(None, ge=0.0, le=1.0, description="Match similarity score")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440123",
+                    "entity_type": "person",
+                    "name": "Mail Carrier",
+                    "first_seen_at": "2025-11-01T10:30:00Z",
+                    "occurrence_count": 15,
+                    "similarity_score": 0.87
+                }
+            ]
+        }
+    }
+
+
 class EventCreate(BaseModel):
     """Schema for creating a new event via POST /api/v1/events"""
     camera_id: str = Field(..., description="UUID of the camera that triggered the event")
@@ -118,6 +143,8 @@ class EventResponse(BaseModel):
     # Story P3-7.5: Key frames gallery display
     key_frames_base64: Optional[List[str]] = Field(None, description="Base64-encoded key frames used for AI analysis")
     frame_timestamps: Optional[List[float]] = Field(None, description="Timestamps in seconds for each key frame")
+    # Story P4-3.3: Recurring Visitor Detection
+    matched_entity: Optional["MatchedEntitySummary"] = Field(None, description="Matched recurring entity, if any")
 
     @field_validator('objects_detected', mode='before')
     @classmethod

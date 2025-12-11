@@ -12,6 +12,7 @@ from app.models.push_subscription import PushSubscription
 from app.models.notification_preference import NotificationPreference
 from app.models.mqtt_config import MQTTConfig
 from app.models.event_embedding import EventEmbedding
+from app.models.recognized_entity import RecognizedEntity, EntityEvent
 
 __all__ = [
     "ProtectController",
@@ -28,4 +29,6 @@ __all__ = [
     "NotificationPreference",
     "MQTTConfig",
     "EventEmbedding",
+    "RecognizedEntity",
+    "EntityEvent",
 ]

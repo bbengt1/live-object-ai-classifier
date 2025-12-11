@@ -1,0 +1,183 @@
+"""RecognizedEntity and EntityEvent SQLAlchemy ORM models (Story P4-3.3)
+
+Stores recurring visitor entities and their associations with events for the
+Temporal Context Engine. Enables tracking of familiar faces/vehicles with
+"first seen", "last seen", and visit count.
+
+RecognizedEntity:
+    - Represents a recurring visitor (person, vehicle, or unknown)
+    - Stores reference embedding for similarity matching
+    - Tracks occurrence count and temporal metadata
+
+EntityEvent:
+    - Junction table linking entities to their associated events
+    - Stores similarity score for each match
+    - Enables efficient queries for entity event history
+"""
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, Text, DateTime, Integer, Float, ForeignKey, Index
+from sqlalchemy.orm import relationship
+import uuid
+
+from app.core.database import Base
+
+
+class RecognizedEntity(Base):
+    """
+    Recurring visitor entity model.
+
+    Represents a person, vehicle, or other entity that has been seen
+    multiple times. The reference_embedding is used to match new events
+    against this entity.
+
+    Attributes:
+        id: UUID primary key
+        entity_type: Type of entity (person, vehicle, unknown)
+        name: User-assigned name (nullable, e.g., "Mail Carrier")
+        reference_embedding: JSON array of floats (512-dim CLIP embedding)
+        first_seen_at: Timestamp of first occurrence
+        last_seen_at: Timestamp of most recent occurrence
+        occurrence_count: Number of times this entity has been seen
+        created_at: Record creation timestamp
+        updated_at: Record last update timestamp
+
+    Relationships:
+        entity_events: One-to-many relationship with EntityEvent junction
+    """
+
+    __tablename__ = "recognized_entities"
+
+    id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+        doc="UUID primary key"
+    )
+    entity_type = Column(
+        String(50),
+        nullable=False,
+        default="unknown",
+        doc="Entity type: person, vehicle, or unknown"
+    )
+    name = Column(
+        String(255),
+        nullable=True,
+        doc="User-assigned name for the entity"
+    )
+    reference_embedding = Column(
+        Text,
+        nullable=False,
+        doc="JSON array of 512 floats representing the CLIP embedding"
+    )
+    first_seen_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        doc="Timestamp of first occurrence"
+    )
+    last_seen_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        doc="Timestamp of most recent occurrence"
+    )
+    occurrence_count = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        doc="Number of times this entity has been seen"
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        doc="Record creation timestamp"
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        doc="Record last update timestamp"
+    )
+
+    # Relationship to EntityEvent junction table
+    entity_events = relationship(
+        "EntityEvent",
+        back_populates="entity",
+        cascade="all, delete-orphan",
+        lazy="dynamic"
+    )
+
+    __table_args__ = (
+        Index("idx_recognized_entities_last_seen", "last_seen_at"),
+        Index("idx_recognized_entities_entity_type", "entity_type"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<RecognizedEntity(id={self.id}, type={self.entity_type}, "
+            f"name={self.name}, count={self.occurrence_count})>"
+        )
+
+
+class EntityEvent(Base):
+    """
+    Junction table linking recognized entities to their associated events.
+
+    Stores the similarity score for each match, enabling queries like
+    "show all events for this entity" or "which entity does this event
+    belong to".
+
+    Attributes:
+        entity_id: Foreign key to recognized_entities (part of composite PK)
+        event_id: Foreign key to events (part of composite PK)
+        similarity_score: Cosine similarity score when matched (0.0-1.0)
+        created_at: When the link was created
+
+    Note:
+        Uses CASCADE delete so that:
+        - When an entity is deleted, all its EntityEvent links are deleted
+        - When an event is deleted, all its EntityEvent links are deleted
+    """
+
+    __tablename__ = "entity_events"
+
+    entity_id = Column(
+        String,
+        ForeignKey("recognized_entities.id", ondelete="CASCADE"),
+        primary_key=True,
+        doc="Foreign key to recognized_entities"
+    )
+    event_id = Column(
+        String,
+        ForeignKey("events.id", ondelete="CASCADE"),
+        primary_key=True,
+        doc="Foreign key to events"
+    )
+    similarity_score = Column(
+        Float,
+        nullable=False,
+        doc="Cosine similarity score when matched (0.0-1.0, 1.0 for first occurrence)"
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        doc="When the entity-event link was created"
+    )
+
+    # Relationships
+    entity = relationship(
+        "RecognizedEntity",
+        back_populates="entity_events"
+    )
+    event = relationship("Event")
+
+    __table_args__ = (
+        Index("idx_entity_events_event_id", "event_id"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<EntityEvent(entity_id={self.entity_id}, event_id={self.event_id}, "
+            f"similarity={self.similarity_score:.3f})>"
+        )

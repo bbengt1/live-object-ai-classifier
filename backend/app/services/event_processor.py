@@ -845,6 +845,7 @@ class EventProcessor:
             # Step 9: Generate embedding for temporal context (Story P4-3.1)
             # AC2: Embedding generated for each new event thumbnail
             # AC7: Graceful fallback if embedding generation fails
+            embedding_vector = None  # Initialize for entity matching step
             try:
                 from app.services.embedding_service import get_embedding_service
 
@@ -899,6 +900,64 @@ class EventProcessor:
                         "event_id": event_id,
                         "camera_id": event.camera_id,
                         "error": str(embedding_error),
+                    }
+                )
+                embedding_vector = None  # Mark as unavailable for entity matching
+
+            # Step 10: Match or create entity for recurring visitor detection (Story P4-3.3)
+            # AC11: Entity matching integrated into event pipeline after embedding generation
+            # AC14: Graceful handling when embedding service unavailable
+            try:
+                if embedding_vector:
+                    from app.services.entity_service import get_entity_service
+
+                    entity_service = get_entity_service()
+
+                    # Determine entity type from smart detection or objects detected
+                    entity_type = "unknown"
+                    if event.smart_detection_type in ("person", "vehicle"):
+                        entity_type = event.smart_detection_type
+                    elif event.objects_detected:
+                        objects_list = json.loads(event.objects_detected) if isinstance(event.objects_detected, str) else event.objects_detected
+                        if "person" in objects_list:
+                            entity_type = "person"
+                        elif "vehicle" in objects_list:
+                            entity_type = "vehicle"
+
+                    with SessionLocal() as entity_db:
+                        entity_result = await entity_service.match_or_create_entity(
+                            db=entity_db,
+                            event_id=event_id,
+                            embedding=embedding_vector,
+                            entity_type=entity_type,
+                            threshold=0.75,  # Default threshold
+                        )
+
+                    logger.info(
+                        f"Entity {'created' if entity_result.is_new else 'matched'} for event {event_id}",
+                        extra={
+                            "event_id": event_id,
+                            "entity_id": entity_result.entity_id,
+                            "entity_type": entity_result.entity_type,
+                            "is_new": entity_result.is_new,
+                            "similarity_score": entity_result.similarity_score,
+                            "occurrence_count": entity_result.occurrence_count,
+                        }
+                    )
+                else:
+                    logger.debug(
+                        f"Skipping entity matching - no embedding available for event {event_id}",
+                        extra={"event_id": event_id}
+                    )
+
+            except Exception as entity_error:
+                # AC14: Graceful fallback - entity matching failures must not block event processing
+                logger.warning(
+                    f"Entity matching failed for event {event_id}: {entity_error}",
+                    extra={
+                        "event_id": event_id,
+                        "camera_id": event.camera_id,
+                        "error": str(entity_error),
                     }
                 )
 
