@@ -25,6 +25,7 @@ import {
   FileText,
   DollarSign,
   Bell,
+  Network,
 } from 'lucide-react';
 
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
@@ -51,6 +52,7 @@ import { AIProviders } from '@/components/settings/AIProviders';
 import { LogViewer } from '@/components/settings/LogViewer';
 import { CostDashboard } from '@/components/settings/CostDashboard';
 import { PushNotificationSettings } from '@/components/settings/PushNotificationSettings';
+import { MQTTSettings } from '@/components/settings/MQTTSettings';
 import { ControllerForm, type ControllerData, DeleteControllerDialog, DiscoveredCameraList } from '@/components/protect';
 import { useQuery } from '@tanstack/react-query';
 import type { AIProvider } from '@/types/settings';
@@ -273,7 +275,7 @@ export default function SettingsPage() {
         <form onSubmit={form.handleSubmit(handleSave)}>
           <Tabs defaultValue={initialTab} className="space-y-6">
             {/* Tab Navigation */}
-            <TabsList className="grid w-full grid-cols-8">
+            <TabsList className="grid w-full grid-cols-9">
               <TabsTrigger value="general" className="flex items-center gap-2">
                 <Globe className="h-4 w-4" />
                 <span className="hidden sm:inline">General</span>
@@ -297,6 +299,10 @@ export default function SettingsPage() {
               <TabsTrigger value="protect" className="flex items-center gap-2">
                 <Shield className="h-4 w-4" />
                 <span className="hidden sm:inline">Protect</span>
+              </TabsTrigger>
+              <TabsTrigger value="integrations" className="flex items-center gap-2">
+                <Network className="h-4 w-4" />
+                <span className="hidden sm:inline">Integrations</span>
               </TabsTrigger>
               <TabsTrigger value="notifications" className="flex items-center gap-2">
                 <Bell className="h-4 w-4" />
@@ -940,6 +946,13 @@ export default function SettingsPage() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Integrations Tab - Story P4-2.4 */}
+            <TabsContent value="integrations" className="space-y-4">
+              <ErrorBoundary context="MQTT Settings">
+                <MQTTSettings />
+              </ErrorBoundary>
             </TabsContent>
 
             {/* Notifications Tab - Story P4-1.2 */}

@@ -1,0 +1,234 @@
+<story-context id="p4-2-4-integration-settings-ui" v="1.0">
+  <metadata>
+    <epicId>P4-2</epicId>
+    <storyId>4.2.4</storyId>
+    <title>Integration Settings UI</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-11</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p4-2-4-integration-settings-ui.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>home automation user</asA>
+    <iWant>a dedicated settings UI for configuring MQTT broker connection and Home Assistant discovery</iWant>
+    <soThat>I can easily connect my Live Object AI Classifier to my Home Assistant instance without editing config files</soThat>
+    <tasks>
+      <task id="1" ac="1">Add MQTT/Integrations tab to settings page
+        <subtask>Import new MQTTSettings component in settings/page.tsx</subtask>
+        <subtask>Add new TabsTrigger with Home/Network icon and "Integrations" label</subtask>
+        <subtask>Add TabsContent with ErrorBoundary wrapper</subtask>
+        <subtask>Update grid-cols-8 to grid-cols-9 for tab bar</subtask>
+      </task>
+      <task id="2" ac="2,6,7,9">Create MQTTSettings component
+        <subtask>Create frontend/components/settings/MQTTSettings.tsx</subtask>
+        <subtask>Add form fields: broker_host, broker_port, username, password</subtask>
+        <subtask>Add topic_prefix and discovery_prefix fields</subtask>
+        <subtask>Add discovery_enabled, retain_messages, use_tls toggles</subtask>
+        <subtask>Add QoS selector (0, 1, 2) and enabled master toggle</subtask>
+        <subtask>Handle password display (show "configured" badge when has_password=true)</subtask>
+      </task>
+      <task id="3" ac="4">Add connection status display
+        <subtask>Add useQuery for /api/v1/integrations/mqtt/status with polling</subtask>
+        <subtask>Display connected/disconnected badge with color indicator</subtask>
+        <subtask>Show broker address, messages_published count, last_error if present</subtask>
+      </task>
+      <task id="4" ac="3">Implement test connection button
+        <subtask>Add "Test Connection" button below broker fields</subtask>
+        <subtask>Call POST /api/v1/integrations/mqtt/test endpoint</subtask>
+        <subtask>Show loading spinner and success/failure toast</subtask>
+      </task>
+      <task id="5" ac="5,8">Implement save functionality
+        <subtask>Add form validation with zod schema</subtask>
+        <subtask>Validate: host required, port 1-65535, qos 0-2</subtask>
+        <subtask>Call PUT /api/v1/integrations/mqtt/config on save</subtask>
+        <subtask>Show validation errors inline and success toast after save</subtask>
+      </task>
+      <task id="6" ac="10">Add publish discovery button
+        <subtask>Call POST /api/v1/integrations/mqtt/publish-discovery</subtask>
+        <subtask>Display toast with cameras_published count</subtask>
+        <subtask>Disable when MQTT not connected</subtask>
+      </task>
+      <task id="7" ac="all">Add API client methods
+        <subtask>Add mqtt.getConfig(), mqtt.updateConfig(), mqtt.getStatus()</subtask>
+        <subtask>Add mqtt.testConnection(), mqtt.publishDiscovery()</subtask>
+      </task>
+      <task id="8" ac="all">Write component tests</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">MQTT tab/section appears in settings page under Integrations</criterion>
+    <criterion id="2">Broker host/port/credentials configurable via form inputs</criterion>
+    <criterion id="3">Test connection button works and shows success/failure with message</criterion>
+    <criterion id="4">Connection status displayed in real-time with indicator</criterion>
+    <criterion id="5">Save triggers reconnect with new config and shows confirmation</criterion>
+    <criterion id="6">Topic prefix customization field available</criterion>
+    <criterion id="7">Discovery enable/disable toggle available</criterion>
+    <criterion id="8">Form validation shows errors for invalid inputs (empty host, invalid port)</criterion>
+    <criterion id="9">Password field is masked and shows "configured" indicator when set</criterion>
+    <criterion id="10">Manual "Publish Discovery" button triggers discovery republish</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-p4-2.md" title="Epic P4-2 Technical Specification" section="Story P4-2.4: Integration Settings UI">
+        Defines acceptance criteria: MQTT tab in settings, broker config form, test connection, status display, save/reconnect, topic prefix customization.
+      </doc>
+      <doc path="docs/epics-phase4.md" title="Phase 4 Epics" section="Epic P4-2: Home Assistant Integration">
+        Story P4-2.4: Integration Settings UI - MQTT broker configuration form, connection test functionality, discovery enable/disable toggle, topic prefix customization.
+      </doc>
+    </docs>
+
+    <code>
+      <file path="backend/app/api/v1/integrations.py" kind="api" symbol="router" lines="1-419" reason="Complete backend API already implemented. Endpoints: GET/PUT /mqtt/config, GET /mqtt/status, POST /mqtt/test, POST /mqtt/publish-discovery" />
+      <file path="frontend/app/settings/page.tsx" kind="page" symbol="SettingsPage" lines="1-986" reason="Settings page to modify - add new Integrations tab (TabsTrigger + TabsContent). Currently has 8 tabs: general, ai, ai-usage, motion, data, protect, notifications, logs" />
+      <file path="frontend/components/settings/PushNotificationSettings.tsx" kind="component" symbol="PushNotificationSettings" lines="1-365" reason="Pattern reference - Card structure, Switch toggles, Badge for status, useQuery for polling, toast notifications, ErrorBoundary pattern" />
+      <file path="frontend/lib/api-client.ts" kind="api-client" symbol="apiClient" lines="1117-1200" reason="API client to extend - add mqtt section with methods: getConfig, updateConfig, getStatus, testConnection, publishDiscovery. Follow protect: section pattern" />
+      <file path="frontend/types/settings.ts" kind="types" lines="1-148" reason="Add MQTT types: MQTTConfig, MQTTConfigUpdate, MQTTStatus, MQTTTestRequest, MQTTTestResponse" />
+      <file path="frontend/components/ui/card.tsx" kind="ui" reason="Card, CardHeader, CardContent, CardTitle, CardDescription components" />
+      <file path="frontend/components/ui/input.tsx" kind="ui" reason="Input component for form fields" />
+      <file path="frontend/components/ui/switch.tsx" kind="ui" reason="Switch component for toggles (enabled, discovery_enabled, retain_messages, use_tls)" />
+      <file path="frontend/components/ui/badge.tsx" kind="ui" reason="Badge component for status indicators (connected/disconnected, has_password)" />
+      <file path="frontend/components/ui/select.tsx" kind="ui" reason="Select component for QoS dropdown (0, 1, 2)" />
+      <file path="frontend/components/ui/label.tsx" kind="ui" reason="Label component for form field labels" />
+      <file path="frontend/components/ui/button.tsx" kind="ui" reason="Button component for Test Connection, Save, Publish Discovery" />
+    </code>
+
+    <dependencies>
+      <frontend>
+        <package name="@tanstack/react-query">Data fetching and caching, useQuery for status polling</package>
+        <package name="react-hook-form">Form state management</package>
+        <package name="@hookform/resolvers">Zod resolver for form validation</package>
+        <package name="zod">Schema validation</package>
+        <package name="sonner">Toast notifications (toast.success, toast.error)</package>
+        <package name="lucide-react">Icons (Network, Wifi, WifiOff, Loader2, CheckCircle2, AlertTriangle)</package>
+      </frontend>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Follow PushNotificationSettings.tsx component pattern - Card with CardHeader/CardContent, Switch for toggles, Badge for status, toast for feedback</constraint>
+    <constraint type="state">Use React Query (useQuery) for status polling with refetchInterval: 5000</constraint>
+    <constraint type="validation">Use Zod schema for form validation - host required, port 1-65535, qos 0-2</constraint>
+    <constraint type="security">Never display actual password - only show has_password boolean as "configured" badge</constraint>
+    <constraint type="api">Backend API exists - do NOT modify backend, only create frontend</constraint>
+    <constraint type="tabs">Settings page uses 8 tabs currently - add 9th "Integrations" tab</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="GET /api/v1/integrations/mqtt/config" kind="api">
+      <path>backend/app/api/v1/integrations.py:190-234</path>
+      <notes>Returns MQTTConfigResponse with has_password boolean, password omitted</notes>
+    </interface>
+    <interface name="PUT /api/v1/integrations/mqtt/config" kind="api">
+      <path>backend/app/api/v1/integrations.py:237-317</path>
+      <notes>Updates config and triggers reconnect. Password only sent when changing (not empty)</notes>
+    </interface>
+    <interface name="GET /api/v1/integrations/mqtt/status" kind="api">
+      <path>backend/app/api/v1/integrations.py:320-337</path>
+      <notes>Returns connected, broker, last_connected_at, messages_published, last_error, reconnect_attempt</notes>
+    </interface>
+    <interface name="POST /api/v1/integrations/mqtt/test" kind="api">
+      <path>backend/app/api/v1/integrations.py:340-371</path>
+      <notes>Test connection without persisting. Returns success boolean and message</notes>
+    </interface>
+    <interface name="POST /api/v1/integrations/mqtt/publish-discovery" kind="api">
+      <path>backend/app/api/v1/integrations.py:374-418</path>
+      <notes>Publishes HA discovery for all cameras. Returns cameras_published count. Requires MQTT connected</notes>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Frontend tests use Vitest with React Testing Library. Mock API calls. Test form validation,
+      API interactions, status polling, and user feedback (toasts).
+    </standards>
+    <locations>
+      <location>frontend/__tests__/components/settings/MQTTSettings.test.tsx (new)</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test MQTTSettings component renders within settings page Integrations tab</idea>
+      <idea ac="2">Test form fields render with correct default values</idea>
+      <idea ac="3">Test test connection button calls API and shows success/error toast</idea>
+      <idea ac="4">Test status badge updates based on useQuery response</idea>
+      <idea ac="5">Test save calls PUT API and shows success toast</idea>
+      <idea ac="6">Test topic_prefix input accepts custom values</idea>
+      <idea ac="7">Test discovery_enabled toggle calls API with correct value</idea>
+      <idea ac="8">Test form validation errors display for invalid port (0, 99999)</idea>
+      <idea ac="9">Test password field shows "configured" badge when has_password=true</idea>
+      <idea ac="10">Test publish discovery button calls API and shows cameras_published in toast</idea>
+    </ideas>
+  </tests>
+
+  <types>
+    <type name="MQTTConfigResponse">
+      <definition>
+interface MQTTConfigResponse {
+  id: string;
+  broker_host: string;
+  broker_port: number;
+  username: string | null;
+  topic_prefix: string;
+  discovery_prefix: string;
+  discovery_enabled: boolean;
+  qos: 0 | 1 | 2;
+  enabled: boolean;
+  retain_messages: boolean;
+  use_tls: boolean;
+  has_password: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+      </definition>
+    </type>
+    <type name="MQTTConfigUpdate">
+      <definition>
+interface MQTTConfigUpdate {
+  broker_host: string;
+  broker_port: number;
+  username?: string;
+  password?: string;
+  topic_prefix: string;
+  discovery_prefix: string;
+  discovery_enabled: boolean;
+  qos: 0 | 1 | 2;
+  enabled: boolean;
+  retain_messages: boolean;
+  use_tls: boolean;
+}
+      </definition>
+    </type>
+    <type name="MQTTStatusResponse">
+      <definition>
+interface MQTTStatusResponse {
+  connected: boolean;
+  broker: string | null;
+  last_connected_at: string | null;
+  messages_published: number;
+  last_error: string | null;
+  reconnect_attempt: number;
+}
+      </definition>
+    </type>
+    <type name="MQTTTestRequest">
+      <definition>
+interface MQTTTestRequest {
+  broker_host: string;
+  broker_port: number;
+  username?: string;
+  password?: string;
+  use_tls: boolean;
+}
+      </definition>
+    </type>
+    <type name="MQTTTestResponse">
+      <definition>
+interface MQTTTestResponse {
+  success: boolean;
+  message: string;
+}
+      </definition>
+    </type>
+  </types>
+</story-context>

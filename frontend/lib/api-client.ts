@@ -23,6 +23,12 @@ import type {
   IAIUsageResponse,
   IAIUsageQueryParams,
   ICostCapStatus,
+  MQTTConfigResponse,
+  MQTTConfigUpdate,
+  MQTTStatusResponse,
+  MQTTTestRequest,
+  MQTTTestResponse,
+  MQTTPublishDiscoveryResponse,
 } from '@/types/settings';
 import type {
   IAlertRule,
@@ -1534,6 +1540,63 @@ export const apiClient = {
       return apiFetch('/push/preferences', {
         method: 'PUT',
         body: JSON.stringify(preferences),
+      });
+    },
+  },
+
+  // ============================================================================
+  // MQTT / Home Assistant Integration (Story P4-2.4)
+  // ============================================================================
+  mqtt: {
+    /**
+     * Get current MQTT configuration
+     * @returns MQTT configuration with has_password boolean (password omitted)
+     */
+    getConfig: async (): Promise<MQTTConfigResponse> => {
+      return apiFetch<MQTTConfigResponse>('/integrations/mqtt/config');
+    },
+
+    /**
+     * Update MQTT configuration
+     * Triggers reconnect if enabled
+     * @param config Configuration to update
+     * @returns Updated configuration
+     */
+    updateConfig: async (config: MQTTConfigUpdate): Promise<MQTTConfigResponse> => {
+      return apiFetch<MQTTConfigResponse>('/integrations/mqtt/config', {
+        method: 'PUT',
+        body: JSON.stringify(config),
+      });
+    },
+
+    /**
+     * Get MQTT connection status
+     * @returns Connection status with statistics
+     */
+    getStatus: async (): Promise<MQTTStatusResponse> => {
+      return apiFetch<MQTTStatusResponse>('/integrations/mqtt/status');
+    },
+
+    /**
+     * Test MQTT connection without persisting
+     * @param testRequest Connection parameters to test
+     * @returns Test result with success/failure message
+     */
+    testConnection: async (testRequest: MQTTTestRequest): Promise<MQTTTestResponse> => {
+      return apiFetch<MQTTTestResponse>('/integrations/mqtt/test', {
+        method: 'POST',
+        body: JSON.stringify(testRequest),
+      });
+    },
+
+    /**
+     * Publish Home Assistant discovery for all cameras
+     * Requires MQTT to be connected and discovery enabled
+     * @returns Number of cameras published
+     */
+    publishDiscovery: async (): Promise<MQTTPublishDiscoveryResponse> => {
+      return apiFetch<MQTTPublishDiscoveryResponse>('/integrations/mqtt/publish-discovery', {
+        method: 'POST',
       });
     },
   },
