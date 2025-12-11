@@ -450,3 +450,247 @@ class TestReconnectLogic:
     def test_reconnect_delays_length(self):
         """Reconnect delays has expected length."""
         assert len(RECONNECT_DELAYS) == 7
+
+
+class TestEventTopicFormatting:
+    """Tests for MQTT event topic formatting (Story P4-2.3, AC1)."""
+
+    def test_get_event_topic_basic(self):
+        """get_event_topic returns correct format."""
+        service = MQTTService()
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            topic_prefix="liveobject"
+        )
+
+        topic = service.get_event_topic("camera-123")
+        assert topic == "liveobject/camera/camera-123/event"
+
+    def test_get_event_topic_custom_prefix(self):
+        """get_event_topic uses custom topic prefix."""
+        service = MQTTService()
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            topic_prefix="myhome"
+        )
+
+        topic = service.get_event_topic("front-door-cam")
+        assert topic == "myhome/camera/front-door-cam/event"
+
+    def test_get_event_topic_sanitizes_camera_id(self):
+        """get_event_topic removes special characters from camera_id."""
+        service = MQTTService()
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            topic_prefix="liveobject"
+        )
+
+        # Test with special characters that should be removed
+        topic = service.get_event_topic("camera/with/slashes")
+        assert "/" not in topic.split("/")[-2]  # camera_id part shouldn't have slashes
+        assert topic == "liveobject/camera/camerawithslashes/event"
+
+        # Test with UUID-style ID (hyphens allowed)
+        topic = service.get_event_topic("abc-123-def")
+        assert topic == "liveobject/camera/abc-123-def/event"
+
+    def test_get_event_topic_no_config_uses_default(self):
+        """get_event_topic uses default prefix when no config."""
+        service = MQTTService()
+        service._config = None
+
+        topic = service.get_event_topic("camera-456")
+        assert topic == "liveobject/camera/camera-456/event"
+
+
+class TestApiBaseUrlConfiguration:
+    """Tests for API base URL configuration (Story P4-2.3, AC3)."""
+
+    def test_get_api_base_url_default(self, monkeypatch):
+        """get_api_base_url returns default when no env var."""
+        monkeypatch.delenv("API_BASE_URL", raising=False)
+
+        service = MQTTService()
+        url = service.get_api_base_url()
+
+        assert url == "http://localhost:8000"
+
+    def test_get_api_base_url_from_env(self, monkeypatch):
+        """get_api_base_url reads from environment variable."""
+        monkeypatch.setenv("API_BASE_URL", "https://myhost.local:8443")
+
+        service = MQTTService()
+        url = service.get_api_base_url()
+
+        assert url == "https://myhost.local:8443"
+
+    def test_get_api_base_url_strips_trailing_slash(self, monkeypatch):
+        """get_api_base_url removes trailing slash."""
+        monkeypatch.setenv("API_BASE_URL", "https://myhost.local:8443/")
+
+        service = MQTTService()
+        url = service.get_api_base_url()
+
+        assert url == "https://myhost.local:8443"
+        assert not url.endswith("/")
+
+
+class TestEventPublishingIntegration:
+    """Tests for event publishing to MQTT (Story P4-2.3)."""
+
+    @pytest.mark.asyncio
+    async def test_publish_event_when_not_connected(self):
+        """Event publish returns False when not connected (AC6)."""
+        service = MQTTService()
+        service._connected = False
+
+        result = await service.publish(
+            "liveobject/camera/test/event",
+            {"event_id": "123", "description": "Test"}
+        )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_publish_event_uses_config_qos(self):
+        """Event publish uses QoS from config (AC4)."""
+        service = MQTTService()
+        service._connected = True
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            qos=2,  # QoS 2 from config
+            retain_messages=False
+        )
+
+        # Mock client
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.rc = 0
+        mock_client.publish.return_value = mock_result
+        service._client = mock_client
+
+        await service.publish(
+            "liveobject/camera/test/event",
+            {"event_id": "123"}
+        )
+
+        # Verify QoS 2 was used
+        call_args = mock_client.publish.call_args
+        assert call_args.kwargs.get("qos") == 2 or call_args[1].get("qos") == 2
+
+    @pytest.mark.asyncio
+    async def test_publish_event_respects_retain_setting(self):
+        """Event publish uses retain setting from config."""
+        service = MQTTService()
+        service._connected = True
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            qos=1,
+            retain_messages=False  # Don't retain
+        )
+
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.rc = 0
+        mock_client.publish.return_value = mock_result
+        service._client = mock_client
+
+        await service.publish(
+            "liveobject/camera/test/event",
+            {"event_id": "123"}
+        )
+
+        # Verify retain=False was used
+        call_args = mock_client.publish.call_args
+        assert call_args.kwargs.get("retain") is False or call_args[1].get("retain") is False
+
+
+class TestSerializationCompleteness:
+    """Tests for complete event serialization (Story P4-2.3, AC2, AC7)."""
+
+    def test_serialize_event_has_all_required_fields(self):
+        """Serialized event includes all required fields (AC2)."""
+        mock_event = MagicMock()
+        mock_event.id = "event-123"
+        mock_event.camera_id = "camera-456"
+        mock_event.description = "Person detected"
+        mock_event.objects_detected = '["person"]'
+        mock_event.confidence = 85
+        mock_event.source_type = "protect"
+        mock_event.timestamp = datetime(2025, 12, 11, 14, 30, 0, tzinfo=timezone.utc)
+        mock_event.ai_confidence = None
+        mock_event.smart_detection_type = None
+        mock_event.is_doorbell_ring = False
+        mock_event.provider_used = None
+        mock_event.analysis_mode = None
+        mock_event.low_confidence = False
+        mock_event.correlation_group_id = None
+
+        payload = serialize_event_for_mqtt(mock_event, "Front Door")
+
+        # Check all required fields per AC2
+        required_fields = [
+            "event_id", "camera_id", "camera_name", "description",
+            "objects_detected", "confidence", "source_type",
+            "timestamp", "thumbnail_url"
+        ]
+        for field in required_fields:
+            assert field in payload, f"Missing required field: {field}"
+
+    def test_serialize_event_includes_all_optional_fields(self):
+        """Serialized event includes optional fields when present (AC7)."""
+        mock_event = MagicMock()
+        mock_event.id = "event-123"
+        mock_event.camera_id = "camera-456"
+        mock_event.description = "Person with package"
+        mock_event.objects_detected = '["person", "package"]'
+        mock_event.confidence = 90
+        mock_event.source_type = "protect"
+        mock_event.timestamp = datetime(2025, 12, 11, 14, 30, 0, tzinfo=timezone.utc)
+        # All optional fields set
+        mock_event.ai_confidence = 92
+        mock_event.smart_detection_type = "person"
+        mock_event.is_doorbell_ring = True
+        mock_event.provider_used = "openai"
+        mock_event.analysis_mode = "multi_frame"
+        mock_event.low_confidence = False
+        mock_event.correlation_group_id = "corr-789"
+
+        payload = serialize_event_for_mqtt(mock_event, "Front Door")
+
+        # Check all optional fields per AC7
+        assert payload["smart_detection_type"] == "person"
+        assert payload["is_doorbell_ring"] is True
+        assert payload["provider_used"] == "openai"
+        assert payload["analysis_mode"] == "multi_frame"
+        assert payload["ai_confidence"] == 92
+        assert payload["correlation_group_id"] == "corr-789"
+
+    def test_serialize_event_omits_none_optional_fields(self):
+        """Serialized event omits optional fields when None."""
+        mock_event = MagicMock()
+        mock_event.id = "event-123"
+        mock_event.camera_id = "camera-456"
+        mock_event.description = "Motion detected"
+        mock_event.objects_detected = '[]'
+        mock_event.confidence = 50
+        mock_event.source_type = "rtsp"
+        mock_event.timestamp = datetime.now(timezone.utc)
+        # All optional fields None/False
+        mock_event.ai_confidence = None
+        mock_event.smart_detection_type = None
+        mock_event.is_doorbell_ring = False
+        mock_event.provider_used = None
+        mock_event.analysis_mode = None
+        mock_event.low_confidence = False
+        mock_event.correlation_group_id = None
+
+        payload = serialize_event_for_mqtt(mock_event, "Back Yard")
+
+        # Optional fields should not be present when None/False
+        assert "smart_detection_type" not in payload
+        assert "is_doorbell_ring" not in payload  # False is not included
+        assert "provider_used" not in payload
+        assert "analysis_mode" not in payload
+        assert "ai_confidence" not in payload
+        assert "correlation_group_id" not in payload

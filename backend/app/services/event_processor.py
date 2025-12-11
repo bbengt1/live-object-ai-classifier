@@ -35,6 +35,8 @@ from contextlib import asynccontextmanager
 import os
 import json
 
+from typing import TYPE_CHECKING
+
 from app.models.camera import Camera
 from app.models.event import Event
 from app.services.ai_service import AIService
@@ -43,6 +45,9 @@ from app.services.motion_detection_service import MotionDetectionService
 from app.services.cost_cap_service import get_cost_cap_service
 from app.services.cost_alert_service import get_cost_alert_service
 from app.core.database import SessionLocal
+
+if TYPE_CHECKING:
+    from app.services.mqtt_service import MQTTService
 
 logger = logging.getLogger(__name__)
 
@@ -732,6 +737,52 @@ class EventProcessor:
                     extra={"error": str(push_error)}
                 )
 
+            # Step 7: Publish event to MQTT for Home Assistant (Story P4-2.3)
+            try:
+                from app.services.mqtt_service import get_mqtt_service, serialize_event_for_mqtt
+
+                mqtt_service = get_mqtt_service()
+
+                # Only publish if MQTT is enabled and connected (AC6)
+                if mqtt_service.is_connected:
+                    # Build MQTT payload using event data from database
+                    # We need to fetch the stored event to get all fields
+                    with SessionLocal() as mqtt_db:
+                        stored_event = mqtt_db.query(Event).filter(Event.id == event_id).first()
+                        if stored_event:
+                            # Get API base URL for thumbnail URLs (AC3)
+                            api_base_url = mqtt_service.get_api_base_url()
+
+                            # Serialize event to MQTT payload (AC2, AC7)
+                            mqtt_payload = serialize_event_for_mqtt(
+                                stored_event,
+                                event.camera_name,
+                                api_base_url=api_base_url
+                            )
+
+                            # Get topic for this camera (AC1)
+                            topic = mqtt_service.get_event_topic(event.camera_id)
+
+                            # Fire and forget - use asyncio.create_task for non-blocking (AC5)
+                            asyncio.create_task(
+                                self._publish_event_to_mqtt(mqtt_service, topic, mqtt_payload, event_id)
+                            )
+
+                            logger.debug(
+                                f"MQTT publish task created for event {event_id}",
+                                extra={
+                                    "event_id": event_id,
+                                    "topic": topic,
+                                    "camera_id": event.camera_id
+                                }
+                            )
+            except Exception as mqtt_error:
+                # MQTT failures must not block event processing (AC5, AC6)
+                logger.warning(
+                    f"Failed to create MQTT publish task: {mqtt_error}",
+                    extra={"error": str(mqtt_error), "event_id": event_id}
+                )
+
             logger.info(
                 f"Event processed successfully for camera {event.camera_name}",
                 extra={
@@ -866,6 +917,63 @@ class EventProcessor:
 
         logger.error(f"Event storage failed after {max_retries + 1} attempts")
         return None
+
+    async def _publish_event_to_mqtt(
+        self,
+        mqtt_service: "MQTTService",
+        topic: str,
+        payload: dict,
+        event_id: str
+    ) -> None:
+        """
+        Publish event to MQTT (Story P4-2.3).
+
+        This is a fire-and-forget async task. Errors are logged but not propagated.
+
+        Args:
+            mqtt_service: MQTTService instance
+            topic: MQTT topic to publish to
+            payload: Serialized event payload
+            event_id: Event ID for logging
+
+        Note:
+            - Uses QoS from MQTTConfig (AC4)
+            - Non-blocking, runs as background task (AC5)
+            - Errors don't propagate to caller (AC6)
+        """
+        try:
+            # Use QoS from config (AC4)
+            success = await mqtt_service.publish(topic, payload)
+
+            if success:
+                logger.info(
+                    f"Event published to MQTT",
+                    extra={
+                        "event_type": "mqtt_event_published",
+                        "event_id": event_id,
+                        "topic": topic
+                    }
+                )
+            else:
+                logger.warning(
+                    f"MQTT publish returned False for event {event_id}",
+                    extra={
+                        "event_type": "mqtt_event_publish_failed",
+                        "event_id": event_id,
+                        "topic": topic
+                    }
+                )
+        except Exception as e:
+            # MQTT errors must not propagate (AC5, AC6)
+            logger.warning(
+                f"MQTT publish failed for event {event_id}: {e}",
+                extra={
+                    "event_type": "mqtt_event_publish_error",
+                    "event_id": event_id,
+                    "topic": topic,
+                    "error": str(e)
+                }
+            )
 
     async def _drain_queue(self):
         """

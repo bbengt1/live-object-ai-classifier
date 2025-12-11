@@ -745,6 +745,44 @@ class MQTTService:
             "reconnect_attempt": self._reconnect_attempt if not self._connected else 0
         }
 
+    def get_event_topic(self, camera_id: str) -> str:
+        """
+        Get MQTT topic for camera events (Story P4-2.3).
+
+        Args:
+            camera_id: Camera UUID string
+
+        Returns:
+            Topic string in format: {topic_prefix}/camera/{camera_id}/event
+
+        Example:
+            >>> service.get_event_topic("abc-123")
+            "liveobject/camera/abc-123/event"
+        """
+        import re
+
+        # Get topic prefix from config, default to "liveobject"
+        prefix = self._config.topic_prefix if self._config else "liveobject"
+
+        # Sanitize camera_id - keep only alphanumeric, hyphens, underscores
+        sanitized_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(camera_id))
+
+        return f"{prefix}/camera/{sanitized_id}/event"
+
+    def get_api_base_url(self) -> str:
+        """
+        Get API base URL for thumbnail URLs in MQTT payloads (Story P4-2.3).
+
+        Checks in order:
+        1. Environment variable API_BASE_URL
+        2. Default to http://localhost:8000
+
+        Returns:
+            Base URL string without trailing slash
+        """
+        import os
+        return os.environ.get("API_BASE_URL", "http://localhost:8000").rstrip("/")
+
 
 # Global singleton instance
 _mqtt_service: Optional[MQTTService] = None

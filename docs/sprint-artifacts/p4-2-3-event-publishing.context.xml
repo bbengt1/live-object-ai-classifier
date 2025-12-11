@@ -1,0 +1,158 @@
+<story-context id="p4-2-3-event-publishing" v="1.0">
+  <metadata>
+    <epicId>P4-2</epicId>
+    <storyId>4.2.3</storyId>
+    <title>Event Publishing</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-11</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p4-2-3-event-publishing.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>Home Assistant user</asA>
+    <iWant>AI-detected events to be automatically published to MQTT topics</iWant>
+    <soThat>I can create automations triggered by specific camera events and their AI-generated descriptions</soThat>
+    <tasks>
+      <task id="1" ac="1,5,6">Add event publish hook to EventProcessor
+        <subtask>Import MQTTService and serialize_event_for_mqtt in event_processor.py</subtask>
+        <subtask>Add async _publish_event_to_mqtt(event, camera) method</subtask>
+        <subtask>Call publish hook after event is saved to database (non-blocking)</subtask>
+        <subtask>Add try/except to ensure MQTT errors don't block event processing</subtask>
+        <subtask>Log warning on publish failure but don't raise exception</subtask>
+      </task>
+      <task id="2" ac="2,7">Verify event serialization covers all fields
+        <subtask>Review serialize_event_for_mqtt() in mqtt_service.py for completeness</subtask>
+        <subtask>Ensure thumbnail_url uses configurable base URL (not hardcoded localhost)</subtask>
+        <subtask>Add any missing optional fields from Event model</subtask>
+        <subtask>Document payload schema in code docstring</subtask>
+      </task>
+      <task id="3" ac="3">Add API base URL configuration
+        <subtask>Add api_base_url to MQTTConfig model or system settings</subtask>
+        <subtask>Use configured base URL for thumbnail_url generation</subtask>
+        <subtask>Default to environment variable or localhost:8000</subtask>
+      </task>
+      <task id="4" ac="1">Implement topic formatting
+        <subtask>Add get_event_topic(camera_id) helper to MQTTService</subtask>
+        <subtask>Use topic_prefix from config: {topic_prefix}/camera/{camera_id}/event</subtask>
+        <subtask>Sanitize camera_id in topic (no special characters)</subtask>
+      </task>
+      <task id="5" ac="4">Add QoS configuration support
+        <subtask>Verify MQTTConfig.qos field exists and defaults to 1</subtask>
+        <subtask>Pass config QoS to publish() call for events</subtask>
+        <subtask>Document QoS level options in settings UI (future story)</subtask>
+      </task>
+      <task id="6" ac="all">Write unit tests
+        <subtask>Test event serialization with minimal event (required fields only)</subtask>
+        <subtask>Test event serialization with full event (all optional fields)</subtask>
+        <subtask>Test publish called with correct topic and QoS</subtask>
+        <subtask>Test publish skipped when MQTT disabled</subtask>
+        <subtask>Test publish skipped when MQTT disconnected</subtask>
+        <subtask>Test event processing continues on publish failure</subtask>
+      </task>
+      <task id="7" ac="1,3,5">Write integration tests
+        <subtask>Test end-to-end: create event, verify MQTT message received</subtask>
+        <subtask>Test thumbnail URL returns valid image</subtask>
+        <subtask>Test latency: measure time from event creation to MQTT publish</subtask>
+        <subtask>Test with mock broker to verify message structure</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">Events published to camera-specific topic {topic_prefix}/camera/{camera_id}/event when event is created</criterion>
+    <criterion id="2">Payload includes all required fields: event_id, camera_id, camera_name, description, objects_detected, confidence, source_type, timestamp, thumbnail_url</criterion>
+    <criterion id="3">Thumbnail URL in payload is accessible and returns valid image</criterion>
+    <criterion id="4">QoS setting from config is respected (QoS 0, 1, or 2)</criterion>
+    <criterion id="5">Publishing is non-blocking and doesn't add more than 100ms to event processing</criterion>
+    <criterion id="6">Events are NOT published when MQTT is disabled or disconnected</criterion>
+    <criterion id="7">Optional fields included when present: smart_detection_type, is_doorbell_ring, provider_used, analysis_mode, ai_confidence, correlation_group_id</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-p4-2.md" title="Epic P4-2 Technical Specification" section="Story P4-2.3: Event Publishing">
+        Defines acceptance criteria: events published to camera topic, payload fields, thumbnail URL, QoS settings, non-blocking publish. Target latency 100ms.
+      </doc>
+      <doc path="docs/epics-phase4.md" title="Phase 4 Epics" section="Epic P4-2: Home Assistant Integration">
+        Story P4-2.3: Event Publishing - Publish events to camera-specific topics, include full event metadata in payload, add thumbnail URL in event data, implement QoS settings for reliability.
+      </doc>
+      <doc path="docs/sprint-artifacts/p4-2-2-home-assistant-discovery.md" title="Story P4-2.2 Implementation" section="Dev Agent Record">
+        Previous story learnings: MQTTService available with publish(), is_connected property, serialize_event_for_mqtt() exists, Prometheus metrics available.
+      </doc>
+    </docs>
+
+    <code>
+      <file path="backend/app/services/event_processor.py" kind="service" symbol="EventProcessor._process_event" lines="536-758" reason="Main integration point - add MQTT publish hook after event is stored (after line 694 push notification task). Use asyncio.create_task() pattern established for push notifications." />
+      <file path="backend/app/services/mqtt_service.py" kind="service" symbol="MQTTService" reason="MQTT client with publish(), is_connected, get_status(). Contains serialize_event_for_mqtt() function for event payload serialization - verify all fields present." />
+      <file path="backend/app/services/mqtt_service.py" kind="function" symbol="serialize_event_for_mqtt" reason="Existing serializer to reuse. Takes event and camera_name, optional api_base_url. Returns dict with event_id, camera_id, camera_name, description, objects_detected, confidence, source_type, timestamp, thumbnail_url, and optional fields." />
+      <file path="backend/app/services/mqtt_service.py" kind="function" symbol="get_mqtt_service" reason="Singleton getter to obtain MQTTService instance." />
+      <file path="backend/app/models/mqtt_config.py" kind="model" symbol="MQTTConfig" reason="MQTT configuration with broker_host, broker_port, topic_prefix, qos, enabled, retain_messages. No api_base_url field yet - may need to add or use system settings." />
+      <file path="backend/app/models/event.py" kind="model" symbol="Event" reason="Event model with all fields that need to be serialized: id, camera_id, description, objects_detected, confidence, source_type, timestamp, smart_detection_type, is_doorbell_ring, provider_used, analysis_mode, ai_confidence, low_confidence, correlation_group_id." />
+      <file path="backend/tests/test_services/test_mqtt_service.py" kind="test" symbol="TestEventSerialization" lines="180-354" reason="Existing serialization tests to extend. Pattern: mock event with MagicMock, call serialize_event_for_mqtt(), assert payload fields." />
+      <file path="backend/tests/test_services/test_mqtt_service.py" kind="test" symbol="TestMQTTServicePublish" lines="401-438" reason="Existing publish tests. Pattern: mock client, verify publish called with JSON payload." />
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="paho-mqtt" version=">=2.0.0">MQTT client library</package>
+        <package name="pytest" version="7.4.3">Testing framework</package>
+        <package name="pytest-asyncio" version="0.21.1">Async test support</package>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="performance">MQTT publish must not block event processing - target less than 100ms added latency. Use asyncio.create_task() for fire-and-forget.</constraint>
+    <constraint type="reliability">MQTT errors must not crash event processing. Use try/except, log warnings, continue processing.</constraint>
+    <constraint type="architecture">Follow existing pattern from push notifications (line 696-733): asyncio.create_task() with try/except wrapper.</constraint>
+    <constraint type="singleton">Use get_mqtt_service() singleton - do not create new MQTTService instances.</constraint>
+    <constraint type="topic-format">Topic structure: {topic_prefix}/camera/{camera_id}/event where topic_prefix defaults to "liveobject"</constraint>
+    <constraint type="qos">Default QoS 1 (at-least-once delivery). QoS configurable via MQTTConfig.qos field.</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="MQTTService.publish" kind="async method">
+      <signature>async def publish(self, topic: str, payload: dict, qos: int = 1) -> bool</signature>
+      <path>backend/app/services/mqtt_service.py</path>
+      <notes>Returns True on success, False if not connected or error. Payload auto-serialized to JSON.</notes>
+    </interface>
+    <interface name="MQTTService.is_connected" kind="property">
+      <signature>@property def is_connected(self) -> bool</signature>
+      <path>backend/app/services/mqtt_service.py</path>
+      <notes>Check before publishing. Returns False if not configured or disconnected.</notes>
+    </interface>
+    <interface name="serialize_event_for_mqtt" kind="function">
+      <signature>def serialize_event_for_mqtt(event: Event, camera_name: str, api_base_url: str = "http://localhost:8000") -> dict</signature>
+      <path>backend/app/services/mqtt_service.py</path>
+      <notes>Converts Event model to MQTT payload dict. Handles JSON string objects_detected conversion to list.</notes>
+    </interface>
+    <interface name="get_mqtt_service" kind="function">
+      <signature>def get_mqtt_service() -> MQTTService</signature>
+      <path>backend/app/services/mqtt_service.py</path>
+      <notes>Returns singleton MQTTService instance.</notes>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Tests use pytest with pytest-asyncio for async support. Unit tests mock external dependencies (MQTTService, database).
+      Integration tests may use a mock MQTT broker. Follow existing patterns in test_mqtt_service.py: MagicMock for event objects,
+      AsyncMock for async methods. Target 80% coverage for new code.
+    </standards>
+    <locations>
+      <location>backend/tests/test_services/test_mqtt_service.py</location>
+      <location>backend/tests/test_services/test_event_processor.py</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test that _publish_event_to_mqtt is called after event storage with correct topic format</idea>
+      <idea ac="2">Test serialize_event_for_mqtt includes all required fields (event_id, camera_id, camera_name, description, objects_detected, confidence, source_type, timestamp, thumbnail_url)</idea>
+      <idea ac="3">Integration test: verify thumbnail_url from MQTT payload returns valid image (mock or real endpoint)</idea>
+      <idea ac="4">Test publish() called with config.qos value (mock client, verify call args)</idea>
+      <idea ac="5">Test latency: time _process_event with MQTT publish vs without, assert delta less than 100ms</idea>
+      <idea ac="6">Test _publish_event_to_mqtt returns early when mqtt_service.is_connected is False or config.enabled is False</idea>
+      <idea ac="7">Test serialize_event_for_mqtt includes optional fields when present: smart_detection_type, is_doorbell_ring, provider_used, analysis_mode, ai_confidence, correlation_group_id</idea>
+      <idea ac="all">Test that exceptions in MQTT publish do not propagate - event processing continues successfully</idea>
+    </ideas>
+  </tests>
+</story-context>
