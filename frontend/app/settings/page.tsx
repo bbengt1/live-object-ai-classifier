@@ -26,6 +26,7 @@ import {
   DollarSign,
   Bell,
   Network,
+  BarChart3,
 } from 'lucide-react';
 
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
@@ -51,6 +52,7 @@ import { BackupRestore } from '@/components/settings/BackupRestore';
 import { AIProviders } from '@/components/settings/AIProviders';
 import { LogViewer } from '@/components/settings/LogViewer';
 import { CostDashboard } from '@/components/settings/CostDashboard';
+import { AccuracyDashboard } from '@/components/settings/AccuracyDashboard';
 import { PushNotificationSettings } from '@/components/settings/PushNotificationSettings';
 import { MQTTSettings } from '@/components/settings/MQTTSettings';
 import { ControllerForm, type ControllerData, DeleteControllerDialog, DiscoveredCameraList } from '@/components/protect';
@@ -275,7 +277,7 @@ export default function SettingsPage() {
         <form onSubmit={form.handleSubmit(handleSave)}>
           <Tabs defaultValue={initialTab} className="space-y-6">
             {/* Tab Navigation */}
-            <TabsList className="grid w-full grid-cols-9">
+            <TabsList className="grid w-full grid-cols-10">
               <TabsTrigger value="general" className="flex items-center gap-2">
                 <Globe className="h-4 w-4" />
                 <span className="hidden sm:inline">General</span>
@@ -311,6 +313,10 @@ export default function SettingsPage() {
               <TabsTrigger value="logs" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 <span className="hidden sm:inline">Logs</span>
+              </TabsTrigger>
+              <TabsTrigger value="accuracy" className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                <span className="hidden sm:inline">AI Accuracy</span>
               </TabsTrigger>
             </TabsList>
 
@@ -963,6 +969,13 @@ export default function SettingsPage() {
             {/* Logs Tab - FF-001 */}
             <TabsContent value="logs" className="space-y-4">
               <LogViewer />
+            </TabsContent>
+
+            {/* AI Accuracy Tab - Story P4-5.3 */}
+            <TabsContent value="accuracy" className="space-y-4">
+              <ErrorBoundary context="AI Accuracy Dashboard">
+                <AccuracyDashboard />
+              </ErrorBoundary>
             </TabsContent>
           </Tabs>
 
