@@ -1,0 +1,257 @@
+<story-context id="p4-1-4-notification-preferences" v="1.0">
+  <metadata>
+    <epicId>P4-1</epicId>
+    <storyId>4</storyId>
+    <title>Notification Preferences</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-10</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p4-1-4-notification-preferences.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>home security user receiving push notifications</asA>
+    <iWant>granular control over when and what notifications I receive</iWant>
+    <soThat>I only get alerted for events that matter to me without being overwhelmed by irrelevant notifications</soThat>
+    <tasks>
+      <task id="1" acs="6,7,8">Create notification preferences database model
+        <subtask>Add NotificationPreference model with fields: id, subscription_id, enabled_cameras, enabled_object_types, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, timezone, sound_enabled, created_at, updated_at</subtask>
+        <subtask>Create Alembic migration for notification_preferences table</subtask>
+        <subtask>Add relationship to PushSubscription model (one-to-one)</subtask>
+      </task>
+      <task id="2" acs="6,7">Create notification preferences API endpoints
+        <subtask>GET /api/v1/push/preferences - Get current preferences</subtask>
+        <subtask>PUT /api/v1/push/preferences - Update preferences</subtask>
+        <subtask>Create Pydantic schemas for request/response</subtask>
+        <subtask>Add endpoints to backend/app/api/v1/push.py</subtask>
+        <subtask>Initialize default preferences when subscription created</subtask>
+      </task>
+      <task id="3" acs="1,2,3,4">Implement preference filtering in notification service
+        <subtask>Update PushNotificationService.send_notification() to check preferences</subtask>
+        <subtask>Check if camera is enabled for subscription</subtask>
+        <subtask>Check if object type matches enabled types</subtask>
+        <subtask>Check if current time is within quiet hours (timezone-aware)</subtask>
+        <subtask>Add should_send_notification() helper method</subtask>
+        <subtask>Use zoneinfo for timezone handling</subtask>
+      </task>
+      <task id="4" acs="1,2,3,4,5,6">Build notification preferences UI
+        <subtask>Create NotificationPreferences.tsx component</subtask>
+        <subtask>Add to Notifications tab in Settings page (tab 8)</subtask>
+        <subtask>Camera toggles: List cameras with enable/disable switches</subtask>
+        <subtask>Object type filters: Checkboxes for person, vehicle, package, animal</subtask>
+        <subtask>Quiet hours: Enable toggle, time pickers for start/end</subtask>
+        <subtask>Timezone selector: Dropdown with common timezones</subtask>
+        <subtask>Sound toggle: Enable/disable notification sound</subtask>
+      </task>
+      <task id="5" acs="6">Add API client methods and types
+        <subtask>Add NotificationPreferences type to frontend/types/push.ts</subtask>
+        <subtask>Add getPreferences() method to api-client.ts</subtask>
+        <subtask>Add updatePreferences() method to api-client.ts</subtask>
+        <subtask>Create useNotificationPreferences hook</subtask>
+      </task>
+      <task id="6" acs="all">Write tests
+        <subtask>Backend unit tests for preference filtering logic</subtask>
+        <subtask>Backend unit tests for quiet hours with timezone handling</subtask>
+        <subtask>Backend API tests for preferences endpoints</subtask>
+        <subtask>Frontend component tests for NotificationPreferences</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">Users can enable/disable push notifications per camera</criterion>
+    <criterion id="2">Users can filter notifications by object type (person, vehicle, package, animal)</criterion>
+    <criterion id="3">Users can configure quiet hours with start/end times</criterion>
+    <criterion id="4">Quiet hours respect user's timezone</criterion>
+    <criterion id="5">Users can select notification sound (where browser supports)</criterion>
+    <criterion id="6">Preferences persist across browser sessions</criterion>
+    <criterion id="7">Backend validates and stores notification preferences</criterion>
+    <criterion id="8">Default preferences notify for all cameras and all object types</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/PRD-phase4.md" title="Phase 4 PRD" section="Push Notifications">
+        FR12: Users can configure notification preferences per camera.
+        FR13: Quiet hours prevent notifications during specified times.
+      </doc>
+      <doc path="docs/epics-phase4.md" title="Phase 4 Epics" section="Story P4-1.4">
+        Notification Preferences: Per-camera toggles, object type filters, quiet hours, sound selection.
+      </doc>
+      <doc path="docs/sprint-artifacts/p4-1-3-rich-notification-formatting.md" title="Story P4-1.3" section="Dev Agent Record">
+        Previous story with PushNotificationService patterns, format_rich_notification(), camera_id and smart_detection_type available.
+      </doc>
+    </docs>
+
+    <code>
+      <file path="backend/app/models/push_subscription.py" kind="model" symbol="PushSubscription" reason="Add one-to-one relationship to NotificationPreference">
+        <lines>9-91</lines>
+      </file>
+      <file path="backend/app/models/__init__.py" kind="models-registry" symbol="__all__" reason="Register new NotificationPreference model">
+        <lines>1-26</lines>
+      </file>
+      <file path="backend/app/services/push_notification_service.py" kind="service" symbol="PushNotificationService" reason="Add preference filtering in send_notification() and broadcast_notification()">
+        <lines>46-403</lines>
+        <notes>Key methods: send_notification(), broadcast_notification(), _send_to_subscription(). Add should_send_notification() helper that checks preferences before sending.</notes>
+      </file>
+      <file path="backend/app/services/push_notification_service.py" kind="service" symbol="send_event_notification" reason="Integration point - calls broadcast_notification, needs preference filtering">
+        <lines>520-582</lines>
+      </file>
+      <file path="backend/app/services/push_notification_service.py" kind="helper" symbol="format_rich_notification" reason="Builds notification payload - camera_id and smart_detection_type available for filtering">
+        <lines>440-518</lines>
+      </file>
+      <file path="backend/app/api/v1/push.py" kind="router" symbol="router" reason="Add preferences endpoints here">
+        <lines>25-492</lines>
+        <notes>Existing endpoints: /vapid-public-key, /subscribe, /subscribe (DELETE), /subscriptions, /test. Add GET/PUT /preferences endpoints.</notes>
+      </file>
+      <file path="frontend/hooks/usePushNotifications.ts" kind="hook" symbol="usePushNotifications" reason="Can query preferences from here or create separate hook">
+        <lines>139-477</lines>
+      </file>
+      <file path="frontend/types/push.ts" kind="types" symbol="PushNotificationStatus" reason="Add NotificationPreferences interface">
+        <lines>1-96</lines>
+      </file>
+      <file path="frontend/components/settings/PushNotificationSettings.tsx" kind="component" symbol="PushNotificationSettings" reason="Add preferences UI section below enable toggle">
+        <lines>172-357</lines>
+        <notes>Existing UI: enable toggle, device info, test button. Add: camera toggles, object type filters, quiet hours, timezone, sound toggle.</notes>
+      </file>
+      <file path="frontend/lib/api-client.ts" kind="client" symbol="push" reason="Add getPreferences() and updatePreferences() methods">
+        <notes>Push namespace exists with subscribe, unsubscribe, getVapidPublicKey, sendTest methods.</notes>
+      </file>
+      <file path="backend/tests/test_services/test_push_notification_service.py" kind="test" symbol="TestPushNotificationService" reason="Follow test patterns for new preference tests">
+        <lines>1-100</lines>
+      </file>
+      <file path="frontend/public/sw.js" kind="service-worker" symbol="push event" reason="Can pass silent option based on sound preference">
+        <notes>Service worker handles push events and can use silent option from payload.</notes>
+      </file>
+    </code>
+
+    <dependencies>
+      <backend>
+        <package name="fastapi" version="0.115.0">Web framework for API</package>
+        <package name="sqlalchemy" version=">=2.0.36">ORM for database models</package>
+        <package name="alembic" version=">=1.14.0">Database migrations</package>
+        <package name="pydantic" version=">=2.10.0">Schema validation</package>
+        <package name="pywebpush" version=">=2.0.0">Web Push notifications</package>
+        <note>Use Python 3.11+ zoneinfo module for timezone handling (no new dependency needed)</note>
+      </backend>
+      <frontend>
+        <package name="next" version="16.0.7">React framework</package>
+        <package name="react" version="19.2.0">UI library</package>
+        <package name="@tanstack/react-query" version="^5.90.10">Server state management</package>
+        <package name="react-hook-form" version="^7.66.0">Form handling</package>
+        <package name="zod" version="^4.1.12">Schema validation</package>
+        <package name="@radix-ui/react-switch" version="^1.2.6">Toggle switches</package>
+        <package name="@radix-ui/react-checkbox" version="^1.3.3">Checkboxes</package>
+        <package name="@radix-ui/react-select" version="^2.2.6">Timezone dropdown</package>
+        <package name="date-fns" version="^4.1.0">Time picker formatting</package>
+      </frontend>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="architecture">One-to-one relationship between PushSubscription and NotificationPreference</constraint>
+    <constraint type="architecture">Default preferences: all cameras enabled, all object types enabled, quiet hours disabled</constraint>
+    <constraint type="timezone">Use Python zoneinfo module (Python 3.9+) for timezone conversions</constraint>
+    <constraint type="timezone">Handle quiet hours spanning midnight (e.g., 22:00 - 06:00)</constraint>
+    <constraint type="object-types">Primary object types for filtering: person, vehicle, package, animal</constraint>
+    <constraint type="sound">Web Notification API silent option has limited browser support - provide simple toggle</constraint>
+    <constraint type="api">Extend existing /api/v1/push/ router with preferences endpoints</constraint>
+    <constraint type="ui">Add preferences section to existing PushNotificationSettings component</constraint>
+    <constraint type="ui">Only show preferences UI when user is subscribed (isSubscribed === true)</constraint>
+    <constraint type="testing">Follow existing pytest patterns in test_push_notification_service.py</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="GET /api/v1/push/preferences" kind="REST endpoint">
+      <signature>GET /api/v1/push/preferences -> NotificationPreferencesResponse</signature>
+      <path>backend/app/api/v1/push.py</path>
+      <notes>Returns preferences for current subscription (identified by endpoint or subscription_id)</notes>
+    </interface>
+    <interface name="PUT /api/v1/push/preferences" kind="REST endpoint">
+      <signature>PUT /api/v1/push/preferences (NotificationPreferencesUpdate) -> NotificationPreferencesResponse</signature>
+      <path>backend/app/api/v1/push.py</path>
+      <notes>Updates preferences for current subscription</notes>
+    </interface>
+    <interface name="NotificationPreference" kind="SQLAlchemy model">
+      <signature>
+        class NotificationPreference(Base):
+            id: str (UUID)
+            subscription_id: str (FK to PushSubscription.id)
+            enabled_cameras: JSON[list[str]] (null = all)
+            enabled_object_types: JSON[list[str]] (null = all)
+            quiet_hours_enabled: bool
+            quiet_hours_start: str (HH:MM)
+            quiet_hours_end: str (HH:MM)
+            timezone: str
+            sound_enabled: bool
+            created_at: datetime
+            updated_at: datetime
+      </signature>
+      <path>backend/app/models/notification_preference.py</path>
+    </interface>
+    <interface name="should_send_notification" kind="function">
+      <signature>
+        def should_send_notification(
+            db: Session,
+            subscription_id: str,
+            camera_id: str,
+            smart_detection_type: Optional[str]
+        ) -> bool
+      </signature>
+      <path>backend/app/services/push_notification_service.py</path>
+      <notes>Returns True if notification should be sent based on preferences (camera enabled, object type enabled, not in quiet hours)</notes>
+    </interface>
+    <interface name="is_within_quiet_hours" kind="function">
+      <signature>
+        def is_within_quiet_hours(
+            start: str,
+            end: str,
+            timezone: str,
+            now: datetime = None
+        ) -> bool
+      </signature>
+      <path>backend/app/services/push_notification_service.py</path>
+      <notes>Returns True if current time is within quiet hours. Handles overnight spans.</notes>
+    </interface>
+    <interface name="INotificationPreferences" kind="TypeScript interface">
+      <signature>
+        interface INotificationPreferences {
+            enabled_cameras: string[] | null;
+            enabled_object_types: string[] | null;
+            quiet_hours_enabled: boolean;
+            quiet_hours_start: string | null;
+            quiet_hours_end: string | null;
+            timezone: string;
+            sound_enabled: boolean;
+        }
+      </signature>
+      <path>frontend/types/push.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend: pytest with pytest-asyncio for async tests. Mock external services (pywebpush).
+      Frontend: Vitest with Testing Library. Mock API client responses.
+      Coverage target: 70%+ for new code.
+      Follow existing patterns in test_push_notification_service.py.
+    </standards>
+    <locations>
+      <location>backend/tests/test_services/test_push_notification_service.py</location>
+      <location>backend/tests/test_api/test_push.py (create new)</location>
+      <location>frontend/components/settings/__tests__/ (create new)</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test camera filtering: subscription with enabled_cameras=[cam1] receives notification only for cam1</idea>
+      <idea ac="2">Test object type filtering: subscription with enabled_object_types=[person] ignores vehicle events</idea>
+      <idea ac="3">Test quiet hours: notification blocked during 22:00-06:00 quiet hours</idea>
+      <idea ac="4">Test timezone: 22:00 quiet hours in America/New_York vs UTC</idea>
+      <idea ac="4">Test overnight quiet hours: 22:00-06:00 correctly blocks 23:00 and 05:00</idea>
+      <idea ac="5">Test sound option: silent=true passed to notification when sound_enabled=false</idea>
+      <idea ac="6">Test persistence: preferences survive browser session via backend storage</idea>
+      <idea ac="7">Test API validation: invalid timezone rejected, invalid time format rejected</idea>
+      <idea ac="8">Test defaults: new subscription gets preferences with null (all) cameras and types</idea>
+      <idea ac="all">Integration test: full flow from event -> preference check -> notification send/skip</idea>
+    </ideas>
+  </tests>
+</story-context>

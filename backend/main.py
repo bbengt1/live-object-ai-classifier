@@ -1,5 +1,5 @@
 """
-FastAPI application entry point for Live Object AI Classifier
+FastAPI application entry point for ArgusAI
 
 Initializes the FastAPI app, registers routers, and sets up startup/shutdown events.
 """
@@ -32,9 +32,16 @@ from app.api.v1.logs import router as logs_router
 from app.api.v1.auth import router as auth_router, ensure_admin_exists, limiter
 from app.api.v1.protect import router as protect_router  # Story P2-1.1: UniFi Protect
 from app.api.v1.system_notifications import router as system_notifications_router  # Story P3-7.4: Cost Alerts
+from app.api.v1.push import router as push_router  # Story P4-1.1: Web Push
+from app.api.v1.integrations import router as integrations_router  # Story P4-2.1: MQTT
+from app.api.v1.context import router as context_router  # Story P4-3.1: Embeddings
 from app.services.event_processor import initialize_event_processor, shutdown_event_processor
 from app.services.cleanup_service import get_cleanup_service
 from app.services.protect_service import get_protect_service  # Story P2-1.4: Protect WebSocket
+from app.services.mqtt_service import initialize_mqtt_service, shutdown_mqtt_service  # Story P4-2.1: MQTT
+from app.services.mqtt_discovery_service import initialize_discovery_service, get_discovery_service  # Story P4-2.2: HA Discovery
+from app.services.mqtt_status_service import initialize_status_sensors  # Story P4-2.5: Camera Status Sensors
+from app.services.pattern_service import get_pattern_service  # Story P4-3.5: Pattern Detection
 
 # Application version
 APP_VERSION = "1.0.0"
@@ -141,6 +148,40 @@ async def scheduled_backup_job():
         logger.error(f"Scheduled backup failed: {e}", exc_info=True)
 
 
+async def scheduled_pattern_calculation_job():
+    """
+    Scheduled pattern calculation job that runs hourly (Story P4-3.5)
+
+    Recalculates activity patterns for all enabled cameras based on their
+    historical event data. Patterns are used to provide timing context in AI descriptions.
+    """
+    try:
+        logger.info("Starting scheduled pattern calculation")
+
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            # Get pattern service and recalculate all patterns
+            pattern_service = get_pattern_service()
+            result = await pattern_service.recalculate_all_patterns(db)
+
+            logger.info(
+                f"Scheduled pattern calculation complete: {result['patterns_calculated']} patterns updated, "
+                f"{result['patterns_skipped']} skipped",
+                extra={
+                    "event_type": "scheduled_pattern_calculation_complete",
+                    **result
+                }
+            )
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Scheduled pattern calculation failed: {e}", exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -236,12 +277,21 @@ async def lifespan(app: FastAPI):
         replace_existing=True
     )
 
+    # Add pattern calculation job (Story P4-3.5) - Hourly
+    scheduler.add_job(
+        scheduled_pattern_calculation_job,
+        trigger=CronTrigger(minute=0),  # Every hour at :00
+        id="hourly_pattern_calculation",
+        name="Hourly activity pattern calculation",
+        replace_existing=True
+    )
+
     scheduler.start()
     logger.info(
         "Scheduler started",
         extra={
             "event_type": "scheduler_init",
-            "jobs": ["daily_cleanup", "system_metrics_update", "daily_backup"]
+            "jobs": ["daily_cleanup", "system_metrics_update", "daily_backup", "hourly_pattern_calculation"]
         }
     )
 
@@ -366,6 +416,36 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # Initialize MQTT service (Story P4-2.1, AC1, AC2)
+    try:
+        await initialize_mqtt_service()
+        logger.info(
+            "MQTT service initialized",
+            extra={"event_type": "mqtt_init_complete"}
+        )
+
+        # Initialize MQTT discovery service (Story P4-2.2)
+        # Must be after MQTT service to register on_connect callback
+        await initialize_discovery_service()
+        logger.info(
+            "MQTT discovery service initialized",
+            extra={"event_type": "mqtt_discovery_init_complete"}
+        )
+
+        # Initialize MQTT status sensors (Story P4-2.5)
+        # Publishes initial camera statuses and sets up scheduler for count updates
+        await initialize_status_sensors()
+        logger.info(
+            "MQTT status sensors initialized",
+            extra={"event_type": "mqtt_status_sensors_init_complete"}
+        )
+    except Exception as e:
+        # MQTT failure should not prevent app startup
+        logger.warning(
+            f"MQTT initialization failed (non-fatal): {e}",
+            extra={"event_type": "mqtt_init_failed", "error": str(e)}
+        )
+
     logger.info(
         "Application startup complete",
         extra={
@@ -383,7 +463,20 @@ async def lifespan(app: FastAPI):
         extra={"event_type": "app_shutdown_start", "version": APP_VERSION}
     )
 
-    # Disconnect Protect controllers first (Story P2-1.4, AC5)
+    # Disconnect MQTT service (Story P4-2.1)
+    try:
+        await shutdown_mqtt_service()
+        logger.info(
+            "MQTT service disconnected",
+            extra={"event_type": "mqtt_shutdown_complete"}
+        )
+    except Exception as e:
+        logger.error(
+            f"Error disconnecting MQTT: {e}",
+            extra={"event_type": "mqtt_shutdown_error", "error": str(e)}
+        )
+
+    # Disconnect Protect controllers (Story P2-1.4, AC5)
     # Must happen before other services shutdown
     try:
         await protect_service.disconnect_all(timeout=10.0)
@@ -427,7 +520,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Live Object AI Classifier API",
+    title="ArgusAI API",
     description="API for camera-based motion detection and AI-powered object description",
     version="1.0.0",
     docs_url="/docs",
@@ -500,6 +593,9 @@ app.include_router(logs_router, prefix=settings.API_V1_PREFIX)  # Story 6.2 - Lo
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)  # Story 6.3 - Authentication
 app.include_router(protect_router, prefix=settings.API_V1_PREFIX)  # Story P2-1.1 - UniFi Protect
 app.include_router(system_notifications_router, prefix=settings.API_V1_PREFIX)  # Story P3-7.4 - Cost Alerts
+app.include_router(push_router, prefix=settings.API_V1_PREFIX)  # Story P4-1.1 - Web Push
+app.include_router(integrations_router, prefix=settings.API_V1_PREFIX)  # Story P4-2.1 - MQTT
+app.include_router(context_router, prefix=settings.API_V1_PREFIX)  # Story P4-3.1 - Embeddings
 
 # Thumbnail serving endpoint (with CORS support)
 from fastapi.responses import FileResponse, Response as FastAPIResponse
@@ -529,7 +625,7 @@ async def get_thumbnail(date: str, filename: str):
 async def root():
     """Root endpoint - API status check"""
     return {
-        "name": "Live Object AI Classifier API",
+        "name": "ArgusAI API",
         "version": "1.0.0",
         "status": "running"
     }

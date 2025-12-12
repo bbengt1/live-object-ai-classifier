@@ -542,3 +542,153 @@ class TestEventProcessorIntegration:
 
         # Stop processor
         await processor.stop(timeout=1.0)
+
+
+@pytest.mark.asyncio
+class TestMQTTEventPublishing:
+    """Tests for MQTT event publishing in EventProcessor (Story P4-2.3)."""
+
+    async def test_publish_event_to_mqtt_success(self):
+        """Test successful MQTT publish (AC1)."""
+        from app.services.event_processor import EventProcessor
+        from app.services.mqtt_service import MQTTService
+
+        processor = EventProcessor(worker_count=2)
+
+        # Create mock MQTT service
+        mock_mqtt_service = MagicMock(spec=MQTTService)
+        mock_mqtt_service.publish = AsyncMock(return_value=True)
+
+        # Test payload
+        payload = {
+            "event_id": "test-event-123",
+            "camera_id": "camera-456",
+            "description": "Test event"
+        }
+
+        await processor._publish_event_to_mqtt(
+            mock_mqtt_service,
+            "liveobject/camera/camera-456/event",
+            payload,
+            "test-event-123"
+        )
+
+        # Verify publish was called with correct args
+        mock_mqtt_service.publish.assert_called_once_with(
+            "liveobject/camera/camera-456/event",
+            payload
+        )
+
+    async def test_publish_event_to_mqtt_failure_no_propagate(self):
+        """Test MQTT publish failure doesn't propagate exception (AC5, AC6)."""
+        from app.services.event_processor import EventProcessor
+        from app.services.mqtt_service import MQTTService
+
+        processor = EventProcessor(worker_count=2)
+
+        # Create mock MQTT service that raises exception
+        mock_mqtt_service = MagicMock(spec=MQTTService)
+        mock_mqtt_service.publish = AsyncMock(side_effect=Exception("MQTT broker unavailable"))
+
+        # This should NOT raise an exception
+        await processor._publish_event_to_mqtt(
+            mock_mqtt_service,
+            "liveobject/camera/test/event",
+            {"event_id": "123"},
+            "123"
+        )
+
+        # If we get here, the exception was caught (test passes)
+        mock_mqtt_service.publish.assert_called_once()
+
+    async def test_publish_event_to_mqtt_returns_false_logged(self):
+        """Test MQTT publish returning False is handled gracefully."""
+        from app.services.event_processor import EventProcessor
+        from app.services.mqtt_service import MQTTService
+
+        processor = EventProcessor(worker_count=2)
+
+        # Create mock MQTT service that returns False
+        mock_mqtt_service = MagicMock(spec=MQTTService)
+        mock_mqtt_service.publish = AsyncMock(return_value=False)
+
+        # This should NOT raise
+        await processor._publish_event_to_mqtt(
+            mock_mqtt_service,
+            "liveobject/camera/test/event",
+            {"event_id": "123"},
+            "123"
+        )
+
+        mock_mqtt_service.publish.assert_called_once()
+
+    async def test_mqtt_publish_latency_under_100ms(self):
+        """Test MQTT publish adds less than 100ms latency (AC5)."""
+        import time
+        from app.services.event_processor import EventProcessor
+        from app.services.mqtt_service import MQTTService
+
+        processor = EventProcessor(worker_count=2)
+
+        # Create mock MQTT service with 50ms simulated delay
+        async def slow_publish(topic, payload):
+            await asyncio.sleep(0.05)  # 50ms
+            return True
+
+        mock_mqtt_service = MagicMock(spec=MQTTService)
+        mock_mqtt_service.publish = slow_publish
+
+        payload = {"event_id": "test-123"}
+
+        start_time = time.time()
+        await processor._publish_event_to_mqtt(
+            mock_mqtt_service,
+            "liveobject/camera/test/event",
+            payload,
+            "test-123"
+        )
+        end_time = time.time()
+
+        duration_ms = (end_time - start_time) * 1000
+
+        # Should complete within 100ms (50ms simulated + overhead)
+        assert duration_ms < 100, f"MQTT publish took {duration_ms:.1f}ms, exceeds 100ms target"
+
+    async def test_mqtt_publish_skipped_when_disconnected(self):
+        """Test MQTT publish is skipped when service not connected (AC6)."""
+        from app.services.mqtt_service import MQTTService
+
+        # Create mock MQTT service that is not connected
+        mock_mqtt_service = MQTTService()
+        mock_mqtt_service._connected = False
+
+        # Verify is_connected returns False
+        assert mock_mqtt_service.is_connected is False
+
+        # Test that publish returns False when not connected
+        result = await mock_mqtt_service.publish(
+            "liveobject/camera/test/event",
+            {"event_id": "123"}
+        )
+
+        # Should return False without attempting to publish
+        assert result is False
+
+    async def test_mqtt_payload_has_correct_topic_format(self):
+        """Test MQTT topic follows correct format (AC1)."""
+        from app.services.mqtt_service import MQTTService, MQTTConfig
+
+        service = MQTTService()
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            topic_prefix="liveobject"
+        )
+
+        camera_id = "abc-123-def-456"
+        topic = service.get_event_topic(camera_id)
+
+        # Verify topic format
+        assert topic == f"liveobject/camera/{camera_id}/event"
+        assert topic.startswith("liveobject/camera/")
+        assert topic.endswith("/event")
+        assert camera_id in topic

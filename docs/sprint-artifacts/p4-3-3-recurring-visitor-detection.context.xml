@@ -1,0 +1,332 @@
+<story-context id="p4-3-3-recurring-visitor-detection" v="1.0">
+  <metadata>
+    <epicId>P4-3</epicId>
+    <storyId>P4-3.3</storyId>
+    <title>Recurring Visitor Detection</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-11</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p4-3-3-recurring-visitor-detection.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>home security system user</asA>
+    <iWant>the system to automatically recognize and track recurring visitors based on visual similarity</iWant>
+    <soThat>I can see when the same person or vehicle has been seen before, with information like "first seen", "last seen", and visit count</soThat>
+    <tasks>
+      <task id="1" ac="2">Create RecognizedEntity database model with fields: id, entity_type, name, reference_embedding, first_seen_at, last_seen_at, occurrence_count</task>
+      <task id="2" ac="3">Create EntityEvent junction model with entity_id, event_id, similarity_score, created_at</task>
+      <task id="3" ac="1,4,5,6">Implement EntityService.match_or_create_entity() using batch cosine similarity</task>
+      <task id="4" ac="7,8,9,10">Implement entity CRUD operations (get_all, get_one, update, delete)</task>
+      <task id="5" ac="7,8,9,10">Create entity API endpoints in backend/app/api/v1/context.py</task>
+      <task id="6" ac="11,12">Integrate entity matching into event_processor.py after Step 9 (embedding generation)</task>
+      <task id="7" ac="13">Optimize performance with caching - target &lt;200ms for 1000 entities</task>
+      <task id="8" ac="14">Handle edge cases: service unavailable, empty DB, duplicates</task>
+      <task id="9" ac="2,4,5,6">Write unit tests for models and EntityService</task>
+      <task id="10" ac="1,3,5,11">Write integration tests for pipeline and clustering</task>
+      <task id="11" ac="7,8,9,10,12">Write API tests for all entity endpoints</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">System clusters similar event embeddings to identify recurring entities</criterion>
+    <criterion id="2">RecognizedEntity model stores: entity_type, name (nullable), reference_embedding, first_seen_at, last_seen_at, occurrence_count</criterion>
+    <criterion id="3">EntityEvent junction table links entities to events with similarity scores</criterion>
+    <criterion id="4">EntityService.match_or_create_entity(event_id, embedding, threshold=0.75) returns entity or creates new</criterion>
+    <criterion id="5">When match found above threshold: occurrence_count++, last_seen_at updated</criterion>
+    <criterion id="6">When no match above threshold: new entity created with event as first occurrence</criterion>
+    <criterion id="7">GET /api/v1/entities returns list of entities with occurrence stats</criterion>
+    <criterion id="8">GET /api/v1/entities/{id} returns entity with associated events</criterion>
+    <criterion id="9">PUT /api/v1/entities/{id} allows naming entity</criterion>
+    <criterion id="10">DELETE /api/v1/entities/{id} removes entity and unlinks events</criterion>
+    <criterion id="11">Entity matching integrated into event pipeline after embedding generation</criterion>
+    <criterion id="12">Event response includes matched_entity: { id, name, occurrence_count, first_seen_at }</criterion>
+    <criterion id="13">Performance: Entity matching &lt;200ms with 1000 entities</criterion>
+    <criterion id="14">Graceful handling when embedding service unavailable</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/architecture.md" relevance="high">
+        <sections>
+          <section name="Phase 4 Database Schema Additions">recognized_entities and entity_events table schemas</section>
+          <section name="Phase 4 API Contracts">GET/PUT/DELETE /api/v1/entities endpoint contracts</section>
+          <section name="Phase 4 Project Structure Additions">File locations for new services and models</section>
+        </sections>
+      </doc>
+      <doc path="docs/epics-phase4.md" relevance="high">
+        <sections>
+          <section name="Epic P4-3: Temporal Context Engine">Epic context and story breakdown</section>
+          <section name="Story P4-3.3">Specific story requirements: cluster, create entities, track, match</section>
+        </sections>
+      </doc>
+      <doc path="docs/PRD-phase4.md" relevance="medium">
+        <sections>
+          <section name="FR2">System identifies recurring visitors based on appearance similarity</section>
+          <section name="FR5">System maintains a "familiar faces/vehicles" registry</section>
+        </sections>
+      </doc>
+      <doc path="docs/sprint-artifacts/p4-3-2-similarity-search.md" relevance="high">
+        <summary>Previous story - SimilarityService with batch_cosine_similarity. REUSE this service.</summary>
+      </doc>
+      <doc path="docs/sprint-artifacts/p4-3-1-event-embedding-generation.md" relevance="high">
+        <summary>Previous story - EmbeddingService for CLIP embeddings. REUSE this service.</summary>
+      </doc>
+    </docs>
+    <code>
+      <file path="backend/app/services/embedding_service.py" action="read-only">
+        <description>EmbeddingService with CLIP ViT-B/32 - generates 512-dim embeddings. Use get_embedding_service() singleton.</description>
+        <keyMethods>
+          <method name="get_embedding_service()">Returns global singleton instance</method>
+          <method name="generate_embedding(image_bytes)">Returns list[float] 512-dim embedding</method>
+          <method name="store_embedding(db, event_id, embedding)">Stores in event_embeddings table</method>
+          <method name="get_embedding_vector(db, event_id)">Returns list[float] or None</method>
+        </keyMethods>
+      </file>
+      <file path="backend/app/services/similarity_service.py" action="read-only">
+        <description>SimilarityService with cosine similarity. Use get_similarity_service() singleton.</description>
+        <keyMethods>
+          <method name="get_similarity_service()">Returns global singleton instance</method>
+          <method name="cosine_similarity(vec1, vec2)">Single pair comparison, returns float</method>
+          <method name="batch_cosine_similarity(query, candidates)">Vectorized comparison, returns list[float]</method>
+          <method name="find_similar_events(db, event_id, ...)">Returns list[SimilarEvent]</method>
+        </keyMethods>
+        <pattern>Use batch_cosine_similarity for efficient entity matching</pattern>
+      </file>
+      <file path="backend/app/api/v1/context.py" action="modify">
+        <description>Context API endpoints. ADD entity endpoints here (GET/PUT/DELETE /entities).</description>
+        <existingEndpoints>
+          <endpoint>POST /context/embeddings/batch</endpoint>
+          <endpoint>GET /context/embeddings/{event_id}</endpoint>
+          <endpoint>GET /context/embeddings/stats</endpoint>
+          <endpoint>GET /context/similar/{event_id}</endpoint>
+        </existingEndpoints>
+        <addEndpoints>
+          <endpoint>GET /entities - list all entities</endpoint>
+          <endpoint>GET /entities/{id} - entity detail with events</endpoint>
+          <endpoint>PUT /entities/{id} - update entity name</endpoint>
+          <endpoint>DELETE /entities/{id} - delete entity</endpoint>
+        </addEndpoints>
+      </file>
+      <file path="backend/app/services/event_processor.py" action="modify">
+        <description>Event processing pipeline. Add entity matching after Step 9 (embedding generation).</description>
+        <insertionPoint line="904">After embedding generation in _process_event(), add Step 10: Entity matching</insertionPoint>
+        <pattern>
+          # Step 10: Match or create entity (Story P4-3.3)
+          try:
+              from app.services.entity_service import get_entity_service
+              entity_service = get_entity_service()
+              # Only if embedding was generated
+              if embedding_vector:
+                  result = await entity_service.match_or_create_entity(...)
+                  # Update event with matched_entity_id
+          except Exception as entity_error:
+              # Graceful fallback - don't block event processing
+              logger.warning(...)
+        </pattern>
+      </file>
+      <file path="backend/app/models/__init__.py" action="modify">
+        <description>Model exports. Add RecognizedEntity, EntityEvent to exports.</description>
+      </file>
+      <file path="backend/app/models/event_embedding.py" action="read-only">
+        <description>EventEmbedding model - reference for embedding storage pattern (JSON in Text column).</description>
+      </file>
+      <file path="backend/app/models/recognized_entity.py" action="create">
+        <description>NEW: RecognizedEntity and EntityEvent models</description>
+        <schema>
+          <model name="RecognizedEntity">
+            <field name="id" type="Text" pk="true">UUID primary key</field>
+            <field name="entity_type" type="Text" nullable="false">person, vehicle, unknown</field>
+            <field name="name" type="Text" nullable="true">User-assigned name</field>
+            <field name="reference_embedding" type="Text" nullable="false">JSON array of 512 floats</field>
+            <field name="first_seen_at" type="DateTime" nullable="false">First occurrence timestamp</field>
+            <field name="last_seen_at" type="DateTime" nullable="false">Most recent occurrence</field>
+            <field name="occurrence_count" type="Integer" default="1">Visit count</field>
+            <field name="created_at" type="DateTime">Record creation time</field>
+            <field name="updated_at" type="DateTime">Record update time</field>
+          </model>
+          <model name="EntityEvent">
+            <field name="entity_id" type="Text" fk="recognized_entities.id" pk="true">Entity reference</field>
+            <field name="event_id" type="Text" fk="events.id" pk="true">Event reference</field>
+            <field name="similarity_score" type="Float" nullable="false">Match score 0.0-1.0</field>
+            <field name="created_at" type="DateTime">Link creation time</field>
+          </model>
+        </schema>
+      </file>
+      <file path="backend/app/services/entity_service.py" action="create">
+        <description>NEW: EntityService for entity matching and management</description>
+        <keyMethods>
+          <method name="get_entity_service()">Returns global singleton instance</method>
+          <method name="match_or_create_entity(db, event_id, embedding, entity_type, threshold)">Core matching logic</method>
+          <method name="get_all_entities(db, limit, offset)">List entities with stats</method>
+          <method name="get_entity(db, entity_id)">Get entity with recent events</method>
+          <method name="update_entity(db, entity_id, name)">Update entity name</method>
+          <method name="delete_entity(db, entity_id)">Delete entity (cascades to EntityEvent)</method>
+          <method name="_invalidate_cache()">Clear entity embedding cache</method>
+        </keyMethods>
+        <pattern>
+          class EntityService:
+              def __init__(self, similarity_service):
+                  self._similarity_service = similarity_service
+                  self._entity_cache = {}  # id -> embedding list
+
+              async def match_or_create_entity(self, db, event_id, embedding, entity_type="unknown", threshold=0.75):
+                  # 1. Load entity embeddings (cache or DB)
+                  # 2. batch_cosine_similarity(embedding, all_entity_embeddings)
+                  # 3. Find best match above threshold
+                  # 4. If match: update entity, create EntityEvent link
+                  # 5. If no match: create new entity, link event
+                  # 6. Return EntityMatchResult
+        </pattern>
+      </file>
+      <file path="backend/alembic/versions/XXXX_add_recognized_entities.py" action="create">
+        <description>NEW: Alembic migration for recognized_entities and entity_events tables</description>
+        <tables>
+          <table name="recognized_entities">
+            <column>id TEXT PRIMARY KEY</column>
+            <column>entity_type TEXT NOT NULL</column>
+            <column>name TEXT</column>
+            <column>reference_embedding TEXT NOT NULL</column>
+            <column>first_seen_at DATETIME NOT NULL</column>
+            <column>last_seen_at DATETIME NOT NULL</column>
+            <column>occurrence_count INTEGER DEFAULT 1</column>
+            <column>created_at DATETIME</column>
+            <column>updated_at DATETIME</column>
+          </table>
+          <table name="entity_events">
+            <column>entity_id TEXT NOT NULL REFERENCES recognized_entities(id) ON DELETE CASCADE</column>
+            <column>event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE</column>
+            <column>similarity_score FLOAT NOT NULL</column>
+            <column>created_at DATETIME</column>
+            <column>PRIMARY KEY (entity_id, event_id)</column>
+          </table>
+          <index name="idx_recognized_entities_last_seen">last_seen_at DESC</index>
+          <index name="idx_entity_events_event_id">event_id</index>
+        </tables>
+      </file>
+      <file path="backend/app/schemas/event.py" action="modify">
+        <description>Add matched_entity field to EventResponse schema</description>
+        <addField>matched_entity: Optional[EntitySummary] = None</addField>
+      </file>
+    </code>
+    <dependencies>
+      <dependency name="sentence-transformers" version=">=2.2.0" status="installed">CLIP model for embeddings (from P4-3.1)</dependency>
+      <dependency name="numpy" status="installed">Batch cosine similarity (from P4-3.2)</dependency>
+      <dependency name="sqlalchemy" version=">=2.0.36" status="installed">ORM for models</dependency>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="performance">Entity matching must complete in &lt;200ms with up to 1000 entities</constraint>
+    <constraint type="architecture">Entity reference embedding = first event's embedding (simplest approach)</constraint>
+    <constraint type="architecture">Threshold 0.75 default, configurable parameter</constraint>
+    <constraint type="architecture">Use existing SimilarityService - DO NOT recreate cosine similarity</constraint>
+    <constraint type="architecture">Use existing EmbeddingService - DO NOT recreate embedding logic</constraint>
+    <constraint type="resilience">Entity matching failures must not block event processing (graceful fallback)</constraint>
+    <constraint type="storage">Embeddings stored as JSON arrays in Text columns (SQLite compatible)</constraint>
+    <constraint type="cascade">EntityEvent entries cascade delete when entity OR event deleted</constraint>
+  </constraints>
+
+  <interfaces>
+    <api name="GET /api/v1/entities">
+      <request>
+        <query name="limit" type="int" default="50">Max entities to return</query>
+        <query name="offset" type="int" default="0">Pagination offset</query>
+        <query name="type" type="string" optional="true">Filter by entity_type (person, vehicle)</query>
+        <query name="named_only" type="bool" default="false">Only return named entities</query>
+      </request>
+      <response>
+        <field name="entities" type="list[EntityResponse]">Entity list</field>
+        <field name="total" type="int">Total entity count</field>
+      </response>
+    </api>
+    <api name="GET /api/v1/entities/{id}">
+      <request>
+        <path name="id" type="string">Entity UUID</path>
+      </request>
+      <response>
+        <field name="id" type="string">Entity UUID</field>
+        <field name="entity_type" type="string">person, vehicle, unknown</field>
+        <field name="name" type="string" nullable="true">User-assigned name</field>
+        <field name="first_seen_at" type="datetime">First occurrence</field>
+        <field name="last_seen_at" type="datetime">Most recent occurrence</field>
+        <field name="occurrence_count" type="int">Visit count</field>
+        <field name="recent_events" type="list[EventSummary]">Last 10 associated events</field>
+      </response>
+    </api>
+    <api name="PUT /api/v1/entities/{id}">
+      <request>
+        <path name="id" type="string">Entity UUID</path>
+        <body name="name" type="string">New entity name</body>
+      </request>
+      <response type="EntityResponse">Updated entity</response>
+    </api>
+    <api name="DELETE /api/v1/entities/{id}">
+      <request>
+        <path name="id" type="string">Entity UUID</path>
+      </request>
+      <response status="204">No content on success</response>
+    </api>
+    <internal name="EntityMatchResult">
+      <field name="entity" type="EntityResponse">Matched or created entity</field>
+      <field name="similarity_score" type="float">Match score (1.0 for new entities)</field>
+      <field name="is_new" type="bool">True if new entity was created</field>
+    </internal>
+  </interfaces>
+
+  <tests>
+    <standards>
+      <standard>Follow testing patterns from test_similarity_service.py (29 unit tests)</standard>
+      <standard>Follow integration patterns from test_similarity_integration.py (11 tests)</standard>
+      <standard>Follow API patterns from test_similarity_api.py (14 tests)</standard>
+      <standard>Target similar coverage: ~50 tests total</standard>
+      <standard>Use pytest fixtures for database and service setup</standard>
+      <standard>Mock external services (embedding generation) in unit tests</standard>
+    </standards>
+    <locations>
+      <location path="backend/tests/test_services/test_entity_service.py" action="create">Unit tests for EntityService</location>
+      <location path="backend/tests/test_integration/test_entity_integration.py" action="create">Integration tests for entity matching</location>
+      <location path="backend/tests/test_api/test_entity_api.py" action="create">API tests for entity endpoints</location>
+    </locations>
+    <ideas>
+      <category name="Unit Tests (EntityService)">
+        <test>test_match_or_create_with_no_existing_entities_creates_new</test>
+        <test>test_match_or_create_with_matching_entity_updates_existing</test>
+        <test>test_match_or_create_below_threshold_creates_new</test>
+        <test>test_match_or_create_updates_occurrence_count</test>
+        <test>test_match_or_create_updates_last_seen_at</test>
+        <test>test_match_or_create_creates_entity_event_link</test>
+        <test>test_get_all_entities_returns_paginated_list</test>
+        <test>test_get_entity_returns_with_recent_events</test>
+        <test>test_update_entity_name</test>
+        <test>test_delete_entity_cascades_to_entity_events</test>
+        <test>test_cache_invalidation_on_new_entity</test>
+        <test>test_cache_invalidation_on_delete</test>
+        <test>test_threshold_filtering</test>
+      </category>
+      <category name="Integration Tests">
+        <test>test_full_pipeline_creates_entity_for_new_visitor</test>
+        <test>test_full_pipeline_matches_returning_visitor</test>
+        <test>test_sequential_events_same_person_increment_count</test>
+        <test>test_entity_deletion_unlinks_events</test>
+        <test>test_event_deletion_unlinks_from_entity</test>
+        <test>test_embedding_service_failure_does_not_block_pipeline</test>
+      </category>
+      <category name="API Tests">
+        <test>test_get_entities_returns_list</test>
+        <test>test_get_entities_pagination</test>
+        <test>test_get_entities_filter_by_type</test>
+        <test>test_get_entity_by_id</test>
+        <test>test_get_entity_not_found</test>
+        <test>test_put_entity_updates_name</test>
+        <test>test_delete_entity_success</test>
+        <test>test_delete_entity_not_found</test>
+        <test>test_event_response_includes_matched_entity</test>
+      </category>
+      <category name="Performance Tests">
+        <test>test_match_1000_entities_under_200ms</test>
+        <test>test_cache_hit_performance</test>
+      </category>
+    </ideas>
+  </tests>
+</story-context>

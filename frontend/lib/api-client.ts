@@ -1,5 +1,5 @@
 /**
- * API Client for Live Object AI Classifier Backend
+ * API Client for ArgusAI Backend
  * Base URL configured via NEXT_PUBLIC_API_URL environment variable
  */
 
@@ -23,6 +23,12 @@ import type {
   IAIUsageResponse,
   IAIUsageQueryParams,
   ICostCapStatus,
+  MQTTConfigResponse,
+  MQTTConfigUpdate,
+  MQTTStatusResponse,
+  MQTTTestRequest,
+  MQTTTestResponse,
+  MQTTPublishDiscoveryResponse,
 } from '@/types/settings';
 import type {
   IAlertRule,
@@ -358,6 +364,27 @@ export const apiClient = {
      */
     delete: async (id: string): Promise<void> => {
       await apiFetch<void>(`/events/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    /**
+     * Delete multiple events by ID (FF-010)
+     * @param ids Array of event UUIDs to delete
+     * @returns Deletion statistics
+     * @throws ApiError with 400 if no IDs provided or too many (>100)
+     * @throws ApiError with 404 if no events found
+     */
+    bulkDelete: async (ids: string[]): Promise<{
+      deleted_count: number;
+      thumbnails_deleted: number;
+      frames_deleted: number;
+      space_freed_mb: number;
+      not_found_count: number;
+    }> => {
+      const params = new URLSearchParams();
+      ids.forEach(id => params.append('event_ids', id));
+      return apiFetch(`/events/bulk?${params.toString()}`, {
         method: 'DELETE',
       });
     },
@@ -1360,6 +1387,219 @@ export const apiClient = {
       });
     },
   },
+
+  // ============================================================================
+  // Push Notifications (Story P4-1.2)
+  // ============================================================================
+  push: {
+    /**
+     * Get VAPID public key for push subscription
+     * The frontend uses this key as applicationServerKey when calling pushManager.subscribe()
+     * @returns VAPID public key in URL-safe base64 format
+     */
+    getVapidPublicKey: async (): Promise<{ public_key: string }> => {
+      return apiFetch<{ public_key: string }>('/push/vapid-public-key');
+    },
+
+    /**
+     * Register a push subscription
+     * Stores the browser's push subscription for receiving notifications
+     * If the endpoint already exists, the subscription is updated (upsert)
+     * @param subscription Browser PushSubscription data
+     * @returns Created/updated subscription with ID
+     */
+    subscribe: async (subscription: {
+      endpoint: string;
+      keys: { p256dh: string; auth: string };
+      user_agent?: string;
+    }): Promise<{ id: string; endpoint: string; created_at: string }> => {
+      return apiFetch<{ id: string; endpoint: string; created_at: string }>('/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(subscription),
+      });
+    },
+
+    /**
+     * Unsubscribe from push notifications
+     * Removes the push subscription from the database
+     * @param endpoint Push service endpoint URL to unsubscribe
+     */
+    unsubscribe: async (endpoint: string): Promise<void> => {
+      const url = `${API_BASE_URL}${API_V1_PREFIX}/push/subscribe`;
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      const token = getAuthToken();
+      if (token) {
+        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ endpoint }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
+        throw new ApiError(errorMessage, response.status, data);
+      }
+    },
+
+    /**
+     * List all push subscriptions (admin endpoint)
+     * Returns all registered push subscriptions for debugging
+     * @returns List of subscriptions with metadata
+     */
+    listSubscriptions: async (): Promise<{
+      subscriptions: Array<{
+        id: string;
+        user_id: string | null;
+        endpoint: string;
+        user_agent: string | null;
+        created_at: string | null;
+        last_used_at: string | null;
+      }>;
+      total: number;
+    }> => {
+      return apiFetch('/push/subscriptions');
+    },
+
+    /**
+     * Send a test push notification
+     * Sends a test notification to all subscribed devices
+     * @returns Test result with delivery status
+     */
+    sendTest: async (): Promise<{
+      success: boolean;
+      message: string;
+      results?: Array<{
+        subscription_id: string;
+        success: boolean;
+        error?: string;
+      }>;
+    }> => {
+      return apiFetch('/push/test', {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Get notification preferences for a subscription (Story P4-1.4)
+     * Returns preferences identified by the subscription endpoint
+     * Creates default preferences if none exist
+     * @param endpoint Push subscription endpoint URL
+     * @returns Notification preferences
+     */
+    getPreferences: async (endpoint: string): Promise<{
+      id: string;
+      subscription_id: string;
+      enabled_cameras: string[] | null;
+      enabled_object_types: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start: string | null;
+      quiet_hours_end: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+      created_at: string | null;
+      updated_at: string | null;
+    }> => {
+      return apiFetch('/push/preferences', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint }),
+      });
+    },
+
+    /**
+     * Update notification preferences for a subscription (Story P4-1.4)
+     * @param preferences Notification preferences to update
+     * @returns Updated preferences
+     */
+    updatePreferences: async (preferences: {
+      endpoint: string;
+      enabled_cameras?: string[] | null;
+      enabled_object_types?: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start?: string | null;
+      quiet_hours_end?: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+    }): Promise<{
+      id: string;
+      subscription_id: string;
+      enabled_cameras: string[] | null;
+      enabled_object_types: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start: string | null;
+      quiet_hours_end: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+      created_at: string | null;
+      updated_at: string | null;
+    }> => {
+      return apiFetch('/push/preferences', {
+        method: 'PUT',
+        body: JSON.stringify(preferences),
+      });
+    },
+  },
+
+  // ============================================================================
+  // MQTT / Home Assistant Integration (Story P4-2.4)
+  // ============================================================================
+  mqtt: {
+    /**
+     * Get current MQTT configuration
+     * @returns MQTT configuration with has_password boolean (password omitted)
+     */
+    getConfig: async (): Promise<MQTTConfigResponse> => {
+      return apiFetch<MQTTConfigResponse>('/integrations/mqtt/config');
+    },
+
+    /**
+     * Update MQTT configuration
+     * Triggers reconnect if enabled
+     * @param config Configuration to update
+     * @returns Updated configuration
+     */
+    updateConfig: async (config: MQTTConfigUpdate): Promise<MQTTConfigResponse> => {
+      return apiFetch<MQTTConfigResponse>('/integrations/mqtt/config', {
+        method: 'PUT',
+        body: JSON.stringify(config),
+      });
+    },
+
+    /**
+     * Get MQTT connection status
+     * @returns Connection status with statistics
+     */
+    getStatus: async (): Promise<MQTTStatusResponse> => {
+      return apiFetch<MQTTStatusResponse>('/integrations/mqtt/status');
+    },
+
+    /**
+     * Test MQTT connection without persisting
+     * @param testRequest Connection parameters to test
+     * @returns Test result with success/failure message
+     */
+    testConnection: async (testRequest: MQTTTestRequest): Promise<MQTTTestResponse> => {
+      return apiFetch<MQTTTestResponse>('/integrations/mqtt/test', {
+        method: 'POST',
+        body: JSON.stringify(testRequest),
+      });
+    },
+
+    /**
+     * Publish Home Assistant discovery for all cameras
+     * Requires MQTT to be connected and discovery enabled
+     * @returns Number of cameras published
+     */
+    publishDiscovery: async (): Promise<MQTTPublishDiscoveryResponse> => {
+      return apiFetch<MQTTPublishDiscoveryResponse>('/integrations/mqtt/publish-discovery', {
+        method: 'POST',
+      });
+    },
+  },
 };
 
 // Story P2-2.1: Camera Discovery Types
@@ -1410,3 +1650,13 @@ export interface ProtectCameraFiltersData {
   smart_detection_types: string[];
   is_enabled_for_ai: boolean;
 }
+
+// Story P4-1.2: Push Notification Types (re-exported from types/push.ts)
+export type {
+  IVapidPublicKeyResponse,
+  IPushSubscribeRequest,
+  IPushSubscriptionResponse,
+  IPushUnsubscribeRequest,
+  IPushSubscriptionsListResponse,
+  IPushTestResponse,
+} from '@/types/push';

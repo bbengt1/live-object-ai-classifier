@@ -5,6 +5,8 @@
  * Handles authentication and conditionally renders:
  * - Login page: No header/sidebar, full screen
  * - Protected pages: Full layout with auth check
+ *
+ * Updated for Story P4-1.5: Added PWA install prompt and update banner
  */
 
 'use client';
@@ -13,6 +15,8 @@ import { usePathname } from 'next/navigation';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { InstallPrompt } from '@/components/pwa/InstallPrompt';
+import { ServiceWorkerUpdateBanner } from '@/components/pwa/ServiceWorkerUpdateBanner';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -32,15 +36,21 @@ export function AppShell({ children }: AppShellProps) {
 
   // Protected routes: wrap with auth check and full layout
   // FF-005: Removed MobileNav (bottom bar) - mobile uses hamburger menu in Header instead
+  // IMP-003: Header hidden on desktop (lg+), only visible on mobile/tablet
   return (
     <ProtectedRoute>
       <Header />
       <Sidebar />
-      <main className="min-h-screen bg-background pt-16 lg:pl-60 transition-all duration-300">
+      {/* IMP-003: pt-16 for header space on mobile, pt-0 on desktop (header hidden) */}
+      <main className="min-h-screen bg-background pt-16 lg:pt-0 lg:pl-60 transition-all duration-300">
         <div className="container mx-auto">
           {children}
         </div>
       </main>
+      {/* PWA install prompt - shows banner for eligible users */}
+      <InstallPrompt variant="banner" />
+      {/* Service worker update banner - shows when new version available */}
+      <ServiceWorkerUpdateBanner />
     </ProtectedRoute>
   );
 }

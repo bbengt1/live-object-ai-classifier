@@ -406,7 +406,7 @@ async def get_settings(db: Session = Depends(get_db)):
     **Response:**
     ```json
     {
-        "system_name": "Live Object AI Classifier",
+        "system_name": "ArgusAI",
         "timezone": "America/Los_Angeles",
         "primary_api_key": "****abcd",
         ...
@@ -508,6 +508,11 @@ async def update_settings(
             'ai_daily_cost_cap',   # Story P3-7.3
             'ai_monthly_cost_cap',  # Story P3-7.3
             'store_analysis_frames',  # Story P3-7.5
+            # Story P4-3.4: Context-Enhanced AI Prompts Settings
+            'enable_context_enhanced_prompts',
+            'context_ab_test_percentage',
+            'context_similarity_threshold',
+            'context_time_window_days',
         }
 
         for field_name, value in update_data.items():

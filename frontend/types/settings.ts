@@ -145,3 +145,67 @@ export interface ICostCapStatus {
   is_paused: boolean;
   pause_reason: 'cost_cap_daily' | 'cost_cap_monthly' | null;
 }
+
+/**
+ * MQTT Configuration Types for Home Assistant Integration
+ * Story P4-2.4: Integration Settings UI
+ */
+
+export interface MQTTConfigResponse {
+  id: string;
+  broker_host: string;
+  broker_port: number;
+  username: string | null;
+  topic_prefix: string;
+  discovery_prefix: string;
+  discovery_enabled: boolean;
+  qos: 0 | 1 | 2;
+  enabled: boolean;
+  retain_messages: boolean;
+  use_tls: boolean;
+  has_password: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface MQTTConfigUpdate {
+  broker_host: string;
+  broker_port: number;
+  username?: string;
+  password?: string;
+  topic_prefix: string;
+  discovery_prefix: string;
+  discovery_enabled: boolean;
+  qos: 0 | 1 | 2;
+  enabled: boolean;
+  retain_messages: boolean;
+  use_tls: boolean;
+}
+
+export interface MQTTStatusResponse {
+  connected: boolean;
+  broker: string | null;
+  last_connected_at: string | null;
+  messages_published: number;
+  last_error: string | null;
+  reconnect_attempt: number;
+}
+
+export interface MQTTTestRequest {
+  broker_host: string;
+  broker_port: number;
+  username?: string;
+  password?: string;
+  use_tls: boolean;
+}
+
+export interface MQTTTestResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface MQTTPublishDiscoveryResponse {
+  success: boolean;
+  message: string;
+  cameras_published: number;
+}

@@ -27,6 +27,7 @@ import logging
 import time
 import httpx
 import numpy as np
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,8 @@ from typing import Dict, List, Optional, Set
 from contextlib import asynccontextmanager
 import os
 import json
+
+from typing import TYPE_CHECKING
 
 from app.models.camera import Camera
 from app.models.event import Event
@@ -43,6 +46,9 @@ from app.services.motion_detection_service import MotionDetectionService
 from app.services.cost_cap_service import get_cost_cap_service
 from app.services.cost_alert_service import get_cost_alert_service
 from app.core.database import SessionLocal
+
+if TYPE_CHECKING:
+    from app.services.mqtt_service import MQTTService
 
 logger = logging.getLogger(__name__)
 
@@ -587,7 +593,138 @@ class EventProcessor:
                 success = await self._store_event_with_retry(event_data, max_retries=3)
                 return success
 
-            # Step 1: Generate AI description
+            # Step 1: Generate thumbnail from frame (needed for embedding)
+            thumbnail_base64 = self._generate_thumbnail(event.frame)
+
+            # Step 2: Generate embedding early for entity matching (Story P4-3.4)
+            # This allows us to match entities BEFORE generating AI description
+            embedding_vector = None
+            entity_result = None
+
+            try:
+                if thumbnail_base64:
+                    from app.services.embedding_service import get_embedding_service
+                    import base64 as b64
+
+                    embedding_service = get_embedding_service()
+
+                    # Strip data URI prefix if present
+                    b64_str = thumbnail_base64
+                    if b64_str.startswith("data:"):
+                        comma_idx = b64_str.find(",")
+                        if comma_idx != -1:
+                            b64_str = b64_str[comma_idx + 1:]
+                    embedding_bytes = b64.b64decode(b64_str)
+
+                    # Generate embedding
+                    embedding_vector = await embedding_service.generate_embedding(embedding_bytes)
+
+                    logger.debug(
+                        f"Early embedding generated for context (camera {event.camera_name})",
+                        extra={
+                            "camera_id": event.camera_id,
+                            "embedding_dim": len(embedding_vector) if embedding_vector else 0,
+                        }
+                    )
+
+            except Exception as embed_error:
+                logger.debug(
+                    f"Early embedding generation failed (will skip context): {embed_error}",
+                    extra={"camera_id": event.camera_id}
+                )
+
+            # Step 3: Match entity for context building (Story P4-3.4)
+            # Uses read-only match_entity_only() - does NOT create entities or links
+            if embedding_vector:
+                try:
+                    from app.services.entity_service import get_entity_service
+
+                    entity_service = get_entity_service()
+
+                    with SessionLocal() as entity_db:
+                        entity_result = await entity_service.match_entity_only(
+                            db=entity_db,
+                            embedding=embedding_vector,
+                            threshold=0.75,
+                        )
+
+                    if entity_result:
+                        logger.debug(
+                            f"Entity matched for context (camera {event.camera_name})",
+                            extra={
+                                "camera_id": event.camera_id,
+                                "entity_id": entity_result.entity_id,
+                                "entity_name": entity_result.name,
+                                "similarity_score": entity_result.similarity_score,
+                            }
+                        )
+                    else:
+                        logger.debug(
+                            f"No entity match for context (camera {event.camera_name})",
+                            extra={"camera_id": event.camera_id}
+                        )
+
+                except Exception as entity_error:
+                    logger.debug(
+                        f"Entity matching for context failed (will skip context): {entity_error}",
+                        extra={"camera_id": event.camera_id}
+                    )
+
+            # Step 4: Build context-enhanced prompt (Story P4-3.4)
+            # Uses historical context from similar events and matched entity
+            context_enhanced_prompt = None
+            context_result = None
+
+            try:
+                from app.services.context_prompt_service import get_context_prompt_service
+
+                context_service = get_context_prompt_service()
+
+                # Build default base prompt (same as AI service would use)
+                base_prompt = (
+                    "Describe what you see in this image. Include: "
+                    "WHO (people, their appearance, clothing), "
+                    "WHAT (objects, vehicles, packages), "
+                    "WHERE (location in frame), "
+                    "and ACTIONS (what is happening). "
+                    "Be specific and detailed."
+                )
+
+                # Use a temporary event ID for context lookup
+                # We're looking up HISTORICAL context, not the current event
+                temp_event_id = str(uuid.uuid4())
+
+                with SessionLocal() as context_db:
+                    context_result = await context_service.build_context_enhanced_prompt(
+                        db=context_db,
+                        event_id=temp_event_id,
+                        base_prompt=base_prompt,
+                        camera_id=event.camera_id,
+                        event_time=event.timestamp,
+                        matched_entity=entity_result,  # From Step 3
+                    )
+
+                if context_result and context_result.context_included:
+                    context_enhanced_prompt = context_result.prompt
+                    logger.info(
+                        f"Context-enhanced prompt built for camera {event.camera_name}",
+                        extra={
+                            "camera_id": event.camera_id,
+                            "entity_context": context_result.entity_context_included,
+                            "similar_events": context_result.similar_events_count,
+                            "time_pattern": context_result.time_pattern_included,
+                            "context_gather_time_ms": round(context_result.context_gather_time_ms, 2),
+                        }
+                    )
+
+            except Exception as context_error:
+                # Graceful degradation - context failures don't block AI description (AC10)
+                logger.warning(
+                    f"Context building failed (proceeding without context): {context_error}",
+                    extra={"camera_id": event.camera_id, "error": str(context_error)}
+                )
+
+            # Step 5: Generate AI description (with context if available)
             logger.debug(f"Worker {worker_id}: Calling AI service for camera {event.camera_name}")
 
             ai_result = await self.ai_service.generate_description(
@@ -595,11 +732,9 @@ class EventProcessor:
                 camera_name=event.camera_name,
                 timestamp=event.timestamp.isoformat(),
                 detected_objects=event.detected_objects,
-                sla_timeout_ms=5000
+                sla_timeout_ms=5000,
+                custom_prompt=context_enhanced_prompt,  # Story P4-3.4: Pass enhanced prompt
             )
-
-            # Step 2: Generate thumbnail from frame
-            thumbnail_base64 = self._generate_thumbnail(event.frame)
 
             # Story P2-6.3 AC13: If all AI providers fail, store event without description
             # and flag for retry instead of failing completely
@@ -659,9 +794,9 @@ class EventProcessor:
             }
 
             logger.info(f"Storing event for camera {event.camera_name}: {ai_result.description[:50]}...")
-            success = await self._store_event_with_retry(event_data, max_retries=3)
+            event_id = await self._store_event_with_retry(event_data, max_retries=3)
 
-            if not success:
+            if not event_id:
                 logger.error(
                     f"Failed to store event for camera {event.camera_name}",
                     extra={"camera_id": event.camera_id}
@@ -690,6 +825,254 @@ class EventProcessor:
                 logger.warning(
                     f"Failed to check cost alerts: {alert_error}",
                     extra={"error": str(alert_error)}
+                )
+
+            # Step 6: Send push notifications (Story P4-1.1, P4-1.3)
+            try:
+                from app.services.push_notification_service import send_event_notification
+
+                # Construct thumbnail URL if we have a thumbnail
+                push_thumbnail_url = None
+                if thumbnail_base64:
+                    date_str = event.timestamp.strftime("%Y-%m-%d")
+                    push_thumbnail_url = f"/api/v1/thumbnails/{date_str}/{event_id}.jpg"
+
+                # P4-1.3: Extract smart detection type from metadata or detected objects
+                smart_detection_type = event.metadata.get("smart_detection_type")
+                if not smart_detection_type and event.detected_objects:
+                    # Map detected objects to smart detection type
+                    obj = event.detected_objects[0].lower() if event.detected_objects else None
+                    if obj in ("person", "vehicle", "package", "animal"):
+                        smart_detection_type = obj
+
+                # Fire and forget - don't await to avoid blocking
+                asyncio.create_task(
+                    send_event_notification(
+                        event_id=event_id,
+                        camera_name=event.camera_name,
+                        description=ai_result.description,
+                        thumbnail_url=push_thumbnail_url,
+                        camera_id=event.camera_id,  # P4-1.3: For notification collapse
+                        smart_detection_type=smart_detection_type,  # P4-1.3: For better title
+                    )
+                )
+                logger.debug(
+                    f"Push notification task created for event {event_id}",
+                    extra={"event_id": event_id, "camera_name": event.camera_name}
+                )
+            except Exception as push_error:
+                # Push notification failures should not block event processing
+                logger.warning(
+                    f"Failed to create push notification task: {push_error}",
+                    extra={"error": str(push_error)}
+                )
+
+            # Step 7: Publish event to MQTT for Home Assistant (Story P4-2.3)
+            try:
+                from app.services.mqtt_service import get_mqtt_service, serialize_event_for_mqtt
+
+                mqtt_service = get_mqtt_service()
+
+                # Only publish if MQTT is enabled and connected (AC6)
+                if mqtt_service.is_connected:
+                    # Build MQTT payload using event data from database
+                    # We need to fetch the stored event to get all fields
+                    with SessionLocal() as mqtt_db:
+                        stored_event = mqtt_db.query(Event).filter(Event.id == event_id).first()
+                        if stored_event:
+                            # Get API base URL for thumbnail URLs (AC3)
+                            api_base_url = mqtt_service.get_api_base_url()
+
+                            # Serialize event to MQTT payload (AC2, AC7)
+                            mqtt_payload = serialize_event_for_mqtt(
+                                stored_event,
+                                event.camera_name,
+                                api_base_url=api_base_url
+                            )
+
+                            # Get topic for this camera (AC1)
+                            topic = mqtt_service.get_event_topic(event.camera_id)
+
+                            # Fire and forget - use asyncio.create_task for non-blocking (AC5)
+                            asyncio.create_task(
+                                self._publish_event_to_mqtt(mqtt_service, topic, mqtt_payload, event_id)
+                            )
+
+                            logger.debug(
+                                f"MQTT publish task created for event {event_id}",
+                                extra={
+                                    "event_id": event_id,
+                                    "topic": topic,
+                                    "camera_id": event.camera_id
+                                }
+                            )
+            except Exception as mqtt_error:
+                # MQTT failures must not block event processing (AC5, AC6)
+                logger.warning(
+                    f"Failed to create MQTT publish task: {mqtt_error}",
+                    extra={"error": str(mqtt_error), "event_id": event_id}
+                )
+
+            # Step 8: Publish camera status sensors to MQTT (Story P4-2.5)
+            try:
+                from app.services.mqtt_service import get_mqtt_service
+
+                mqtt_service = get_mqtt_service()
+
+                if mqtt_service.is_connected:
+                    # Get stored event for full details
+                    with SessionLocal() as sensor_db:
+                        stored_event = sensor_db.query(Event).filter(Event.id == event_id).first()
+                        if stored_event:
+                            # Publish last event timestamp (AC2, AC8)
+                            asyncio.create_task(
+                                mqtt_service.publish_last_event_timestamp(
+                                    camera_id=event.camera_id,
+                                    camera_name=event.camera_name,
+                                    event_id=str(event_id),
+                                    timestamp=stored_event.timestamp,
+                                    description=ai_result.description,
+                                    smart_detection_type=stored_event.smart_detection_type
+                                )
+                            )
+
+                            # Publish activity state ON (AC4)
+                            asyncio.create_task(
+                                mqtt_service.publish_activity_state(
+                                    camera_id=event.camera_id,
+                                    state="ON",
+                                    last_event_at=stored_event.timestamp
+                                )
+                            )
+
+                            # Publish updated event counts (AC3)
+                            # Import the helper function for count calculation
+                            from app.services.mqtt_status_service import get_camera_event_counts
+                            counts = await get_camera_event_counts(event.camera_id)
+                            asyncio.create_task(
+                                mqtt_service.publish_event_counts(
+                                    camera_id=event.camera_id,
+                                    camera_name=event.camera_name,
+                                    events_today=counts["events_today"],
+                                    events_this_week=counts["events_this_week"]
+                                )
+                            )
+
+                            logger.debug(
+                                f"Status sensor publish tasks created for event {event_id}",
+                                extra={
+                                    "event_id": event_id,
+                                    "camera_id": event.camera_id
+                                }
+                            )
+            except Exception as status_error:
+                # Status sensor failures must not block event processing
+                logger.warning(
+                    f"Failed to publish status sensors: {status_error}",
+                    extra={"error": str(status_error), "event_id": event_id}
+                )
+
+            # Step 9: Store embedding for this event (Story P4-3.1, P4-3.4)
+            # Note: Embedding was already generated earlier (Step 2) for context building
+            # Here we just need to store it linked to the actual event_id
+            # AC2: Embedding generated for each new event thumbnail
+            # AC7: Graceful fallback if embedding generation fails
+            try:
+                if embedding_vector:
+                    from app.services.embedding_service import get_embedding_service
+
+                    embedding_service = get_embedding_service()
+
+                    # Store embedding in database (AC3: stored in event_embeddings table)
+                    with SessionLocal() as embed_db:
+                        await embedding_service.store_embedding(
+                            db=embed_db,
+                            event_id=event_id,
+                            embedding=embedding_vector,
+                        )
+
+                    logger.debug(
+                        f"Embedding stored for event {event_id}",
+                        extra={
+                            "event_id": event_id,
+                            "camera_id": event.camera_id,
+                            "embedding_dim": len(embedding_vector),
+                        }
+                    )
+                else:
+                    logger.debug(
+                        f"No embedding available for event {event_id} (will be generated later if needed)",
+                        extra={"event_id": event_id}
+                    )
+
+            except Exception as embedding_error:
+                # AC7: Graceful fallback - embedding failures must not block event creation
+                logger.warning(
+                    f"Embedding storage failed for event {event_id}: {embedding_error}",
+                    extra={
+                        "event_id": event_id,
+                        "camera_id": event.camera_id,
+                        "error": str(embedding_error),
+                    }
+                )
+
+            # Step 10: Match or create entity and link to event (Story P4-3.3, P4-3.4)
+            # Note: Step 3 did a read-only match for context. Now we do the full
+            # match_or_create_entity to actually link/create the entity-event relationship.
+            # AC11: Entity matching integrated into event pipeline
+            # AC14: Graceful handling when embedding service unavailable
+            try:
+                if embedding_vector:
+                    from app.services.entity_service import get_entity_service
+
+                    entity_service = get_entity_service()
+
+                    # Determine entity type from smart detection or objects detected
+                    entity_type = "unknown"
+                    if hasattr(event, 'smart_detection_type') and event.smart_detection_type in ("person", "vehicle"):
+                        entity_type = event.smart_detection_type
+                    elif event.detected_objects:
+                        objects_list = event.detected_objects if isinstance(event.detected_objects, list) else json.loads(event.detected_objects)
+                        if "person" in [o.lower() for o in objects_list]:
+                            entity_type = "person"
+                        elif "vehicle" in [o.lower() for o in objects_list]:
+                            entity_type = "vehicle"
+
+                    with SessionLocal() as entity_db:
+                        final_entity_result = await entity_service.match_or_create_entity(
+                            db=entity_db,
+                            event_id=event_id,
+                            embedding=embedding_vector,
+                            entity_type=entity_type,
+                            threshold=0.75,
+                        )
+
+                    logger.info(
+                        f"Entity {'created' if final_entity_result.is_new else 'matched'} for event {event_id}",
+                        extra={
+                            "event_id": event_id,
+                            "entity_id": final_entity_result.entity_id,
+                            "entity_type": final_entity_result.entity_type,
+                            "is_new": final_entity_result.is_new,
+                            "similarity_score": final_entity_result.similarity_score,
+                            "occurrence_count": final_entity_result.occurrence_count,
+                        }
+                    )
+                else:
+                    logger.debug(
+                        f"Skipping entity matching - no embedding available for event {event_id}",
+                        extra={"event_id": event_id}
+                    )
+
+            except Exception as entity_error:
+                # AC14: Graceful fallback - entity matching failures must not block event processing
+                logger.warning(
+                    f"Entity matching failed for event {event_id}: {entity_error}",
+                    extra={
+                        "event_id": event_id,
+                        "camera_id": event.camera_id,
+                        "error": str(entity_error),
+                    }
                 )
 
             logger.info(
@@ -721,7 +1104,7 @@ class EventProcessor:
         self,
         event_data: Dict,
         max_retries: int = 3
-    ) -> bool:
+    ) -> Optional[str]:
         """
         Store event directly to database (bypasses HTTP auth)
 
@@ -730,7 +1113,7 @@ class EventProcessor:
             max_retries: Maximum number of retry attempts
 
         Returns:
-            True if event stored successfully, False otherwise
+            Event ID string if stored successfully, None otherwise
         """
         import uuid
         from datetime import datetime
@@ -806,7 +1189,7 @@ class EventProcessor:
                     f"Event {event_id} stored successfully",
                     extra={"event_id": event_id, "camera_id": event_data["camera_id"]}
                 )
-                return True
+                return event_id  # Return event_id instead of True
 
             except Exception as e:
                 db.rollback()
@@ -825,7 +1208,64 @@ class EventProcessor:
                 await asyncio.sleep(wait_time)
 
         logger.error(f"Event storage failed after {max_retries + 1} attempts")
-        return False
+        return None
+
+    async def _publish_event_to_mqtt(
+        self,
+        mqtt_service: "MQTTService",
+        topic: str,
+        payload: dict,
+        event_id: str
+    ) -> None:
+        """
+        Publish event to MQTT (Story P4-2.3).
+
+        This is a fire-and-forget async task. Errors are logged but not propagated.
+
+        Args:
+            mqtt_service: MQTTService instance
+            topic: MQTT topic to publish to
+            payload: Serialized event payload
+            event_id: Event ID for logging
+
+        Note:
+            - Uses QoS from MQTTConfig (AC4)
+            - Non-blocking, runs as background task (AC5)
+            - Errors don't propagate to caller (AC6)
+        """
+        try:
+            # Use QoS from config (AC4)
+            success = await mqtt_service.publish(topic, payload)
+
+            if success:
+                logger.info(
+                    f"Event published to MQTT",
+                    extra={
+                        "event_type": "mqtt_event_published",
+                        "event_id": event_id,
+                        "topic": topic
+                    }
+                )
+            else:
+                logger.warning(
+                    f"MQTT publish returned False for event {event_id}",
+                    extra={
+                        "event_type": "mqtt_event_publish_failed",
+                        "event_id": event_id,
+                        "topic": topic
+                    }
+                )
+        except Exception as e:
+            # MQTT errors must not propagate (AC5, AC6)
+            logger.warning(
+                f"MQTT publish failed for event {event_id}: {e}",
+                extra={
+                    "event_type": "mqtt_event_publish_error",
+                    "event_id": event_id,
+                    "topic": topic,
+                    "error": str(e)
+                }
+            )
 
     async def _drain_queue(self):
         """

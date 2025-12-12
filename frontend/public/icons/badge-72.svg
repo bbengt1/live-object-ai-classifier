@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
+  <!-- Badge icon - monochrome for Android status bar -->
+  <!-- Simple camera silhouette -->
+  <rect x="14" y="22" width="44" height="32" rx="4" fill="white"/>
+  <circle cx="36" cy="38" r="10" fill="none" stroke="white" stroke-width="2"/>
+  <!-- AI dot indicator -->
+  <circle cx="52" cy="28" r="4" fill="white"/>
+</svg>

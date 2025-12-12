@@ -24,6 +24,8 @@ import {
   Shield,
   FileText,
   DollarSign,
+  Bell,
+  Network,
 } from 'lucide-react';
 
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
@@ -31,6 +33,7 @@ import { ConnectionErrorBanner, getConnectionErrorType } from '@/components/prot
 
 import { apiClient } from '@/lib/api-client';
 import { completeSettingsSchema } from '@/lib/settings-validation';
+import { useSettings } from '@/contexts/SettingsContext';
 import type { SystemSettings, StorageStats } from '@/types/settings';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -48,6 +51,8 @@ import { BackupRestore } from '@/components/settings/BackupRestore';
 import { AIProviders } from '@/components/settings/AIProviders';
 import { LogViewer } from '@/components/settings/LogViewer';
 import { CostDashboard } from '@/components/settings/CostDashboard';
+import { PushNotificationSettings } from '@/components/settings/PushNotificationSettings';
+import { MQTTSettings } from '@/components/settings/MQTTSettings';
 import { ControllerForm, type ControllerData, DeleteControllerDialog, DiscoveredCameraList } from '@/components/protect';
 import { useQuery } from '@tanstack/react-query';
 import type { AIProvider } from '@/types/settings';
@@ -56,6 +61,7 @@ import type { AIProvider } from '@/types/settings';
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') || 'general';
+  const { refreshSystemName } = useSettings(); // BUG-003: Refresh system name after save
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -96,7 +102,7 @@ export default function SettingsPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(completeSettingsSchema) as any,
     defaultValues: {
-      system_name: 'Live Object AI Classifier',
+      system_name: 'ArgusAI',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       language: 'English',
       date_format: 'MM/DD/YYYY',
@@ -185,6 +191,10 @@ export default function SettingsPage() {
 
       const updated = await apiClient.settings.update(changedData);
       form.reset(updated); // Reset form with new data to clear dirty state
+      // BUG-003: Refresh system name in context if it was changed
+      if ('system_name' in changedData) {
+        await refreshSystemName();
+      }
       toast.success(`Settings saved successfully at ${new Date().toLocaleTimeString()}`);
     } catch (error) {
       console.error('Failed to save settings:', error);
@@ -265,7 +275,7 @@ export default function SettingsPage() {
         <form onSubmit={form.handleSubmit(handleSave)}>
           <Tabs defaultValue={initialTab} className="space-y-6">
             {/* Tab Navigation */}
-            <TabsList className="grid w-full grid-cols-7">
+            <TabsList className="grid w-full grid-cols-9">
               <TabsTrigger value="general" className="flex items-center gap-2">
                 <Globe className="h-4 w-4" />
                 <span className="hidden sm:inline">General</span>
@@ -289,6 +299,14 @@ export default function SettingsPage() {
               <TabsTrigger value="protect" className="flex items-center gap-2">
                 <Shield className="h-4 w-4" />
                 <span className="hidden sm:inline">Protect</span>
+              </TabsTrigger>
+              <TabsTrigger value="integrations" className="flex items-center gap-2">
+                <Network className="h-4 w-4" />
+                <span className="hidden sm:inline">Integrations</span>
+              </TabsTrigger>
+              <TabsTrigger value="notifications" className="flex items-center gap-2">
+                <Bell className="h-4 w-4" />
+                <span className="hidden sm:inline">Notifications</span>
               </TabsTrigger>
               <TabsTrigger value="logs" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
@@ -315,7 +333,7 @@ export default function SettingsPage() {
                       id="system-name"
                       {...form.register('system_name')}
                       maxLength={100}
-                      placeholder="Live Object AI Classifier"
+                      placeholder="ArgusAI"
                     />
                     {form.formState.errors.system_name && (
                       <p className="text-sm text-destructive">
@@ -928,6 +946,18 @@ export default function SettingsPage() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Integrations Tab - Story P4-2.4 */}
+            <TabsContent value="integrations" className="space-y-4">
+              <ErrorBoundary context="MQTT Settings">
+                <MQTTSettings />
+              </ErrorBoundary>
+            </TabsContent>
+
+            {/* Notifications Tab - Story P4-1.2 */}
+            <TabsContent value="notifications" className="space-y-4">
+              <PushNotificationSettings />
             </TabsContent>
 
             {/* Logs Tab - FF-001 */}
