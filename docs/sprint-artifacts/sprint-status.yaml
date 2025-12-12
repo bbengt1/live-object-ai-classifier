@@ -255,7 +255,7 @@ development_status:
   p4-4-2-daily-digest-scheduler: done
   p4-4-3-digest-delivery: done
   p4-4-4-summary-ui-in-dashboard: done
-  p4-4-5-on-demand-summary-generation: backlog
+  p4-4-5-on-demand-summary-generation: done
   epic-p4-4-retrospective: optional
 
   # Epic P4-5: User Feedback & Learning

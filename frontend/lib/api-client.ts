@@ -1716,7 +1716,7 @@ export const apiClient = {
   },
 
   // ============================================================================
-  // Activity Summaries (Story P4-4.4)
+  // Activity Summaries (Story P4-4.4, P4-4.5)
   // ============================================================================
   summaries: {
     /**
@@ -1726,6 +1726,37 @@ export const apiClient = {
      */
     recent: async (): Promise<RecentSummariesResponse> => {
       return apiFetch<RecentSummariesResponse>('/summaries/recent');
+    },
+
+    /**
+     * Generate an on-demand summary for a time period (Story P4-4.5)
+     *
+     * Accepts EITHER:
+     * - hours_back: Shorthand for "last N hours" (e.g., hours_back: 3 for last 3 hours)
+     * - OR start_time + end_time: Explicit time range
+     *
+     * @param params Generation parameters
+     * @returns Generated summary with stats
+     */
+    generate: async (params: SummaryGenerateRequest): Promise<SummaryGenerateResponse> => {
+      return apiFetch<SummaryGenerateResponse>('/summaries/generate', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+    },
+
+    /**
+     * List all summaries with pagination
+     * @param limit Maximum number to return (default 20)
+     * @param offset Pagination offset (default 0)
+     * @returns List of summaries
+     */
+    list: async (limit = 20, offset = 0): Promise<SummaryListResponse> => {
+      const params = new URLSearchParams({
+        limit: String(limit),
+        offset: String(offset),
+      });
+      return apiFetch<SummaryListResponse>(`/summaries?${params}`);
     },
   },
 };
@@ -1799,7 +1830,7 @@ export type {
   EntityType,
 } from '@/types/entity';
 
-// Story P4-4.4: Activity Summary Types
+// Story P4-4.4 & P4-4.5: Activity Summary Types
 
 /** Summary item from recent summaries endpoint */
 export interface RecentSummaryItem {
@@ -1818,4 +1849,53 @@ export interface RecentSummaryItem {
 /** Response from GET /api/v1/summaries/recent */
 export interface RecentSummariesResponse {
   summaries: RecentSummaryItem[];
+}
+
+/** Statistical breakdown of events in summary (Story P4-4.5) */
+export interface SummaryStats {
+  total_events: number;
+  by_type: Record<string, number>;
+  by_camera: Record<string, number>;
+  alerts_triggered: number;
+  doorbell_rings: number;
+}
+
+/**
+ * Request for on-demand summary generation (Story P4-4.5)
+ *
+ * Either hours_back OR (start_time AND end_time) must be provided, not both.
+ */
+export interface SummaryGenerateRequest {
+  /** Generate summary for last N hours (1-168). Mutually exclusive with start_time/end_time. */
+  hours_back?: number;
+  /** Start of time period (ISO 8601). Required if hours_back not provided. */
+  start_time?: string;
+  /** End of time period (ISO 8601). Required if hours_back not provided. */
+  end_time?: string;
+  /** List of camera UUIDs to include (null = all cameras) */
+  camera_ids?: string[] | null;
+}
+
+/** Response from POST /api/v1/summaries/generate (Story P4-4.5) */
+export interface SummaryGenerateResponse {
+  id: string;
+  summary_text: string;
+  period_start: string;
+  period_end: string;
+  event_count: number;
+  generated_at: string;
+  stats: SummaryStats | null;
+  ai_cost: number;
+  provider_used: string | null;
+  camera_count: number;
+  alert_count: number;
+  doorbell_count: number;
+  person_count: number;
+  vehicle_count: number;
+}
+
+/** Response from GET /api/v1/summaries (Story P4-4.5) */
+export interface SummaryListResponse {
+  summaries: SummaryGenerateResponse[];
+  total: number;
 }
