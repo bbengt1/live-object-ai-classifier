@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.activity_summary import ActivitySummary
+from app.models.event import Event
 from app.services.summary_service import get_summary_service, SummaryService
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,93 @@ class SummaryListResponse(BaseModel):
     total: int = Field(description="Total number of summaries")
 
 
+class RecentSummaryItem(BaseModel):
+    """A single summary item for recent summaries endpoint (Story P4-4.4)."""
+    id: str = Field(description="Summary UUID")
+    date: str = Field(description="Date in ISO format (YYYY-MM-DD)")
+    summary_text: str = Field(description="Generated summary text")
+    event_count: int = Field(description="Number of events in summary")
+    camera_count: int = Field(default=0, description="Number of cameras with events")
+    alert_count: int = Field(default=0, description="Number of alerts triggered")
+    doorbell_count: int = Field(default=0, description="Number of doorbell rings")
+    person_count: int = Field(default=0, description="Number of person detections")
+    vehicle_count: int = Field(default=0, description="Number of vehicle detections")
+    generated_at: datetime = Field(description="When the summary was generated")
+
+
+class RecentSummariesResponse(BaseModel):
+    """Response for recent summaries endpoint (Story P4-4.4)."""
+    summaries: List[RecentSummaryItem] = Field(description="List of recent summaries (today and yesterday)")
+
+
 # Helper functions
+
+def _get_event_stats_for_date(db: Session, target_date: date) -> dict:
+    """
+    Get event statistics for a specific date (Story P4-4.4).
+
+    Queries the events table to calculate:
+    - Total event count
+    - Unique camera count
+    - Alert count
+    - Doorbell ring count
+    - Person detection count
+    - Vehicle detection count
+
+    Args:
+        db: Database session
+        target_date: The date to get stats for
+
+    Returns:
+        Dict with stats
+    """
+    start_time = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+    end_time = datetime.combine(target_date + timedelta(days=1), datetime.min.time()).replace(tzinfo=timezone.utc)
+
+    # Query events for the date
+    events = db.query(Event).filter(
+        Event.timestamp >= start_time,
+        Event.timestamp < end_time
+    ).all()
+
+    # Calculate stats
+    camera_ids = set()
+    alert_count = 0
+    doorbell_count = 0
+    person_count = 0
+    vehicle_count = 0
+
+    for event in events:
+        camera_ids.add(event.camera_id)
+
+        if event.alert_triggered:
+            alert_count += 1
+
+        if event.is_doorbell_ring:
+            doorbell_count += 1
+
+        # Parse objects_detected for person/vehicle counts
+        if event.objects_detected:
+            try:
+                objects = json.loads(event.objects_detected)
+                for obj in objects:
+                    obj_lower = obj.lower()
+                    if 'person' in obj_lower or 'human' in obj_lower:
+                        person_count += 1
+                    elif 'vehicle' in obj_lower or 'car' in obj_lower or 'truck' in obj_lower:
+                        vehicle_count += 1
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    return {
+        "event_count": len(events),
+        "camera_count": len(camera_ids),
+        "alert_count": alert_count,
+        "doorbell_count": doorbell_count,
+        "person_count": person_count,
+        "vehicle_count": vehicle_count,
+    }
+
 
 def _validate_date_range(start_time: datetime, end_time: datetime) -> None:
     """
@@ -171,6 +258,67 @@ def _save_summary_to_db(
 
 
 # Endpoints
+
+@router.get("/recent", response_model=RecentSummariesResponse)
+async def get_recent_summaries(
+    db: Session = Depends(get_db),
+):
+    """
+    Get recent summaries for dashboard display (Story P4-4.4).
+
+    Returns today's and yesterday's activity summaries if they exist.
+    Includes event statistics (counts by type) for each summary.
+
+    AC10: GET /api/v1/summaries/recent returns today's and yesterday's summaries
+
+    Returns:
+        RecentSummariesResponse with list of recent summaries (may be empty)
+    """
+    today = datetime.now(timezone.utc).date()
+    yesterday = today - timedelta(days=1)
+
+    summaries = []
+
+    for target_date in [today, yesterday]:
+        # Calculate start/end times for the date
+        start_time = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_time = datetime.combine(target_date + timedelta(days=1), datetime.min.time()).replace(tzinfo=timezone.utc)
+
+        # Query for existing summary (prefer daily digest, then any digest)
+        summary = db.query(ActivitySummary).filter(
+            ActivitySummary.period_start >= start_time,
+            ActivitySummary.period_start < end_time,
+            ActivitySummary.digest_type.isnot(None)
+        ).order_by(ActivitySummary.generated_at.desc()).first()
+
+        if summary:
+            # Get event stats for the date
+            stats = _get_event_stats_for_date(db, target_date)
+
+            summaries.append(RecentSummaryItem(
+                id=summary.id,
+                date=target_date.isoformat(),
+                summary_text=summary.summary_text,
+                event_count=summary.event_count or stats["event_count"],
+                camera_count=stats["camera_count"],
+                alert_count=stats["alert_count"],
+                doorbell_count=stats["doorbell_count"],
+                person_count=stats["person_count"],
+                vehicle_count=stats["vehicle_count"],
+                generated_at=summary.generated_at,
+            ))
+
+    logger.info(
+        f"Returning {len(summaries)} recent summaries",
+        extra={
+            "event_type": "recent_summaries_fetch",
+            "summary_count": len(summaries),
+            "dates": [s.date for s in summaries]
+        }
+    )
+
+    return RecentSummariesResponse(summaries=summaries)
+
 
 @router.post("/generate", response_model=SummaryResponse)
 async def generate_summary(

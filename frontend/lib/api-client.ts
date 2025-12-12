@@ -1714,6 +1714,20 @@ export const apiClient = {
       // 204 No Content - no body to parse
     },
   },
+
+  // ============================================================================
+  // Activity Summaries (Story P4-4.4)
+  // ============================================================================
+  summaries: {
+    /**
+     * Get recent summaries for dashboard display
+     * Returns today's and yesterday's activity summaries if they exist
+     * @returns Recent summaries with event statistics
+     */
+    recent: async (): Promise<RecentSummariesResponse> => {
+      return apiFetch<RecentSummariesResponse>('/summaries/recent');
+    },
+  },
 };
 
 // Story P2-2.1: Camera Discovery Types
@@ -1784,3 +1798,24 @@ export type {
   IEntityUpdateRequest,
   EntityType,
 } from '@/types/entity';
+
+// Story P4-4.4: Activity Summary Types
+
+/** Summary item from recent summaries endpoint */
+export interface RecentSummaryItem {
+  id: string;
+  date: string;
+  summary_text: string;
+  event_count: number;
+  camera_count: number;
+  alert_count: number;
+  doorbell_count: number;
+  person_count: number;
+  vehicle_count: number;
+  generated_at: string;
+}
+
+/** Response from GET /api/v1/summaries/recent */
+export interface RecentSummariesResponse {
+  summaries: RecentSummaryItem[];
+}
