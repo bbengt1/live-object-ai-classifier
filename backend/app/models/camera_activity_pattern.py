@@ -36,6 +36,7 @@ class CameraActivityPattern(Base):
         daily_distribution: JSON dict of events per day-of-week {"0": count, ..., "6": count}
         peak_hours: JSON array of peak activity hours ["09", "14", "17"]
         quiet_hours: JSON array of quiet hours ["02", "03", "04"]
+        object_type_distribution: JSON dict of object type counts {"person": 150, "vehicle": 45}
         average_events_per_day: Mean daily event count
         calculation_window_days: Number of days used for calculation (default: 30)
         last_calculated_at: When patterns were last recalculated
@@ -77,6 +78,11 @@ class CameraActivityPattern(Base):
         Text,
         nullable=False,
         doc="JSON array: quiet hours ['02', '03', '04']"
+    )
+    object_type_distribution = Column(
+        Text,
+        nullable=True,
+        doc="JSON dict: object type counts {'person': 150, 'vehicle': 45, 'package': 12}"
     )
     average_events_per_day = Column(
         Float,

@@ -661,6 +661,7 @@ async def delete_entity(
 
 
 # Story P4-3.5: Pattern Detection Response Models
+# Story P4-7.1: Extended with object type distribution
 class PatternResponse(BaseModel):
     """Response model for camera activity patterns."""
     camera_id: str = Field(description="UUID of the camera")
@@ -682,6 +683,15 @@ class PatternResponse(BaseModel):
     insufficient_data: bool = Field(
         default=False,
         description="True if camera has insufficient history for meaningful patterns"
+    )
+    # Story P4-7.1: Object type distribution for anomaly detection
+    object_type_distribution: Optional[dict[str, int]] = Field(
+        default=None,
+        description="Object type counts, e.g., {'person': 150, 'vehicle': 45, 'package': 12}"
+    )
+    dominant_object_type: Optional[str] = Field(
+        default=None,
+        description="Most frequently detected object type"
     )
 
 
@@ -757,6 +767,8 @@ async def get_camera_patterns(
         last_calculated_at=pattern_data.last_calculated_at,
         calculation_window_days=pattern_data.calculation_window_days,
         insufficient_data=pattern_data.insufficient_data,
+        object_type_distribution=pattern_data.object_type_distribution,
+        dominant_object_type=pattern_data.dominant_object_type,
     )
 
 

@@ -1,5 +1,5 @@
 """
-Unit tests for PatternService (Story P4-3.5: Pattern Detection)
+Unit tests for PatternService (Story P4-3.5: Pattern Detection, Story P4-7.1: Baseline Activity Learning)
 
 Tests coverage:
 - AC1: Hourly activity distribution calculation
@@ -9,6 +9,11 @@ Tests coverage:
 - AC5: Quiet hour identification
 - AC7: get_patterns() returns activity patterns
 - AC8: is_typical_timing() returns timing analysis
+
+Story P4-7.1 additions:
+- Object type distribution calculation
+- Incremental baseline updates
+- get_patterns() returns object type distribution and dominant type
 """
 import json
 import pytest
@@ -190,6 +195,7 @@ class TestPatternServiceGetPatterns:
         mock_pattern.daily_distribution = json.dumps({"0": 20, "1": 25})
         mock_pattern.peak_hours = json.dumps(["09", "14"])
         mock_pattern.quiet_hours = json.dumps(["02", "03", "04"])
+        mock_pattern.object_type_distribution = None  # Story P4-7.1: Added field
         mock_pattern.average_events_per_day = 8.5
         mock_pattern.last_calculated_at = datetime(2025, 12, 11, 10, 0, tzinfo=timezone.utc)
         mock_pattern.calculation_window_days = 30
@@ -240,6 +246,7 @@ class TestPatternServiceTimingAnalysis:
         mock_pattern.daily_distribution = json.dumps({str(d): 50 for d in range(7)})
         mock_pattern.peak_hours = json.dumps(["09", "14", "17"])
         mock_pattern.quiet_hours = json.dumps(["02", "03", "04", "05"])
+        mock_pattern.object_type_distribution = None  # Story P4-7.1
         mock_pattern.average_events_per_day = 8.5
         mock_pattern.last_calculated_at = datetime.now(timezone.utc)
         mock_pattern.calculation_window_days = 30
@@ -267,6 +274,7 @@ class TestPatternServiceTimingAnalysis:
         mock_pattern.daily_distribution = json.dumps({str(d): 50 for d in range(7)})
         mock_pattern.peak_hours = json.dumps(["09", "14", "17"])
         mock_pattern.quiet_hours = json.dumps(["02", "03", "04", "05"])
+        mock_pattern.object_type_distribution = None  # Story P4-7.1
         mock_pattern.average_events_per_day = 8.5
         mock_pattern.last_calculated_at = datetime.now(timezone.utc)
         mock_pattern.calculation_window_days = 30
@@ -293,6 +301,7 @@ class TestPatternServiceTimingAnalysis:
         mock_pattern.daily_distribution = json.dumps({str(d): 50 for d in range(7)})
         mock_pattern.peak_hours = json.dumps(["09", "14", "17"])
         mock_pattern.quiet_hours = json.dumps(["02", "03", "04", "05"])
+        mock_pattern.object_type_distribution = None  # Story P4-7.1
         mock_pattern.average_events_per_day = 8.5
         mock_pattern.last_calculated_at = datetime.now(timezone.utc)
         mock_pattern.calculation_window_days = 30
@@ -335,6 +344,7 @@ class TestPatternServiceTimingAnalysis:
         mock_pattern.daily_distribution = json.dumps(daily)
         mock_pattern.peak_hours = json.dumps([])  # No peak hours
         mock_pattern.quiet_hours = json.dumps([])  # No quiet hours
+        mock_pattern.object_type_distribution = None  # Story P4-7.1
         mock_pattern.average_events_per_day = 8.5
         mock_pattern.last_calculated_at = datetime.now(timezone.utc)
         mock_pattern.calculation_window_days = 30
@@ -408,3 +418,252 @@ class TestPatternServiceEdgeCases:
         result = await self.service.recalculate_patterns(db, "nonexistent-camera")
 
         assert result is None
+
+
+class TestObjectTypeDistribution:
+    """Test object type distribution calculation (Story P4-7.1)."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_pattern_service()
+        self.service = PatternService()
+
+    def test_calculate_object_type_distribution_basic(self):
+        """P4-7.1 AC5: Test object type distribution calculation."""
+        events = []
+
+        # Create events with various object types
+        for objects in [["person"], ["person", "vehicle"], ["vehicle"], ["person"], ["package"]]:
+            event = MagicMock(spec=Event)
+            event.objects_detected = json.dumps(objects)
+            events.append(event)
+
+        result = self.service._calculate_object_type_distribution(events)
+
+        assert result["person"] == 3
+        assert result["vehicle"] == 2
+        assert result["package"] == 1
+
+    def test_calculate_object_type_distribution_empty(self):
+        """P4-7.1 AC5: Test object type distribution with no events."""
+        result = self.service._calculate_object_type_distribution([])
+        assert result == {}
+
+    def test_calculate_object_type_distribution_no_objects(self):
+        """P4-7.1 AC5: Test handling events with no objects_detected."""
+        events = []
+
+        event1 = MagicMock(spec=Event)
+        event1.objects_detected = None
+        events.append(event1)
+
+        event2 = MagicMock(spec=Event)
+        event2.objects_detected = json.dumps([])
+        events.append(event2)
+
+        result = self.service._calculate_object_type_distribution(events)
+        assert result == {}
+
+    def test_calculate_object_type_distribution_invalid_json(self):
+        """P4-7.1 AC5: Test handling events with invalid JSON in objects_detected."""
+        events = []
+
+        event1 = MagicMock(spec=Event)
+        event1.objects_detected = "invalid json"
+        events.append(event1)
+
+        event2 = MagicMock(spec=Event)
+        event2.objects_detected = json.dumps(["person"])
+        events.append(event2)
+
+        result = self.service._calculate_object_type_distribution(events)
+        # Should skip invalid JSON and count valid ones
+        assert result == {"person": 1}
+
+
+class TestIncrementalBaselineUpdate:
+    """Test incremental baseline updates (Story P4-7.1)."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_pattern_service()
+        self.service = PatternService()
+
+    @pytest.mark.asyncio
+    async def test_update_baseline_incremental_updates_hourly(self):
+        """P4-7.1 AC2: Test incremental update increments hourly distribution."""
+        db = MagicMock()
+
+        # Create mock existing pattern
+        mock_pattern = MagicMock(spec=CameraActivityPattern)
+        mock_pattern.camera_id = "test-camera"
+        mock_pattern.hourly_distribution = json.dumps({str(h).zfill(2): 0 for h in range(24)})
+        mock_pattern.daily_distribution = json.dumps({str(d): 0 for d in range(7)})
+        mock_pattern.object_type_distribution = None
+        mock_pattern.peak_hours = json.dumps([])
+        mock_pattern.quiet_hours = json.dumps([str(h).zfill(2) for h in range(24)])
+        mock_pattern.calculation_window_days = 30
+        mock_pattern.average_events_per_day = 0.0
+
+        db.query.return_value.filter_by.return_value.first.return_value = mock_pattern
+
+        # Create event at 2 PM
+        event = MagicMock(spec=Event)
+        event.timestamp = datetime(2025, 12, 10, 14, 30, tzinfo=timezone.utc)  # Wednesday
+        event.objects_detected = json.dumps(["person"])
+
+        result = await self.service.update_baseline_incremental(db, "test-camera", event)
+
+        assert result is mock_pattern
+        # Verify hourly was incremented
+        assert mock_pattern.hourly_distribution == json.dumps({
+            **{str(h).zfill(2): 0 for h in range(24)},
+            "14": 1
+        })
+
+    @pytest.mark.asyncio
+    async def test_update_baseline_incremental_updates_daily(self):
+        """P4-7.1 AC2: Test incremental update increments daily distribution."""
+        db = MagicMock()
+
+        mock_pattern = MagicMock(spec=CameraActivityPattern)
+        mock_pattern.camera_id = "test-camera"
+        mock_pattern.hourly_distribution = json.dumps({str(h).zfill(2): 0 for h in range(24)})
+        mock_pattern.daily_distribution = json.dumps({str(d): 0 for d in range(7)})
+        mock_pattern.object_type_distribution = None
+        mock_pattern.peak_hours = json.dumps([])
+        mock_pattern.quiet_hours = json.dumps([])
+        mock_pattern.calculation_window_days = 30
+        mock_pattern.average_events_per_day = 0.0
+
+        db.query.return_value.filter_by.return_value.first.return_value = mock_pattern
+
+        # Create event on Wednesday (2025-12-10 is Wednesday = weekday 2)
+        event = MagicMock(spec=Event)
+        event.timestamp = datetime(2025, 12, 10, 14, 30, tzinfo=timezone.utc)
+        event.objects_detected = None
+
+        await self.service.update_baseline_incremental(db, "test-camera", event)
+
+        # Verify daily was incremented for Wednesday
+        daily = json.loads(mock_pattern.daily_distribution)
+        assert daily["2"] == 1
+
+    @pytest.mark.asyncio
+    async def test_update_baseline_incremental_updates_object_types(self):
+        """P4-7.1 AC2: Test incremental update increments object type distribution."""
+        db = MagicMock()
+
+        mock_pattern = MagicMock(spec=CameraActivityPattern)
+        mock_pattern.camera_id = "test-camera"
+        mock_pattern.hourly_distribution = json.dumps({str(h).zfill(2): 0 for h in range(24)})
+        mock_pattern.daily_distribution = json.dumps({str(d): 0 for d in range(7)})
+        mock_pattern.object_type_distribution = json.dumps({"person": 5})
+        mock_pattern.peak_hours = json.dumps([])
+        mock_pattern.quiet_hours = json.dumps([])
+        mock_pattern.calculation_window_days = 30
+        mock_pattern.average_events_per_day = 0.0
+
+        db.query.return_value.filter_by.return_value.first.return_value = mock_pattern
+
+        # Create event with person and vehicle
+        event = MagicMock(spec=Event)
+        event.timestamp = datetime(2025, 12, 10, 14, 30, tzinfo=timezone.utc)
+        event.objects_detected = json.dumps(["person", "vehicle"])
+
+        await self.service.update_baseline_incremental(db, "test-camera", event)
+
+        # Verify object types were incremented
+        obj_types = json.loads(mock_pattern.object_type_distribution)
+        assert obj_types["person"] == 6  # Was 5, incremented by 1
+        assert obj_types["vehicle"] == 1  # New entry
+
+    @pytest.mark.asyncio
+    async def test_update_baseline_incremental_no_existing_pattern(self):
+        """P4-7.1 AC2: Test incremental update returns None when no pattern exists."""
+        db = MagicMock()
+        db.query.return_value.filter_by.return_value.first.return_value = None
+
+        event = MagicMock(spec=Event)
+        event.timestamp = datetime(2025, 12, 10, 14, 30, tzinfo=timezone.utc)
+        event.objects_detected = json.dumps(["person"])
+
+        result = await self.service.update_baseline_incremental(db, "test-camera", event)
+
+        assert result is None
+
+
+class TestGetPatternsWithObjectTypes:
+    """Test get_patterns with object type distribution (Story P4-7.1)."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_pattern_service()
+        self.service = PatternService()
+
+    @pytest.mark.asyncio
+    async def test_get_patterns_returns_object_type_distribution(self):
+        """P4-7.1 AC4: Test get_patterns returns object_type_distribution."""
+        db = MagicMock()
+
+        mock_pattern = MagicMock(spec=CameraActivityPattern)
+        mock_pattern.camera_id = "test-camera"
+        mock_pattern.hourly_distribution = json.dumps({str(h).zfill(2): 10 for h in range(24)})
+        mock_pattern.daily_distribution = json.dumps({str(d): 50 for d in range(7)})
+        mock_pattern.peak_hours = json.dumps(["09", "14"])
+        mock_pattern.quiet_hours = json.dumps(["02", "03"])
+        mock_pattern.object_type_distribution = json.dumps({"person": 100, "vehicle": 30, "package": 10})
+        mock_pattern.average_events_per_day = 8.5
+        mock_pattern.last_calculated_at = datetime(2025, 12, 11, 10, 0, tzinfo=timezone.utc)
+        mock_pattern.calculation_window_days = 30
+
+        db.query.return_value.filter_by.return_value.first.return_value = mock_pattern
+
+        result = await self.service.get_patterns(db, "test-camera")
+
+        assert result.object_type_distribution == {"person": 100, "vehicle": 30, "package": 10}
+
+    @pytest.mark.asyncio
+    async def test_get_patterns_returns_dominant_object_type(self):
+        """P4-7.1 AC4: Test get_patterns returns dominant_object_type."""
+        db = MagicMock()
+
+        mock_pattern = MagicMock(spec=CameraActivityPattern)
+        mock_pattern.camera_id = "test-camera"
+        mock_pattern.hourly_distribution = json.dumps({str(h).zfill(2): 10 for h in range(24)})
+        mock_pattern.daily_distribution = json.dumps({str(d): 50 for d in range(7)})
+        mock_pattern.peak_hours = json.dumps([])
+        mock_pattern.quiet_hours = json.dumps([])
+        mock_pattern.object_type_distribution = json.dumps({"person": 100, "vehicle": 30, "package": 10})
+        mock_pattern.average_events_per_day = 8.5
+        mock_pattern.last_calculated_at = datetime(2025, 12, 11, 10, 0, tzinfo=timezone.utc)
+        mock_pattern.calculation_window_days = 30
+
+        db.query.return_value.filter_by.return_value.first.return_value = mock_pattern
+
+        result = await self.service.get_patterns(db, "test-camera")
+
+        assert result.dominant_object_type == "person"
+
+    @pytest.mark.asyncio
+    async def test_get_patterns_handles_null_object_type_distribution(self):
+        """P4-7.1 AC4: Test get_patterns handles null object_type_distribution."""
+        db = MagicMock()
+
+        mock_pattern = MagicMock(spec=CameraActivityPattern)
+        mock_pattern.camera_id = "test-camera"
+        mock_pattern.hourly_distribution = json.dumps({str(h).zfill(2): 10 for h in range(24)})
+        mock_pattern.daily_distribution = json.dumps({str(d): 50 for d in range(7)})
+        mock_pattern.peak_hours = json.dumps([])
+        mock_pattern.quiet_hours = json.dumps([])
+        mock_pattern.object_type_distribution = None  # No object types yet
+        mock_pattern.average_events_per_day = 8.5
+        mock_pattern.last_calculated_at = datetime(2025, 12, 11, 10, 0, tzinfo=timezone.utc)
+        mock_pattern.calculation_window_days = 30
+
+        db.query.return_value.filter_by.return_value.first.return_value = mock_pattern
+
+        result = await self.service.get_patterns(db, "test-camera")
+
+        assert result.object_type_distribution is None
+        assert result.dominant_object_type is None

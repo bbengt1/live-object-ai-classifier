@@ -1,0 +1,170 @@
+<story-context id="p4-7-1-baseline-activity-learning" v="1.0">
+  <metadata>
+    <epicId>P4-7</epicId>
+    <storyId>P4-7.1</storyId>
+    <title>Baseline Activity Learning</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-12</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p4-7-1-baseline-activity-learning.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>home security user</asA>
+    <iWant>the system to learn my cameras' normal activity patterns</iWant>
+    <soThat>it can later identify unusual events that deviate from established baselines</soThat>
+    <tasks>
+      <task id="1">Add object_type_distribution column to CameraActivityPattern model</task>
+      <task id="2">Create Alembic migration for new column</task>
+      <task id="3">Implement update_baseline_incremental() method in PatternService</task>
+      <task id="4">Update recalculate_patterns() to compute object_type_distribution</task>
+      <task id="5">Integrate with event_processor.py for automatic baseline updates</task>
+      <task id="6">Update PatternResponse API model with object type fields</task>
+      <task id="7">Write unit and integration tests</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">Add object_type_distribution column (JSON) to CameraActivityPattern model with Alembic migration</criterion>
+    <criterion id="AC2">Add update_baseline_incremental(camera_id, event) method completing in &lt;50ms</criterion>
+    <criterion id="AC3">Call incremental update from event_processor.py as non-blocking background task</criterion>
+    <criterion id="AC4">Update GET /api/v1/context/patterns/{camera_id} to include object_type_distribution and dominant_object_type</criterion>
+    <criterion id="AC5">Update recalculate_patterns() to compute object_type_distribution from events</criterion>
+    <criterion id="AC6">Write tests for incremental updates, object type calculation, and API response</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epics-phase4.md</path>
+        <title>Phase 4 Epics</title>
+        <section>Epic P4-7: Behavioral Anomaly Detection (Growth)</section>
+        <snippet>Story P4-7.1: Baseline Activity Learning - Collect activity statistics per camera, build time-of-day and day-of-week activity models, update baseline continuously.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD-phase4.md</path>
+        <title>Phase 4 PRD</title>
+        <section>Anomaly Detection Functional Requirements</section>
+        <snippet>FR26: System learns baseline activity patterns. FR27: Events deviating from baseline are flagged. FR29: Users can adjust sensitivity per camera.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture.md</path>
+        <title>Architecture Document</title>
+        <section>Phase 4 Additions</section>
+        <snippet>Context lookup adds &lt;500ms to event processing. Patterns are pre-calculated periodically and persisted for fast lookup during event processing.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>backend/app/models/camera_activity_pattern.py</path>
+        <kind>model</kind>
+        <symbol>CameraActivityPattern</symbol>
+        <lines>1-122</lines>
+        <reason>Existing model to extend with object_type_distribution column. Already has hourly_distribution, daily_distribution, peak_hours, quiet_hours fields.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/pattern_service.py</path>
+        <kind>service</kind>
+        <symbol>PatternService</symbol>
+        <lines>1-551</lines>
+        <reason>Existing service to extend. Has recalculate_patterns() for batch processing, get_patterns() for retrieval, is_typical_timing() for analysis. Add update_baseline_incremental() method.</reason>
+      </file>
+      <file>
+        <path>backend/app/api/v1/context.py</path>
+        <kind>api</kind>
+        <symbol>router, PatternResponse, get_camera_patterns</symbol>
+        <lines>663-863</lines>
+        <reason>Existing API endpoint for patterns. Update PatternResponse model and get_camera_patterns() handler to include object_type_distribution and dominant_object_type.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/event_processor.py</path>
+        <kind>service</kind>
+        <symbol>EventProcessor</symbol>
+        <reason>Event processing pipeline. Hook into event save to call pattern_service.update_baseline_incremental() as background task.</reason>
+      </file>
+      <file>
+        <path>backend/app/models/event.py</path>
+        <kind>model</kind>
+        <symbol>Event</symbol>
+        <lines>50-56</lines>
+        <reason>Event model with objects_detected field (JSON array) used to calculate object type distribution.</reason>
+      </file>
+      <file>
+        <path>backend/tests/test_services/test_pattern_service.py</path>
+        <kind>test</kind>
+        <reason>Existing test file for PatternService. Add tests for incremental updates and object type distribution calculation.</reason>
+      </file>
+      <file>
+        <path>backend/tests/test_api/test_context.py</path>
+        <kind>test</kind>
+        <reason>Existing API tests for context endpoints. Add tests for enhanced pattern response with object types.</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="fastapi" version="0.115.0" />
+        <package name="sqlalchemy" version=">=2.0.36" />
+        <package name="alembic" version=">=1.14.0" />
+        <package name="pydantic" version=">=2.10.0" />
+        <package name="pytest" version="7.4.3" />
+        <package name="pytest-asyncio" version="0.21.1" />
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <interfaces>
+    <interface>
+      <name>PatternService.recalculate_patterns</name>
+      <kind>async method</kind>
+      <signature>async def recalculate_patterns(self, db: Session, camera_id: str, window_days: int = 30, force: bool = False) -> Optional[CameraActivityPattern]</signature>
+      <path>backend/app/services/pattern_service.py:210</path>
+    </interface>
+    <interface>
+      <name>PatternService.get_patterns</name>
+      <kind>async method</kind>
+      <signature>async def get_patterns(self, db: Session, camera_id: str) -> Optional[PatternData]</signature>
+      <path>backend/app/services/pattern_service.py:87</path>
+    </interface>
+    <interface>
+      <name>GET /api/v1/context/patterns/{camera_id}</name>
+      <kind>REST endpoint</kind>
+      <signature>GET /api/v1/context/patterns/{camera_id} -> PatternResponse</signature>
+      <path>backend/app/api/v1/context.py:707</path>
+    </interface>
+    <interface>
+      <name>Event.objects_detected</name>
+      <kind>model field</kind>
+      <signature>objects_detected: Column(Text) - JSON array like ["person", "vehicle", "package"]</signature>
+      <path>backend/app/models/event.py:55</path>
+    </interface>
+  </interfaces>
+
+  <constraints>
+    <constraint>Incremental updates must complete in &lt;50ms to avoid slowing event processing</constraint>
+    <constraint>Use SQLite-compatible JSON storage (Text column with json.loads/dumps)</constraint>
+    <constraint>Baseline errors should not fail event processing - wrap in try/except</constraint>
+    <constraint>Follow existing PatternService singleton pattern with get_pattern_service()</constraint>
+    <constraint>Hourly distribution uses zero-padded string keys: {"00": 5, "01": 2, ...}</constraint>
+    <constraint>Daily distribution uses day-of-week strings: {"0": 45, ...} where 0=Monday</constraint>
+  </constraints>
+
+  <tests>
+    <standards>Use pytest with pytest-asyncio for async tests. Follow existing patterns in backend/tests/. Use SQLite test database. Mock datetime for predictable time-based tests.</standards>
+    <locations>
+      <location>backend/tests/test_services/test_pattern_service.py</location>
+      <location>backend/tests/test_api/test_context.py</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Test that migration adds object_type_distribution column successfully</idea>
+      <idea ac="AC2">Test incremental update correctly increments hourly, daily, and object_type counters</idea>
+      <idea ac="AC2">Test incremental update completes in &lt;50ms with benchmark</idea>
+      <idea ac="AC3">Test event processor calls incremental update without blocking</idea>
+      <idea ac="AC3">Test baseline error does not fail event processing</idea>
+      <idea ac="AC4">Test API response includes object_type_distribution and dominant_object_type</idea>
+      <idea ac="AC5">Test batch recalculation computes object_type_distribution from events</idea>
+      <idea ac="AC5">Test handling events with empty objects_detected array</idea>
+    </ideas>
+  </tests>
+</story-context>

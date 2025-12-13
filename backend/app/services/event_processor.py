@@ -1212,6 +1212,13 @@ class EventProcessor:
                     f"Event {event_id} stored successfully",
                     extra={"event_id": event_id, "camera_id": event_data["camera_id"]}
                 )
+
+                # Story P4-7.1: Update activity baseline incrementally (non-blocking)
+                # Spawn as background task with its own session since this db will be closed
+                asyncio.create_task(
+                    self._update_activity_baseline(event_data["camera_id"], event)
+                )
+
                 return event_id  # Return event_id instead of True
 
             except Exception as e:
@@ -1341,6 +1348,48 @@ class EventProcessor:
                     "event_type": "mqtt_event_publish_error",
                     "event_id": event_id,
                     "topic": topic,
+                    "error": str(e)
+                }
+            )
+
+    async def _update_activity_baseline(
+        self,
+        camera_id: str,
+        event: Event
+    ) -> None:
+        """
+        Update activity baseline for a camera (Story P4-7.1).
+
+        This is a fire-and-forget async task. Errors are logged but not propagated.
+        Uses its own database session since the caller's session may be closed.
+
+        Args:
+            camera_id: Camera identifier
+            event: Event that triggered this update
+
+        Note:
+            - Non-blocking, runs as background task (AC3)
+            - Target completion time <50ms (AC2)
+            - Errors don't propagate to caller (AC3)
+        """
+        try:
+            from app.services.pattern_service import get_pattern_service
+            pattern_service = get_pattern_service()
+
+            # Use own session since caller's may be closed
+            db = SessionLocal()
+            try:
+                await pattern_service.update_baseline_incremental(db, camera_id, event)
+            finally:
+                db.close()
+
+        except Exception as e:
+            # Baseline errors must not propagate (AC3)
+            logger.warning(
+                f"Activity baseline update failed for camera {camera_id}: {e}",
+                extra={
+                    "event_type": "baseline_update_error",
+                    "camera_id": camera_id,
                     "error": str(e)
                 }
             )
