@@ -530,6 +530,131 @@ async def list_entities(
     )
 
 
+# =============================================================================
+# VIP and Blocked Entity List Endpoints (Story P4-8.4)
+# IMPORTANT: These routes MUST be defined before /entities/{entity_id}
+# =============================================================================
+
+
+class EntityListItem(BaseModel):
+    """Single entity in VIP/blocked list."""
+    id: str = Field(description="Entity UUID")
+    entity_type: str = Field(description="Entity type: 'person' or 'vehicle'")
+    name: Optional[str] = Field(default=None, description="Entity name")
+    first_seen_at: datetime = Field(description="First occurrence timestamp")
+    last_seen_at: datetime = Field(description="Most recent occurrence timestamp")
+    occurrence_count: int = Field(description="Number of times seen")
+    is_vip: bool = Field(default=False, description="VIP status")
+    is_blocked: bool = Field(default=False, description="Blocked status")
+
+
+class VipBlockedEntityListResponse(BaseModel):
+    """Response for VIP/blocked entity list endpoints."""
+    entities: list[EntityListItem] = Field(description="List of entities")
+    total: int = Field(description="Total count matching filter")
+    limit: int = Field(description="Page size")
+    offset: int = Field(description="Pagination offset")
+
+
+@router.get("/entities/vip", response_model=VipBlockedEntityListResponse)
+async def list_vip_entities(
+    limit: int = Query(default=50, ge=1, le=100, description="Maximum entities to return"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+    db: Session = Depends(get_db),
+):
+    """
+    List all VIP entities (persons and vehicles).
+
+    Story P4-8.4: Named Entity Alerts
+
+    Returns all entities marked as VIP, sorted by last_seen_at descending.
+    VIP entities trigger priority notifications with distinct styling.
+
+    Args:
+        limit: Maximum number of entities to return (1-100)
+        offset: Pagination offset
+        db: Database session
+
+    Returns:
+        VipBlockedEntityListResponse with list of VIP entities
+    """
+    from app.services.entity_alert_service import get_entity_alert_service
+
+    entity_service = get_entity_alert_service()
+    entities, total = await entity_service.get_all_vip_entities(
+        db=db, limit=limit, offset=offset
+    )
+
+    return VipBlockedEntityListResponse(
+        entities=[
+            EntityListItem(
+                id=e["id"],
+                entity_type=e["entity_type"],
+                name=e["name"],
+                first_seen_at=e["first_seen_at"],
+                last_seen_at=e["last_seen_at"],
+                occurrence_count=e["occurrence_count"],
+                is_vip=e["is_vip"],
+                is_blocked=e["is_blocked"],
+            )
+            for e in entities
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/entities/blocked", response_model=VipBlockedEntityListResponse)
+async def list_blocked_entities(
+    limit: int = Query(default=50, ge=1, le=100, description="Maximum entities to return"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+    db: Session = Depends(get_db),
+):
+    """
+    List all blocked entities (persons and vehicles).
+
+    Story P4-8.4: Named Entity Alerts
+
+    Returns all entities on the blocklist, sorted by last_seen_at descending.
+    Blocked entities have their notifications suppressed, but events are
+    still recorded in the system.
+
+    Args:
+        limit: Maximum number of entities to return (1-100)
+        offset: Pagination offset
+        db: Database session
+
+    Returns:
+        VipBlockedEntityListResponse with list of blocked entities
+    """
+    from app.services.entity_alert_service import get_entity_alert_service
+
+    entity_service = get_entity_alert_service()
+    entities, total = await entity_service.get_all_blocked_entities(
+        db=db, limit=limit, offset=offset
+    )
+
+    return VipBlockedEntityListResponse(
+        entities=[
+            EntityListItem(
+                id=e["id"],
+                entity_type=e["entity_type"],
+                name=e["name"],
+                first_seen_at=e["first_seen_at"],
+                last_seen_at=e["last_seen_at"],
+                occurrence_count=e["occurrence_count"],
+                is_vip=e["is_vip"],
+                is_blocked=e["is_blocked"],
+            )
+            for e in entities
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
 @router.get("/entities/{entity_id}", response_model=EntityDetailResponse)
 async def get_entity(
     entity_id: str,
@@ -1280,6 +1405,8 @@ class PersonDetailResponse(BaseModel):
 class PersonUpdateRequest(BaseModel):
     """Request for PUT /persons/{id} endpoint."""
     name: Optional[str] = Field(default=None, description="New name for the person (None to clear)")
+    is_vip: Optional[bool] = Field(default=None, description="Mark as VIP for priority alerts (Story P4-8.4)")
+    is_blocked: Optional[bool] = Field(default=None, description="Block alerts for this person (Story P4-8.4)")
 
 
 class PersonUpdateResponse(BaseModel):
@@ -1289,6 +1416,8 @@ class PersonUpdateResponse(BaseModel):
     first_seen_at: datetime = Field(description="First occurrence timestamp")
     last_seen_at: datetime = Field(description="Most recent occurrence timestamp")
     occurrence_count: int = Field(description="Number of times seen")
+    is_vip: bool = Field(default=False, description="VIP status (Story P4-8.4)")
+    is_blocked: bool = Field(default=False, description="Blocked status (Story P4-8.4)")
 
 
 @router.get("/persons", response_model=PersonListResponse)
@@ -1419,16 +1548,19 @@ async def update_person(
     person_service: PersonMatchingService = Depends(get_person_matching_service),
 ):
     """
-    Update a person's name.
+    Update a person's name, VIP status, or blocked status.
 
     Story P4-8.2: Person Matching
+    Story P4-8.4: Named Entity Alerts (VIP and blocked)
 
-    Allows users to name recognized persons for personalized alerts
-    like "John is at the door".
+    Allows users to:
+    - Name recognized persons for personalized alerts like "John is at the door"
+    - Mark persons as VIP for priority notifications
+    - Block persons to suppress alerts (events still recorded)
 
     Args:
         person_id: UUID of the person
-        request: Update request with new name
+        request: Update request with new values
         db: Database session
         person_service: Person matching service instance
 
@@ -1438,6 +1570,9 @@ async def update_person(
     Raises:
         HTTPException 404: If person not found
     """
+    from app.services.entity_alert_service import get_entity_alert_service
+
+    # Update name via person service (handles face matching updates)
     person = await person_service.update_person_name(
         db,
         person_id,
@@ -1450,12 +1585,27 @@ async def update_person(
             detail=f"Person {person_id} not found"
         )
 
+    # Story P4-8.4: Update VIP/blocked status if provided
+    if request.is_vip is not None or request.is_blocked is not None:
+        entity_service = get_entity_alert_service()
+        updated_entity = await entity_service.update_entity_alert_settings(
+            db=db,
+            entity_id=person_id,
+            is_vip=request.is_vip,
+            is_blocked=request.is_blocked,
+        )
+        if updated_entity:
+            person["is_vip"] = updated_entity.get("is_vip", False)
+            person["is_blocked"] = updated_entity.get("is_blocked", False)
+
     return PersonUpdateResponse(
         id=person["id"],
         name=person["name"],
         first_seen_at=person["first_seen_at"],
         last_seen_at=person["last_seen_at"],
         occurrence_count=person["occurrence_count"],
+        is_vip=person.get("is_vip", False),
+        is_blocked=person.get("is_blocked", False),
     )
 
 
@@ -1518,6 +1668,8 @@ class VehicleUpdateRequest(BaseModel):
     """Request for PUT /vehicles/{id} endpoint."""
     name: Optional[str] = Field(default=None, description="New name for the vehicle (None to clear)")
     metadata: Optional[dict] = Field(default=None, description="Optional metadata updates")
+    is_vip: Optional[bool] = Field(default=None, description="Mark as VIP for priority alerts (Story P4-8.4)")
+    is_blocked: Optional[bool] = Field(default=None, description="Block alerts for this vehicle (Story P4-8.4)")
 
 
 class VehicleUpdateResponse(BaseModel):
@@ -1529,6 +1681,8 @@ class VehicleUpdateResponse(BaseModel):
     occurrence_count: int = Field(description="Number of times seen")
     vehicle_type: Optional[str] = Field(default=None, description="Detected vehicle type")
     primary_color: Optional[str] = Field(default=None, description="Primary color")
+    is_vip: bool = Field(default=False, description="VIP status (Story P4-8.4)")
+    is_blocked: bool = Field(default=False, description="Blocked status (Story P4-8.4)")
 
 
 class VehicleEmbeddingResponse(BaseModel):
@@ -1697,16 +1851,20 @@ async def update_vehicle(
     vehicle_service: VehicleMatchingService = Depends(get_vehicle_matching_service),
 ):
     """
-    Update a vehicle's name and/or metadata.
+    Update a vehicle's name, metadata, VIP status, or blocked status.
 
     Story P4-8.3: Vehicle Recognition
+    Story P4-8.4: Named Entity Alerts (VIP and blocked)
 
-    Allows users to name recognized vehicles for personalized alerts
-    like "Your car arrived".
+    Allows users to:
+    - Name recognized vehicles for personalized alerts like "Your car arrived"
+    - Update vehicle metadata (color, type, etc.)
+    - Mark vehicles as VIP for priority notifications
+    - Block vehicles to suppress alerts (events still recorded)
 
     Args:
         vehicle_id: UUID of the vehicle
-        request: Update request with new name and/or metadata
+        request: Update request with new values
         db: Database session
         vehicle_service: Vehicle matching service instance
 
@@ -1716,6 +1874,8 @@ async def update_vehicle(
     Raises:
         HTTPException 404: If vehicle not found
     """
+    from app.services.entity_alert_service import get_entity_alert_service
+
     # Update name if provided
     if request.name is not None:
         vehicle = await vehicle_service.update_vehicle_name(
@@ -1741,6 +1901,19 @@ async def update_vehicle(
             metadata_updates=request.metadata,
         )
 
+    # Story P4-8.4: Update VIP/blocked status if provided
+    if request.is_vip is not None or request.is_blocked is not None:
+        entity_service = get_entity_alert_service()
+        updated_entity = await entity_service.update_entity_alert_settings(
+            db=db,
+            entity_id=vehicle_id,
+            is_vip=request.is_vip,
+            is_blocked=request.is_blocked,
+        )
+        if updated_entity:
+            vehicle["is_vip"] = updated_entity.get("is_vip", False)
+            vehicle["is_blocked"] = updated_entity.get("is_blocked", False)
+
     return VehicleUpdateResponse(
         id=vehicle["id"],
         name=vehicle["name"],
@@ -1749,6 +1922,8 @@ async def update_vehicle(
         occurrence_count=vehicle["occurrence_count"],
         vehicle_type=vehicle.get("vehicle_type"),
         primary_color=vehicle.get("primary_color"),
+        is_vip=vehicle.get("is_vip", False),
+        is_blocked=vehicle.get("is_blocked", False),
     )
 
 

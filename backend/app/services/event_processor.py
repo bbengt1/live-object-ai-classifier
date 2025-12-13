@@ -1196,6 +1196,51 @@ class EventProcessor:
                     extra={"error": str(vehicle_error), "event_id": event_id}
                 )
 
+            # Step 15: Entity Alert Processing (Story P4-8.4)
+            # Process entity alerts for personalized notifications
+            # This runs after face (Step 13) and vehicle (Step 14) matching completes
+            try:
+                from app.models.system_setting import SystemSetting
+
+                # Check if entity alerts are enabled (tied to recognition settings)
+                face_recognition_enabled = False
+                vehicle_recognition_enabled = False
+
+                face_setting = db.query(SystemSetting).filter(
+                    SystemSetting.key == "face_recognition_enabled"
+                ).first()
+                if face_setting and face_setting.value.lower() == "true":
+                    face_recognition_enabled = True
+
+                vehicle_setting = db.query(SystemSetting).filter(
+                    SystemSetting.key == "vehicle_recognition_enabled"
+                ).first()
+                if vehicle_setting and vehicle_setting.value.lower() == "true":
+                    vehicle_recognition_enabled = True
+
+                # Only process if at least one recognition type is enabled
+                if face_recognition_enabled or vehicle_recognition_enabled:
+                    # Check if event has person or vehicle
+                    has_person = "person" in objects_detected if objects_detected else False
+                    has_vehicle = "vehicle" in objects_detected if objects_detected else False
+
+                    if has_person or has_vehicle:
+                        # Run entity alert processing asynchronously
+                        asyncio.create_task(
+                            self._process_entity_alerts(
+                                event_id=event_id,
+                                description=ai_result.description,
+                                has_person_or_vehicle=True
+                            )
+                        )
+
+            except Exception as entity_alert_error:
+                # Entity alert failures must not block event processing
+                logger.warning(
+                    f"Failed to create entity alert task: {entity_alert_error}",
+                    extra={"error": str(entity_alert_error), "event_id": event_id}
+                )
+
             logger.info(
                 f"Event processed successfully for camera {event.camera_name}",
                 extra={
@@ -1796,6 +1841,163 @@ class EventProcessor:
                 f"Vehicle processing failed for event {event_id}: {e}",
                 extra={
                     "event_type": "vehicle_processing_error",
+                    "event_id": event_id,
+                    "error": str(e)
+                }
+            )
+
+    async def _process_entity_alerts(
+        self,
+        event_id: str,
+        description: str,
+        has_person_or_vehicle: bool = True
+    ) -> None:
+        """
+        Process entity alert enrichment for an event.
+
+        Story P4-8.4: Named Entity Alerts
+
+        This runs after face and vehicle matching to:
+        1. Collect matched entity IDs from face and vehicle embeddings
+        2. Enrich the description with entity names
+        3. Set recognition status (known/stranger/unknown)
+        4. Check for VIP entities
+
+        This is a fire-and-forget async task. Errors are logged but not propagated.
+        Uses its own database session since the caller's session may be closed.
+
+        Args:
+            event_id: UUID of the event to process
+            description: AI-generated description to enrich
+            has_person_or_vehicle: Whether event has person/vehicle detection
+        """
+        try:
+            from app.services.entity_alert_service import get_entity_alert_service
+            from app.models.face_embedding import FaceEmbedding
+            from app.models.vehicle_embedding import VehicleEmbedding
+            import json
+
+            entity_service = get_entity_alert_service()
+
+            # Create new database session for background task
+            db = SessionLocal()
+            try:
+                # Collect matched entity IDs from face and vehicle embeddings
+                matched_entity_ids = []
+
+                # Get entity IDs from face embeddings
+                face_embeddings = db.query(FaceEmbedding).filter(
+                    FaceEmbedding.event_id == event_id,
+                    FaceEmbedding.entity_id.isnot(None)
+                ).all()
+                matched_entity_ids.extend([fe.entity_id for fe in face_embeddings])
+
+                # Get entity IDs from vehicle embeddings
+                vehicle_embeddings = db.query(VehicleEmbedding).filter(
+                    VehicleEmbedding.event_id == event_id,
+                    VehicleEmbedding.entity_id.isnot(None)
+                ).all()
+                matched_entity_ids.extend([ve.entity_id for ve in vehicle_embeddings])
+
+                # Remove duplicates while preserving order
+                matched_entity_ids = list(dict.fromkeys(matched_entity_ids))
+
+                # Process entity alerts
+                result = await entity_service.process_event_entities(
+                    db=db,
+                    event_id=event_id,
+                    matched_entity_ids=matched_entity_ids,
+                    original_description=description,
+                    has_person_or_vehicle=has_person_or_vehicle
+                )
+
+                # Update event with entity information
+                await entity_service.update_event_with_entity_info(
+                    db=db,
+                    event_id=event_id,
+                    result=result
+                )
+
+                # Story P4-8.4: Send VIP notification if VIP entities detected
+                # Only send if not suppressed (blocked entity takes precedence)
+                if result.has_vip and not result.should_suppress and result.entity_names:
+                    try:
+                        from app.services.push_notification_service import send_event_notification
+                        from app.models.event import Event
+
+                        # Get event details for notification
+                        event = db.query(Event).filter(Event.id == event_id).first()
+                        if event:
+                            # Get camera name
+                            from app.models.camera import Camera
+                            camera = db.query(Camera).filter(Camera.id == event.camera_id).first()
+                            camera_name = camera.name if camera else "Unknown Camera"
+
+                            # Use enriched description if available
+                            notification_description = result.enriched_description or description
+
+                            # Construct thumbnail URL
+                            push_thumbnail_url = None
+                            if event.thumbnail_path or event.thumbnail_base64:
+                                date_str = event.timestamp.strftime("%Y-%m-%d")
+                                push_thumbnail_url = f"/api/v1/thumbnails/{date_str}/{event_id}.jpg"
+
+                            # Get smart detection type
+                            smart_detection_type = event.smart_detection_type
+
+                            # Fire and forget - VIP notification with entity info
+                            asyncio.create_task(
+                                send_event_notification(
+                                    event_id=event_id,
+                                    camera_name=camera_name,
+                                    description=notification_description,
+                                    thumbnail_url=push_thumbnail_url,
+                                    camera_id=event.camera_id,
+                                    smart_detection_type=smart_detection_type,
+                                    anomaly_score=event.anomaly_score,
+                                    entity_names=result.entity_names,
+                                    is_vip=True,
+                                    recognition_status=result.recognition_status,
+                                )
+                            )
+                            logger.info(
+                                f"VIP notification sent for event {event_id}: {result.entity_names}",
+                                extra={
+                                    "event_type": "vip_notification_sent",
+                                    "event_id": event_id,
+                                    "entity_names": result.entity_names,
+                                    "vip_count": len(result.vip_entity_ids)
+                                }
+                            )
+                    except Exception as notify_error:
+                        # VIP notification failures should not block processing
+                        logger.warning(
+                            f"Failed to send VIP notification for event {event_id}: {notify_error}",
+                            extra={"error": str(notify_error), "event_id": event_id}
+                        )
+
+                logger.info(
+                    f"Entity alert processing complete for event {event_id}: "
+                    f"status={result.recognition_status}, entities={len(matched_entity_ids)}",
+                    extra={
+                        "event_type": "entity_alert_complete",
+                        "event_id": event_id,
+                        "recognition_status": result.recognition_status,
+                        "entity_count": len(matched_entity_ids),
+                        "has_vip": result.has_vip,
+                        "suppressed": result.should_suppress
+                    }
+                )
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            # Entity alert errors must not propagate
+            logger.warning(
+                f"Entity alert processing failed for event {event_id}: {e}",
+                extra={
+                    "event_type": "entity_alert_error",
                     "event_id": event_id,
                     "error": str(e)
                 }
