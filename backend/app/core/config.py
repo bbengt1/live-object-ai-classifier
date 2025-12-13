@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     MAX_CAMERAS: int = 1  # MVP limitation
     DEFAULT_FRAME_RATE: int = 5
 
+    # HomeKit Integration (Story P4-6.1)
+    HOMEKIT_ENABLED: bool = False
+    HOMEKIT_PORT: int = 51826
+    HOMEKIT_BRIDGE_NAME: str = "ArgusAI"
+    HOMEKIT_MANUFACTURER: str = "ArgusAI"
+    HOMEKIT_PERSIST_DIR: str = "data/homekit"
+    HOMEKIT_PINCODE: str | None = None  # Auto-generated if not set
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
