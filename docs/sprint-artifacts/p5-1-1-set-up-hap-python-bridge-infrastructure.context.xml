@@ -1,0 +1,111 @@
+<story-context id="p5-1-1-set-up-hap-python-bridge-infrastructure" v="1.0">
+  <metadata>
+    <epicId>P5-1</epicId>
+    <storyId>P5-1.1</storyId>
+    <title>Set up HAP-python Bridge Infrastructure</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p5-1-1-set-up-hap-python-bridge-infrastructure.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>home security user with Apple devices</asA>
+    <iWant>ArgusAI to run as a HomeKit bridge accessory</iWant>
+    <soThat>I can integrate my security cameras with Apple Home without requiring Home Assistant</soThat>
+    <tasks>
+      <task n="1">Create HomeKitConfig and HomeKitAccessory database models in backend/app/models/homekit.py</task>
+      <task n="2">Create Alembic migration 044_add_homekit_models.py</task>
+      <task n="3">Create HomeKit API router with enable/disable/status/qrcode endpoints</task>
+      <task n="4">Register homekit router in main.py</task>
+      <task n="5">Update HomeKitService to load config from database with env var fallback</task>
+      <task n="6">Write model unit tests</task>
+      <task n="7">Write API endpoint tests</task>
+      <task n="8">Write integration tests for database config loading</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <ac id="5" status="new">Database Models Created - HomeKitConfig and HomeKitAccessory models with Alembic migration</ac>
+    <ac id="6" status="new">Configuration API Endpoints - POST /enable, POST /disable, GET /status, GET /qrcode</ac>
+    <ac id="7" status="new">Service Integration with Database - Load from DB, fallback to env vars, encrypted PIN storage</ac>
+    <ac id="8" status="new">Testing - 11+ tests across models, API, and integration</ac>
+    <ac id="1" status="done">HAP-python Installed - Already in requirements.txt from P4-6.1</ac>
+    <ac id="2" status="done">Bridge Initialization - Implemented in homekit_service.py</ac>
+    <ac id="3" status="done">State Persistence - Uses data/homekit/accessory.state</ac>
+    <ac id="4" status="done">Background Operation - Runs in background thread with graceful shutdown</ac>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-p5-1.md" title="Epic P5-1 Tech Spec" section="Story P5-1.1" snippet="Infrastructure story establishing HAP-python bridge, database models for configuration persistence, and API endpoints for HomeKit management."/>
+      <doc path="docs/PRD-phase5.md" title="Phase 5 PRD" section="FR1, FR11" snippet="HomeKit native integration requirements, bridge accessory exposure, camera as motion sensors."/>
+      <doc path="docs/architecture/phase-5-additions.md" title="Phase 5 Architecture" section="HomeKit Integration" snippet="HAP-python bridge design, accessory hierarchy, persistence patterns."/>
+      <doc path="docs/epics-phase5.md" title="Phase 5 Epics" section="Epic P5-1" snippet="Native HomeKit Integration epic with 8 stories for full Apple Home support."/>
+    </docs>
+    <code>
+      <file path="backend/app/services/homekit_service.py" kind="service" symbol="HomekitService" lines="51-639" reason="Existing HAP bridge service - needs database config integration"/>
+      <file path="backend/app/services/homekit_accessories.py" kind="service" symbol="CameraMotionSensor" lines="20-111" reason="Existing motion sensor accessory definition"/>
+      <file path="backend/app/config/homekit.py" kind="config" symbol="HomekitConfig, get_homekit_config" lines="42-109" reason="Current env-based config - database model should mirror these fields"/>
+      <file path="backend/app/core/encryption.py" kind="utility" symbol="encrypt_value, decrypt_value" reason="Use for PIN code encryption in database"/>
+      <file path="backend/main.py" kind="entrypoint" symbol="lifespan" lines="469-521" reason="HomeKit initialization on startup - add router registration"/>
+      <file path="backend/app/models/__init__.py" kind="models" reason="Add HomeKitConfig and HomeKitAccessory imports"/>
+      <file path="backend/app/models/camera.py" kind="model" symbol="Camera" reason="FK target for HomeKitAccessory.camera_id"/>
+      <file path="backend/alembic/versions/043_add_entity_alert_fields.py" kind="migration" reason="Reference for migration pattern - next is 044"/>
+    </code>
+    <dependencies>
+      <python>
+        <package name="HAP-python" version=">=4.9.0">HomeKit Accessory Protocol (already installed)</package>
+        <package name="qrcode" version=">=7.4.0">QR code generation (already installed)</package>
+        <package name="Pillow" version=">=10.0.0">Image processing for QR codes (already installed)</package>
+        <package name="cryptography" version=">=44.0.1">Fernet encryption for PIN code (already installed)</package>
+        <package name="SQLAlchemy" version=">=2.0.36">ORM for database models</package>
+        <package name="alembic" version=">=1.14.0">Database migrations</package>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Use Fernet encryption for PIN code storage (same as API keys)</constraint>
+    <constraint type="pattern">Database models follow existing patterns in backend/app/models/</constraint>
+    <constraint type="pattern">API router follows existing pattern - register in main.py with API_V1_PREFIX</constraint>
+    <constraint type="fallback">If database config doesn't exist, fall back to environment variables</constraint>
+    <constraint type="graceful">If HAP-python not installed, API should return error but not crash</constraint>
+    <constraint type="single-row">HomeKitConfig table should have at most one row (singleton config)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="HomeKitService.get_status" kind="method" signature="get_status() -> HomekitStatus" path="backend/app/services/homekit_service.py:179"/>
+    <interface name="HomeKitService.start" kind="method" signature="async start(cameras: List[Any]) -> bool" path="backend/app/services/homekit_service.py:198"/>
+    <interface name="HomeKitService.stop" kind="method" signature="async stop() -> None" path="backend/app/services/homekit_service.py:295"/>
+    <interface name="generate_pincode" kind="function" signature="generate_pincode() -> str" path="backend/app/config/homekit.py:26"/>
+    <interface name="encrypt_value" kind="function" signature="encrypt_value(value: str) -> str" path="backend/app/core/encryption.py"/>
+    <interface name="decrypt_value" kind="function" signature="decrypt_value(encrypted: str) -> str" path="backend/app/core/encryption.py"/>
+    <interface name="POST /api/v1/homekit/enable" kind="REST" signature="POST → {enabled, running, port, setup_code, qr_code_data}"/>
+    <interface name="POST /api/v1/homekit/disable" kind="REST" signature="POST → {enabled: false}"/>
+    <interface name="GET /api/v1/homekit/status" kind="REST" signature="GET → HomekitStatus"/>
+    <interface name="GET /api/v1/homekit/qrcode" kind="REST" signature="GET → image/png"/>
+  </interfaces>
+
+  <tests>
+    <standards>Tests use pytest with pytest-asyncio for async tests. API tests use httpx TestClient. Database tests use SQLite in-memory with SessionLocal. Mock HAP-python imports when not available.</standards>
+    <locations>
+      <location>backend/tests/test_models/</location>
+      <location>backend/tests/test_api/</location>
+      <location>backend/tests/test_services/</location>
+    </locations>
+    <ideas>
+      <idea ac="5">Test HomeKitConfig model creation with default values</idea>
+      <idea ac="5">Test HomeKitAccessory FK relationship to Camera</idea>
+      <idea ac="5">Test PIN code encryption/decryption roundtrip</idea>
+      <idea ac="6">Test POST /enable creates config and returns expected response</idea>
+      <idea ac="6">Test POST /disable updates config and stops service</idea>
+      <idea ac="6">Test GET /status returns HomekitStatus format</idea>
+      <idea ac="6">Test GET /qrcode returns PNG image content-type</idea>
+      <idea ac="6">Test endpoints when HAP-python not installed (graceful error)</idea>
+      <idea ac="7">Test service loads config from database on init</idea>
+      <idea ac="7">Test service falls back to env vars when no DB config</idea>
+      <idea ac="7">Test enable/disable updates both database AND service state</idea>
+    </ideas>
+  </tests>
+</story-context>
