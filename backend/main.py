@@ -39,6 +39,7 @@ from app.api.v1.summaries import router as summaries_router  # Story P4-4.1: Act
 from app.api.v1.digests import router as digests_router  # Story P4-4.2: Daily Digest Scheduler
 from app.api.v1.feedback import router as feedback_router  # Story P4-5.2: Feedback Statistics
 from app.api.v1.voice import router as voice_router  # Story P4-6.3: Voice Query API
+from app.api.v1.homekit import router as homekit_router  # Story P5-1.1: HomeKit API
 from app.services.event_processor import initialize_event_processor, shutdown_event_processor
 from app.services.cleanup_service import get_cleanup_service
 from app.services.protect_service import get_protect_service  # Story P2-1.4: Protect WebSocket
@@ -702,6 +703,7 @@ app.include_router(summaries_router, prefix=settings.API_V1_PREFIX)  # Story P4-
 app.include_router(digests_router, prefix=settings.API_V1_PREFIX)  # Story P4-4.2 - Daily Digest Scheduler
 app.include_router(feedback_router, prefix=settings.API_V1_PREFIX)  # Story P4-5.2 - Feedback Statistics
 app.include_router(voice_router, prefix=settings.API_V1_PREFIX)  # Story P4-6.3 - Voice Query API
+app.include_router(homekit_router, prefix=settings.API_V1_PREFIX)  # Story P5-1.1 - HomeKit API
 
 # Thumbnail serving endpoint (with CORS support)
 from fastapi.responses import FileResponse, Response as FastAPIResponse
