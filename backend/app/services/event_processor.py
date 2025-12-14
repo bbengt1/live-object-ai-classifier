@@ -1032,6 +1032,17 @@ class EventProcessor:
                         f"HomeKit motion trigger task created for event {event_id}",
                         extra={"event_id": event_id, "camera_id": event.camera_id}
                     )
+
+                    # Story P5-1.5: Trigger occupancy sensor ONLY for person detection
+                    # AC2: Only smart_detection_type == 'person' triggers occupancy
+                    if smart_detection_type == "person":
+                        asyncio.create_task(
+                            self._trigger_homekit_occupancy(homekit_service, event.camera_id, event_id)
+                        )
+                        logger.debug(
+                            f"HomeKit occupancy trigger task created for person event {event_id}",
+                            extra={"event_id": event_id, "camera_id": event.camera_id, "smart_detection_type": smart_detection_type}
+                        )
             except Exception as homekit_error:
                 # HomeKit failures must not block event processing (AC6)
                 logger.warning(
@@ -1437,6 +1448,63 @@ class EventProcessor:
                 f"HomeKit motion trigger failed for event {event_id}: {e}",
                 extra={
                     "event_type": "homekit_motion_error",
+                    "event_id": event_id,
+                    "camera_id": camera_id,
+                    "error": str(e)
+                }
+            )
+
+    async def _trigger_homekit_occupancy(
+        self,
+        homekit_service,
+        camera_id: str,
+        event_id: str
+    ) -> None:
+        """
+        Trigger HomeKit occupancy sensor for person detection (Story P5-1.5).
+
+        This is a fire-and-forget async task. Errors are logged but not propagated.
+        Only called when smart_detection_type == 'person'.
+
+        Args:
+            homekit_service: HomekitService instance
+            camera_id: Camera identifier
+            event_id: Event ID for logging
+
+        Note:
+            - Only triggered for person detections (AC2)
+            - Occupancy has 5-minute timeout (AC3)
+            - Non-blocking, runs as background task
+            - Errors don't propagate to caller
+        """
+        try:
+            # trigger_occupancy handles timer reset internally (AC3)
+            success = homekit_service.trigger_occupancy(camera_id, event_id=event_id)
+
+            if success:
+                logger.info(
+                    f"HomeKit occupancy triggered for person detection",
+                    extra={
+                        "event_type": "homekit_occupancy_triggered",
+                        "event_id": event_id,
+                        "camera_id": camera_id
+                    }
+                )
+            else:
+                logger.debug(
+                    f"HomeKit occupancy trigger returned False (no sensor for camera)",
+                    extra={
+                        "event_type": "homekit_occupancy_no_sensor",
+                        "event_id": event_id,
+                        "camera_id": camera_id
+                    }
+                )
+        except Exception as e:
+            # HomeKit errors must not propagate
+            logger.warning(
+                f"HomeKit occupancy trigger failed for event {event_id}: {e}",
+                extra={
+                    "event_type": "homekit_occupancy_error",
                     "event_id": event_id,
                     "camera_id": camera_id,
                     "error": str(e)

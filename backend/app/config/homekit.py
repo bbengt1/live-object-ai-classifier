@@ -1,8 +1,9 @@
 """
-HomeKit configuration module (Story P4-6.1, P4-6.2, P5-1.2)
+HomeKit configuration module (Story P4-6.1, P4-6.2, P5-1.2, P5-1.5)
 
 Defines HomeKit-related settings for the HAP-python accessory server.
 Story P5-1.2 adds Setup URI generation and enhanced PIN validation.
+Story P5-1.5 adds occupancy sensor configuration for person detection.
 """
 import os
 import random
@@ -23,6 +24,10 @@ DEFAULT_MANUFACTURER = "ArgusAI"
 # Story P4-6.2: Motion reset defaults
 DEFAULT_MOTION_RESET_SECONDS = 30
 DEFAULT_MAX_MOTION_DURATION = 300  # 5 minutes
+
+# Story P5-1.5: Occupancy sensor defaults (person detection only)
+DEFAULT_OCCUPANCY_TIMEOUT_SECONDS = 300  # 5 minutes
+DEFAULT_MAX_OCCUPANCY_DURATION = 1800  # 30 minutes
 
 # Story P5-1.2: HomeKit category constants
 HOMEKIT_CATEGORY_BRIDGE = 2  # HAP category for Bridge accessory
@@ -231,6 +236,8 @@ class HomekitConfig:
         pincode: 8-digit pairing code in XXX-XX-XXX format
         motion_reset_seconds: Seconds before motion sensor resets to False (Story P4-6.2)
         max_motion_duration: Maximum duration for continuous motion (Story P4-6.2)
+        occupancy_timeout_seconds: Seconds before occupancy sensor resets to False (Story P5-1.5)
+        max_occupancy_duration: Maximum duration for continuous occupancy (Story P5-1.5)
     """
     enabled: bool = False
     port: int = DEFAULT_HOMEKIT_PORT
@@ -240,6 +247,8 @@ class HomekitConfig:
     pincode: Optional[str] = None
     motion_reset_seconds: int = DEFAULT_MOTION_RESET_SECONDS
     max_motion_duration: int = DEFAULT_MAX_MOTION_DURATION
+    occupancy_timeout_seconds: int = DEFAULT_OCCUPANCY_TIMEOUT_SECONDS
+    max_occupancy_duration: int = DEFAULT_MAX_OCCUPANCY_DURATION
 
     @property
     def persist_file(self) -> str:
@@ -271,6 +280,8 @@ def get_homekit_config() -> HomekitConfig:
         HOMEKIT_PINCODE: Pairing code in XXX-XX-XXX format (auto-generated if not set)
         HOMEKIT_MOTION_RESET_SECONDS: Motion sensor reset timeout (default: 30)
         HOMEKIT_MAX_MOTION_DURATION: Max continuous motion duration (default: 300)
+        HOMEKIT_OCCUPANCY_TIMEOUT_SECONDS: Occupancy sensor reset timeout (default: 300, Story P5-1.5)
+        HOMEKIT_MAX_OCCUPANCY_DURATION: Max continuous occupancy duration (default: 1800, Story P5-1.5)
 
     Returns:
         HomekitConfig: Configuration instance
@@ -284,4 +295,6 @@ def get_homekit_config() -> HomekitConfig:
         pincode=os.getenv("HOMEKIT_PINCODE"),
         motion_reset_seconds=int(os.getenv("HOMEKIT_MOTION_RESET_SECONDS", str(DEFAULT_MOTION_RESET_SECONDS))),
         max_motion_duration=int(os.getenv("HOMEKIT_MAX_MOTION_DURATION", str(DEFAULT_MAX_MOTION_DURATION))),
+        occupancy_timeout_seconds=int(os.getenv("HOMEKIT_OCCUPANCY_TIMEOUT_SECONDS", str(DEFAULT_OCCUPANCY_TIMEOUT_SECONDS))),
+        max_occupancy_duration=int(os.getenv("HOMEKIT_MAX_OCCUPANCY_DURATION", str(DEFAULT_MAX_OCCUPANCY_DURATION))),
     )

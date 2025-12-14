@@ -1,10 +1,11 @@
 """
-HomeKit service for Apple Home integration (Story P4-6.1, P4-6.2, P5-1.2, P5-1.3)
+HomeKit service for Apple Home integration (Story P4-6.1, P4-6.2, P5-1.2, P5-1.3, P5-1.5)
 
 Manages the HAP-python accessory server and exposes cameras as motion sensors.
 Story P4-6.2 adds motion event triggering with auto-reset timers.
 Story P5-1.2 adds proper HomeKit Setup URI for QR code pairing.
 Story P5-1.3 adds camera accessories with RTSP-to-SRTP streaming.
+Story P5-1.5 adds occupancy sensors for person-only detection with 5-minute timeout.
 """
 import asyncio
 import logging
@@ -38,7 +39,12 @@ from app.config.homekit import (
     generate_setup_uri,
     HOMEKIT_CATEGORY_BRIDGE,
 )
-from app.services.homekit_accessories import CameraMotionSensor, create_motion_sensor
+from app.services.homekit_accessories import (
+    CameraMotionSensor,
+    create_motion_sensor,
+    CameraOccupancySensor,
+    create_occupancy_sensor,
+)
 from app.services.homekit_camera import (
     HomeKitCameraAccessory,
     create_camera_accessory,
@@ -56,6 +62,7 @@ class HomekitStatus:
     paired: bool = False
     accessory_count: int = 0
     camera_count: int = 0  # Story P5-1.3: Number of camera accessories
+    occupancy_count: int = 0  # Story P5-1.5: Number of occupancy sensor accessories
     active_streams: int = 0  # Story P5-1.3: Currently active camera streams
     bridge_name: str = "ArgusAI"
     setup_code: Optional[str] = None
@@ -97,6 +104,7 @@ class HomekitService:
         self._driver: Optional[AccessoryDriver] = None
         self._bridge: Optional[Bridge] = None
         self._sensors: Dict[str, CameraMotionSensor] = {}
+        self._occupancy_sensors: Dict[str, CameraOccupancySensor] = {}  # Story P5-1.5: Occupancy sensors
         self._cameras: Dict[str, HomeKitCameraAccessory] = {}  # Story P5-1.3: Camera accessories
         self._running = False
         self._driver_thread: Optional[threading.Thread] = None
@@ -109,6 +117,10 @@ class HomekitService:
         self._motion_reset_tasks: Dict[str, asyncio.Task] = {}  # camera_id -> reset task
         self._motion_start_times: Dict[str, float] = {}  # camera_id -> start timestamp
         self._camera_id_mapping: Dict[str, str] = {}  # mac_address/alt_id -> camera_id
+
+        # Story P5-1.5: Occupancy reset timers and state tracking
+        self._occupancy_reset_tasks: Dict[str, asyncio.Task] = {}  # camera_id -> reset task
+        self._occupancy_start_times: Dict[str, float] = {}  # camera_id -> start timestamp
 
     @property
     def is_available(self) -> bool:
@@ -148,6 +160,11 @@ class HomekitService:
     def camera_count(self) -> int:
         """Get the number of registered camera accessories (Story P5-1.3)."""
         return len(self._cameras)
+
+    @property
+    def occupancy_count(self) -> int:
+        """Get the number of registered occupancy sensor accessories (Story P5-1.5)."""
+        return len(self._occupancy_sensors)
 
     @property
     def pincode(self) -> str:
@@ -244,6 +261,7 @@ class HomekitService:
             paired=is_paired,
             accessory_count=self.accessory_count,
             camera_count=self.camera_count,  # Story P5-1.3
+            occupancy_count=self.occupancy_count,  # Story P5-1.5
             active_streams=HomeKitCameraAccessory.get_active_stream_count(),  # Story P5-1.3
             bridge_name=self.config.bridge_name,
             setup_code=self.pincode if not is_paired else None,
@@ -325,6 +343,19 @@ class HomekitService:
 
                     logger.info(f"Added HomeKit motion sensor for camera: {camera_name}")
 
+                # Story P5-1.5: Add occupancy sensor for person detection
+                occupancy_sensor = create_occupancy_sensor(
+                    driver=self._driver,
+                    camera_id=camera_id,
+                    camera_name=f"{camera_name} Occupancy",  # Distinct from motion sensor
+                    manufacturer=self.config.manufacturer,
+                )
+
+                if occupancy_sensor:
+                    self._occupancy_sensors[camera_id] = occupancy_sensor
+                    self._bridge.add_accessory(occupancy_sensor.accessory)
+                    logger.info(f"Added HomeKit occupancy sensor for camera: {camera_name}")
+
                 # Story P5-1.3: Add camera accessory for streaming (only if ffmpeg available)
                 if self._ffmpeg_available:
                     rtsp_url = self._get_camera_rtsp_url(camera)
@@ -360,7 +391,8 @@ class HomekitService:
 
             logger.info(
                 f"HomeKit accessory server started on port {self.config.port} "
-                f"with {len(self._sensors)} sensors and {len(self._cameras)} cameras. Pairing code: {self.pincode}"
+                f"with {len(self._sensors)} motion sensors, {len(self._occupancy_sensors)} occupancy sensors, "
+                f"and {len(self._cameras)} cameras. Pairing code: {self.pincode}"
             )
 
             return True
@@ -391,6 +423,12 @@ class HomekitService:
             self._motion_reset_tasks.clear()
             self._motion_start_times.clear()
 
+            # Story P5-1.5: Cancel all occupancy reset timers
+            for camera_id in list(self._occupancy_reset_tasks.keys()):
+                self._cancel_occupancy_reset_timer(camera_id)
+            self._occupancy_reset_tasks.clear()
+            self._occupancy_start_times.clear()
+
             # Story P5-1.3: Clean up all camera streams
             HomeKitCameraAccessory.cleanup_all_streams()
 
@@ -404,6 +442,7 @@ class HomekitService:
             self._driver = None
             self._bridge = None
             self._sensors.clear()
+            self._occupancy_sensors.clear()  # Story P5-1.5: Clear occupancy sensors
             self._cameras.clear()  # Story P5-1.3: Clear camera accessories
             self._camera_id_mapping.clear()
 
@@ -687,6 +726,151 @@ class HomekitService:
             self._motion_start_times.pop(camera_id, None)
 
         logger.debug("Cleared all HomeKit motion states")
+
+    # =========================================================================
+    # Story P5-1.5: Occupancy Sensor Methods (Person Detection Only)
+    # =========================================================================
+
+    def trigger_occupancy(self, camera_id: str, event_id: Optional[int] = None) -> bool:
+        """
+        Trigger occupancy detection for a camera (Story P5-1.5).
+
+        Sets occupancy_detected = True and starts/resets the 5-minute auto-clear timer.
+        Only called when smart_detection_type == 'person' (filtered in event_processor).
+        If called again before timer expires, the timer is reset (extends occupancy period).
+
+        Args:
+            camera_id: Camera identifier (UUID or MAC address)
+            event_id: Optional event ID for logging
+
+        Returns:
+            True if occupancy triggered successfully
+        """
+        # Resolve camera_id through mapping (for Protect cameras using MAC)
+        resolved_id = self._resolve_camera_id(camera_id)
+        sensor = self._occupancy_sensors.get(resolved_id)
+
+        if not sensor:
+            logger.debug(
+                f"No HomeKit occupancy sensor found for camera: {camera_id} (resolved: {resolved_id})",
+                extra={"camera_id": camera_id, "event_id": event_id}
+            )
+            return False
+
+        # Set occupancy detected
+        sensor.trigger_occupancy()
+
+        # Track occupancy start time for max duration check (AC3)
+        current_time = time.time()
+        if resolved_id not in self._occupancy_start_times:
+            self._occupancy_start_times[resolved_id] = current_time
+
+        # Check max occupancy duration (AC3: prevent stuck state, default 30 min)
+        occupancy_duration = current_time - self._occupancy_start_times[resolved_id]
+        if occupancy_duration >= self.config.max_occupancy_duration:
+            logger.warning(
+                f"Max occupancy duration reached for camera {camera_id}, resetting",
+                extra={"camera_id": camera_id, "duration": occupancy_duration}
+            )
+            self._clear_occupancy_state(resolved_id)
+            return True
+
+        # Cancel existing reset timer if any (AC3: rapid events extend occupancy)
+        self._cancel_occupancy_reset_timer(resolved_id)
+
+        # Start new reset timer with 5-minute timeout
+        self._start_occupancy_reset_timer(resolved_id)
+
+        logger.info(
+            f"HomeKit occupancy triggered for camera: {sensor.name}",
+            extra={
+                "camera_id": camera_id,
+                "event_id": event_id,
+                "timeout_seconds": self.config.occupancy_timeout_seconds
+            }
+        )
+
+        return True
+
+    def _cancel_occupancy_reset_timer(self, camera_id: str) -> None:
+        """Cancel existing occupancy reset timer for a camera (Story P5-1.5)."""
+        if camera_id in self._occupancy_reset_tasks:
+            task = self._occupancy_reset_tasks.pop(camera_id)
+            if not task.done():
+                task.cancel()
+
+    def _start_occupancy_reset_timer(self, camera_id: str) -> None:
+        """Start a new occupancy reset timer for a camera (Story P5-1.5 AC3)."""
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(
+                self._occupancy_reset_coroutine(camera_id),
+                name=f"homekit_occupancy_reset_{camera_id}"
+            )
+            self._occupancy_reset_tasks[camera_id] = task
+        except RuntimeError:
+            # No event loop running, log and skip timer
+            logger.debug(
+                f"Could not start occupancy reset timer for {camera_id} - no running event loop",
+                extra={"camera_id": camera_id}
+            )
+
+    async def _occupancy_reset_coroutine(self, camera_id: str) -> None:
+        """
+        Coroutine that waits 5 minutes and then clears occupancy (Story P5-1.5 AC3).
+
+        Args:
+            camera_id: Camera identifier
+        """
+        try:
+            await asyncio.sleep(self.config.occupancy_timeout_seconds)
+            self._clear_occupancy_state(camera_id)
+            logger.debug(
+                f"HomeKit occupancy reset for camera after {self.config.occupancy_timeout_seconds}s",
+                extra={"camera_id": camera_id}
+            )
+        except asyncio.CancelledError:
+            # Timer was cancelled (new person detection arrived)
+            pass
+
+    def _clear_occupancy_state(self, camera_id: str) -> None:
+        """Clear occupancy state and cleanup tracking for a camera (Story P5-1.5)."""
+        sensor = self._occupancy_sensors.get(camera_id)
+        if sensor:
+            sensor.clear_occupancy()
+
+        # Clear tracking
+        self._occupancy_start_times.pop(camera_id, None)
+        self._occupancy_reset_tasks.pop(camera_id, None)
+
+    def clear_occupancy(self, camera_id: str) -> bool:
+        """
+        Clear occupancy detection for a camera (Story P5-1.5).
+
+        Args:
+            camera_id: Camera identifier
+
+        Returns:
+            True if occupancy cleared successfully
+        """
+        sensor = self._occupancy_sensors.get(camera_id)
+        if sensor:
+            sensor.clear_occupancy()
+            return True
+        return False
+
+    def clear_all_occupancy(self) -> None:
+        """Clear occupancy for all cameras (Story P5-1.5 AC3: state sync on restart)."""
+        # Cancel all reset timers
+        for camera_id in list(self._occupancy_reset_tasks.keys()):
+            self._cancel_occupancy_reset_timer(camera_id)
+
+        # Clear all occupancy states
+        for camera_id, sensor in self._occupancy_sensors.items():
+            sensor.clear_occupancy()
+            self._occupancy_start_times.pop(camera_id, None)
+
+        logger.debug("Cleared all HomeKit occupancy states")
 
     async def reset_pairing(self) -> bool:
         """
