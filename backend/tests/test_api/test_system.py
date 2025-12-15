@@ -16,16 +16,16 @@ from app.models.ai_usage import AIUsage
 from app.services import cleanup_service
 
 
-# Create test database (file-based)
-test_db_fd, test_db_path = tempfile.mkstemp(suffix=".db")
-os.close(test_db_fd)
+# Create module-level temp database
+_test_db_fd, _test_db_path = tempfile.mkstemp(suffix=".db")
+os.close(_test_db_fd)
 
-TEST_DATABASE_URL = f"sqlite:///{test_db_path}"
+TEST_DATABASE_URL = f"sqlite:///{_test_db_path}"
 engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def override_get_db():
+def _override_get_db():
     """Override database dependency for testing"""
     db = TestingSessionLocal()
     try:
@@ -38,25 +38,38 @@ def override_get_db():
         db.close()
 
 
-# Override database dependency
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture(scope="module", autouse=True)
+def setup_module_database():
+    """Set up database at module level and clean up after all tests"""
+    # Create tables
+    Base.metadata.create_all(bind=engine)
+    # Apply override for all tests in this module
+    app.dependency_overrides[get_db] = _override_get_db
+    # Override CleanupService to use test database
+    cleanup_service._cleanup_service = cleanup_service.CleanupService(session_factory=TestingSessionLocal)
+    yield
+    # Drop tables after all tests in module complete
+    Base.metadata.drop_all(bind=engine)
 
-# Create tables
-Base.metadata.create_all(bind=engine)
 
-# Override CleanupService to use test database
-cleanup_service._cleanup_service = cleanup_service.CleanupService(session_factory=TestingSessionLocal)
-
-# Create test client
+# Create test client (module-level)
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
 def cleanup_database():
     """Clear database between tests"""
+    # Clean up BEFORE the test to ensure isolation
+    db = TestingSessionLocal()
+    try:
+        db.query(SystemSetting).delete()
+        db.query(Event).delete()
+        db.query(AIUsage).delete()
+        db.commit()
+    finally:
+        db.close()
     yield
-
-    # Clear all tables
+    # Clear all tables after test
     db = TestingSessionLocal()
     try:
         db.query(SystemSetting).delete()
