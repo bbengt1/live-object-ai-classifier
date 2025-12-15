@@ -78,6 +78,16 @@ import type {
   IBackupOptions,
   IRestoreOptions,
 } from '@/types/backup';
+import type {
+  IDiscoveryResponse,
+  IDiscoveryStatusResponse,
+  IDeviceDetailsResponse,
+  IDiscoveredDevice,
+  IDiscoveredCameraDetails,
+  IStreamProfile,
+  IDeviceInfo,
+  ITestConnectionResponse,
+} from '@/types/discovery';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_V1_PREFIX = '/api/v1';
@@ -2007,6 +2017,89 @@ export const apiClient = {
       return apiFetch<SummaryListResponse>(`/summaries?${params}`);
     },
   },
+
+  // ============================================================================
+  // ONVIF Camera Discovery (Story P5-2.3)
+  // ============================================================================
+  discovery: {
+    /**
+     * Check if ONVIF discovery feature is available
+     * Returns availability status based on whether WSDiscovery is installed
+     * @returns Discovery availability status
+     */
+    getStatus: async (): Promise<IDiscoveryStatusResponse> => {
+      return apiFetch<IDiscoveryStatusResponse>('/cameras/discover/status');
+    },
+
+    /**
+     * Start ONVIF camera discovery scan
+     * Sends WS-Discovery probes to multicast address and collects responses
+     * @param timeout Discovery timeout in seconds (1-60, default 10)
+     * @returns Discovery results with list of devices
+     */
+    startScan: async (timeout: number = 10): Promise<IDiscoveryResponse> => {
+      return apiFetch<IDiscoveryResponse>('/cameras/discover', {
+        method: 'POST',
+        body: JSON.stringify({ timeout }),
+      });
+    },
+
+    /**
+     * Get detailed information for a discovered ONVIF device
+     * Queries device for manufacturer, model, and stream profiles
+     * @param endpointUrl ONVIF device service URL from discovery
+     * @param username Optional username for ONVIF authentication
+     * @param password Optional password for ONVIF authentication
+     * @returns Device details with stream profiles and RTSP URLs
+     */
+    getDeviceDetails: async (
+      endpointUrl: string,
+      username?: string | null,
+      password?: string | null
+    ): Promise<IDeviceDetailsResponse> => {
+      return apiFetch<IDeviceDetailsResponse>('/cameras/discover/device', {
+        method: 'POST',
+        body: JSON.stringify({
+          endpoint_url: endpointUrl,
+          username: username || null,
+          password: password || null,
+        }),
+      });
+    },
+
+    /**
+     * Clear discovery cache to force fresh scan
+     * @returns Success message
+     */
+    clearCache: async (): Promise<{ status: string; message: string }> => {
+      return apiFetch<{ status: string; message: string }>('/cameras/discover/clear-cache', {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Test an RTSP connection without saving the camera (Story P5-2.4)
+     * Validates connectivity and returns stream metadata on success
+     * @param rtspUrl RTSP URL to test (must start with rtsp:// or rtsps://)
+     * @param username Optional username for RTSP authentication
+     * @param password Optional password for RTSP authentication
+     * @returns Test result with success status and stream metadata
+     */
+    testConnection: async (
+      rtspUrl: string,
+      username?: string | null,
+      password?: string | null
+    ): Promise<ITestConnectionResponse> => {
+      return apiFetch<ITestConnectionResponse>('/cameras/test', {
+        method: 'POST',
+        body: JSON.stringify({
+          rtsp_url: rtspUrl,
+          username: username || null,
+          password: password || null,
+        }),
+      });
+    },
+  },
 };
 
 // Story P2-2.1: Camera Discovery Types
@@ -2147,3 +2240,15 @@ export interface SummaryListResponse {
   summaries: SummaryGenerateResponse[];
   total: number;
 }
+
+// Story P5-2.3 & P5-2.4: ONVIF Discovery Types (re-exported from types/discovery.ts)
+export type {
+  IDiscoveryResponse,
+  IDiscoveryStatusResponse,
+  IDeviceDetailsResponse,
+  IDiscoveredDevice,
+  IDiscoveredCameraDetails,
+  IStreamProfile,
+  IDeviceInfo,
+  ITestConnectionResponse,
+} from '@/types/discovery';

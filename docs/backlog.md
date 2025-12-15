@@ -84,11 +84,12 @@ Technical debt, improvements, and future work items identified during developmen
 | FF-011 | 2025-12-14 | P3 | Feature | **Test Connection Before Save** - Backend enhancement to support temporary test endpoint (POST /cameras/test with body). This allows users to test RTSP connection before saving the camera, improving UX in the add camera flow. | F1.2 Code Review | Open |
 | FF-012 | 2025-12-14 | P2 | Feature | **MQTT 5.0 Features** - Consider support for MQTT 5.0 features: message expiry, shared subscriptions. Evaluate if these improve reliability or reduce broker load for high-volume event publishing. | P4-2 Tech-Spec | Open |
 | FF-013 | 2025-12-14 | P3 | Feature | **MQTT Birth/Will Messages** - Implement MQTT birth (online) and will (offline) messages for connection monitoring. Allows Home Assistant to track ArgusAI connection state and create automations based on availability. | P4-2 Tech-Spec | Open |
-| FF-014 | 2025-12-14 | P2 | Feature | **ONVIF Camera Discovery** - Auto-detect cameras on local network using ONVIF protocol. Reduces manual configuration for users with compatible cameras. Deferred from Phase 1 MVP. | Epic F1 Tech-Spec | Open |
+| FF-014 | 2025-12-14 | P2 | Feature | **ONVIF Camera Discovery** - Auto-detect cameras on local network using ONVIF protocol. Reduces manual configuration for users with compatible cameras. Deferred from Phase 1 MVP. | Epic F1 Tech-Spec | In Progress |
 | FF-015 | 2025-12-14 | P4 | Feature | **Audio Capture from Cameras** - Support audio streams from RTSP cameras for future audio-based event detection (glass break, doorbell ring, etc.). Out of scope for video AI analysis but enables future audio AI features. | Epic F1 Tech-Spec | Open |
 | FF-016 | 2025-12-14 | P3 | Feature | **Multiple Schedule Time Ranges** - Extend detection schedule to support multiple time ranges per day (e.g., 6-9am AND 6-11pm). Current implementation only supports single time range. User workaround: use two cameras or disable/enable manually. | Epic F2 Tech-Spec | Open |
 | FF-017 | 2025-12-14 | P4 | Feature | **Export Motion Events to CSV** - Add CSV export functionality for motion events for external analysis. Include timestamp, camera, confidence, algorithm, bounding box coordinates. | Epic F2 Tech-Spec | Open |
 | FF-018 | 2025-12-14 | P3 | Feature | **Detection Zone Presets** - Provide preset zone templates for common use cases: "Rectangle", "Top Half", "Bottom Half", "Center", "L-shape". Reduces need for manual polygon drawing. | Epic F2 Tech-Spec | Open |
+| BUG-004 | 2025-12-14 | P2 | Bug | **Feedback Status Not Persisting on Page Refresh** - User feedback (thumbs up/down) on event cards does not persist after page refresh. The feedback is submitted to the backend but the UI state is not restored when the page reloads. Fix: (1) Check if backend stores feedback correctly, (2) Ensure event API returns feedback status, (3) Initialize FeedbackButtons component with saved feedback state from event data. Related: Story P4-5.1 FeedbackButtons component. | User Report | Open |
 
 ---
 
@@ -112,6 +113,7 @@ All open backlog items have been created as GitHub issues for tracking:
 | FF-016 | [#41](https://github.com/bbengt1/ArgusAI/issues/41) | Multiple Schedule Time Ranges |
 | FF-017 | [#42](https://github.com/bbengt1/ArgusAI/issues/42) | Export Motion Events to CSV |
 | FF-018 | [#43](https://github.com/bbengt1/ArgusAI/issues/43) | Detection Zone Presets |
+| BUG-004 | [#47](https://github.com/bbengt1/ArgusAI/issues/47) | Feedback Status Not Persisting on Page Refresh |
 
 **GitHub Labels Created:**
 - `technical-debt`, `testing`, `frontend`, `backend`, `performance`, `feature`, `integration`
