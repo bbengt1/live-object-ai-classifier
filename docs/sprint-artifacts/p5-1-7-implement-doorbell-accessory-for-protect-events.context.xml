@@ -1,0 +1,289 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>P5-1</epicId>
+    <storyId>P5-1.7</storyId>
+    <title>Implement Doorbell Accessory for Protect Events</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p5-1-7-implement-doorbell-accessory-for-protect-events.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>HomeKit user with a UniFi Protect doorbell camera</asA>
+    <iWant>doorbell ring events to trigger a HomeKit Doorbell accessory notification</iWant>
+    <soThat>I receive instant doorbell alerts on all my Apple devices and can trigger HomeKit automations when someone rings the doorbell</soThat>
+    <tasks>
+      <task id="1" title="Create CameraDoorbellSensor Class">
+        <file>backend/app/services/homekit_accessories.py</file>
+        <subtasks>
+          <subtask>Create CameraDoorbellSensor class using HAP-python Doorbell pattern</subtask>
+          <subtask>Use CATEGORY_SENSOR with StatelessProgrammableSwitch service</subtask>
+          <subtask>Configure ProgrammableSwitchEvent characteristic</subtask>
+          <subtask>Add trigger_ring() method to fire single press event</subtask>
+          <subtask>Add create_doorbell_sensor() factory function</subtask>
+        </subtasks>
+      </task>
+      <task id="2" title="Add Doorbell Sensor Storage and Methods">
+        <file>backend/app/services/homekit_service.py</file>
+        <subtasks>
+          <subtask>Add _doorbell_sensors: Dict[str, CameraDoorbellSensor] storage</subtask>
+          <subtask>Import CameraDoorbellSensor and create_doorbell_sensor from accessories</subtask>
+          <subtask>Add doorbell_count property</subtask>
+          <subtask>Implement trigger_doorbell(camera_id, event_id) method</subtask>
+          <subtask>Update stop() to clear doorbell sensors</subtask>
+          <subtask>Update get_status() to include doorbell_count</subtask>
+        </subtasks>
+      </task>
+      <task id="3" title="Create Doorbell Sensors in Bridge Startup">
+        <file>backend/app/services/homekit_service.py</file>
+        <subtasks>
+          <subtask>In start() method, check if camera has is_doorbell == True</subtask>
+          <subtask>Create doorbell sensor only for doorbell cameras</subtask>
+          <subtask>Add doorbell sensor to bridge</subtask>
+          <subtask>Log doorbell sensor creation</subtask>
+        </subtasks>
+      </task>
+      <task id="4" title="Integrate with Protect Event Handler">
+        <file>backend/app/services/protect_event_handler.py</file>
+        <subtasks>
+          <subtask>Locate doorbell ring detection (around line 259-300)</subtask>
+          <subtask>After detecting is_doorbell_ring == True, call homekit_service.trigger_doorbell()</subtask>
+          <subtask>Add error handling for HomeKit trigger failure (non-blocking)</subtask>
+          <subtask>Log doorbell HomeKit trigger</subtask>
+        </subtasks>
+      </task>
+      <task id="5" title="Update HomekitStatus Dataclass">
+        <file>backend/app/services/homekit_service.py</file>
+        <subtasks>
+          <subtask>Add doorbell_count: int = 0 field to HomekitStatus</subtask>
+        </subtasks>
+      </task>
+      <task id="6" title="Write Unit Tests">
+        <file>backend/tests/test_services/test_homekit_doorbell.py</file>
+        <subtasks>
+          <subtask>Test CameraDoorbellSensor class creation</subtask>
+          <subtask>Test trigger_ring() fires ProgrammableSwitchEvent</subtask>
+          <subtask>Test trigger_doorbell() finds correct sensor</subtask>
+          <subtask>Test doorbell sensor only created for is_doorbell == True cameras</subtask>
+          <subtask>Test non-doorbell cameras don't get doorbell sensor</subtask>
+          <subtask>Test unknown camera returns False</subtask>
+          <subtask>Test doorbell count in status</subtask>
+        </subtasks>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="Doorbell Accessory Appears for Protect Doorbell Cameras">
+      <items>
+        <item>CameraDoorbellSensor class created using Doorbell category</item>
+        <item>Doorbell sensor named "{camera_name} Doorbell"</item>
+        <item>Only created for cameras where is_doorbell == True</item>
+        <item>Accessory uses StatelessProgrammableSwitch service</item>
+      </items>
+    </criterion>
+    <criterion id="AC2" title="Ring Events Trigger Doorbell Notification in Home App">
+      <items>
+        <item>trigger_doorbell(camera_id) method implemented in homekit_service.py</item>
+        <item>Ring event sets ProgrammableSwitchEvent to 0 (Single Press)</item>
+        <item>Notification appears within 2 seconds of ring event</item>
+        <item>Event is stateless (no reset timer needed)</item>
+      </items>
+    </criterion>
+    <criterion id="AC3" title="Notification Appears on All Paired Devices">
+      <items>
+        <item>Doorbell notification pushed to all paired iOS/iPadOS/macOS devices</item>
+        <item>Notification includes camera name</item>
+        <item>Notification is native HomeKit doorbell format</item>
+      </items>
+    </criterion>
+    <criterion id="AC4" title="Can Trigger HomeKit Automations">
+      <items>
+        <item>Doorbell ring can be selected as automation trigger in Home app</item>
+        <item>Automations execute when ring is detected</item>
+        <item>Works with "A doorbell rings" automation condition</item>
+      </items>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-p5-1.md</path>
+        <title>Epic Technical Specification: Native HomeKit Integration</title>
+        <section>Story P5-1.7: Doorbell Accessory</section>
+        <snippet>Doorbell accessory appears for Protect doorbell cameras. Ring events trigger doorbell notification. Notification appears on all paired iOS devices. Can trigger HomeKit automations.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/phase-5-additions.md</path>
+        <title>Phase 5 Architecture Additions</title>
+        <section>Phase 5 HomeKit Architecture - Sensor State Management</section>
+        <snippet>Doorbell uses event_type == 'doorbell_ring' to trigger Doorbell.set_value(0) which fires Single press event. StatelessProgrammableSwitch service pattern.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD-phase5.md</path>
+        <title>Phase 5 PRD</title>
+        <section>FR8: Doorbell Accessory</section>
+        <snippet>Create HomeKit Doorbell accessory for Protect doorbell ring events. Ring events trigger notification in Home app on all paired devices.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics-phase5.md</path>
+        <title>Phase 5 Epics</title>
+        <section>Story P5-1.7: Implement Doorbell Accessory for Protect Events</section>
+        <snippet>Doorbell accessory appears for Protect doorbell cameras. Ring events trigger doorbell notification in Home app. Can trigger HomeKit automations.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p5-1-6-add-vehicle-animal-package-sensor-accessories.md</path>
+        <title>Previous Story P5-1.6</title>
+        <section>Dev Agent Record</section>
+        <snippet>Pattern for sensor classes: CameraVehicleSensor/CameraAnimalSensor/CameraPackageSensor in homekit_accessories.py. trigger_vehicle/animal/package methods in homekit_service.py. Test file: test_homekit_detection_sensors.py.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <artifact>
+        <path>backend/app/services/homekit_accessories.py</path>
+        <kind>service</kind>
+        <symbol>CameraMotionSensor, CameraOccupancySensor, CameraVehicleSensor, CameraAnimalSensor, CameraPackageSensor</symbol>
+        <lines>22-641</lines>
+        <reason>Existing sensor accessory implementations to follow as pattern. New CameraDoorbellSensor class will be added here.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/services/homekit_service.py</path>
+        <kind>service</kind>
+        <symbol>HomekitService, HomekitStatus</symbol>
+        <lines>64-1261</lines>
+        <reason>Main HomeKit service. Add doorbell sensor storage, trigger_doorbell() method, and update start()/stop()/get_status().</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/services/protect_event_handler.py</path>
+        <kind>service</kind>
+        <symbol>ProtectEventHandler._handle_smart_detect_event</symbol>
+        <lines>259-300</lines>
+        <reason>Doorbell ring detection location. Add HomeKit doorbell trigger after is_doorbell_ring detection.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/config/homekit.py</path>
+        <kind>config</kind>
+        <symbol>HomekitConfig, get_homekit_config</symbol>
+        <lines>231-319</lines>
+        <reason>HomeKit configuration. May need to add doorbell-specific settings if needed.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/services/protect_service.py</path>
+        <kind>service</kind>
+        <symbol>ProtectedCameraInfo.is_doorbell</symbol>
+        <lines>55-58, 1349-1381</lines>
+        <reason>Camera model with is_doorbell flag. Used to determine which cameras get doorbell accessory.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/models/camera.py</path>
+        <kind>model</kind>
+        <symbol>Camera</symbol>
+        <lines>13-end</lines>
+        <reason>Camera model with is_doorbell field from Protect discovery.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/tests/test_services/test_homekit_detection_sensors.py</path>
+        <kind>test</kind>
+        <symbol>TestCameraVehicleSensorClass, TestHomekitVehicleTrigger</symbol>
+        <lines>1-end</lines>
+        <reason>Test patterns for detection sensors. Follow same pattern for doorbell tests.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/tests/test_services/test_homekit_occupancy.py</path>
+        <kind>test</kind>
+        <symbol>TestHomekitOccupancyTrigger</symbol>
+        <lines>1-end</lines>
+        <reason>Test patterns for occupancy sensor. Follow similar structure for doorbell tests.</reason>
+      </artifact>
+    </code>
+    <dependencies>
+      <python>
+        <package name="HAP-python" version=">=4.9.0">HomeKit Accessory Protocol implementation - provides StatelessProgrammableSwitch service</package>
+        <package name="pyhap" version="implicit">Accessory, AccessoryDriver, Bridge, CATEGORY_SENSOR constants</package>
+        <package name="qrcode" version=">=7.4.0">QR code generation for HomeKit pairing</package>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Follow existing sensor class pattern from CameraMotionSensor/CameraOccupancySensor/CameraVehicleSensor</constraint>
+    <constraint type="pattern">Use factory function pattern (create_doorbell_sensor) for accessory creation</constraint>
+    <constraint type="pattern">Doorbell is stateless - no reset timer needed (unlike motion/occupancy sensors)</constraint>
+    <constraint type="pattern">Only create doorbell accessory for cameras where is_doorbell == True</constraint>
+    <constraint type="integration">Integration point is protect_event_handler.py:259-300 where is_doorbell_ring is detected</constraint>
+    <constraint type="testing">Follow test patterns from test_homekit_detection_sensors.py and test_homekit_occupancy.py</constraint>
+    <constraint type="homekit">Use StatelessProgrammableSwitch service with ProgrammableSwitchEvent characteristic</constraint>
+    <constraint type="homekit">ProgrammableSwitchEvent value 0 = Single Press (doorbell ring)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>CameraDoorbellSensor (to be created)</name>
+      <kind>class</kind>
+      <signature>
+class CameraDoorbellSensor:
+    def __init__(self, driver, camera_id: str, name: str, manufacturer: str = "ArgusAI", model: str = "Doorbell")
+    @property
+    def accessory(self) -> Accessory
+    def trigger_ring(self) -> None
+    def __repr__(self) -> str
+      </signature>
+      <path>backend/app/services/homekit_accessories.py</path>
+    </interface>
+    <interface>
+      <name>create_doorbell_sensor (to be created)</name>
+      <kind>function</kind>
+      <signature>def create_doorbell_sensor(driver, camera_id: str, camera_name: str, manufacturer: str = "ArgusAI") -> Optional[CameraDoorbellSensor]</signature>
+      <path>backend/app/services/homekit_accessories.py</path>
+    </interface>
+    <interface>
+      <name>HomekitService.trigger_doorbell (to be created)</name>
+      <kind>method</kind>
+      <signature>def trigger_doorbell(self, camera_id: str, event_id: Optional[int] = None) -> bool</signature>
+      <path>backend/app/services/homekit_service.py</path>
+    </interface>
+    <interface>
+      <name>HomekitService.trigger_motion (existing)</name>
+      <kind>method</kind>
+      <signature>def trigger_motion(self, camera_id: str, event_id: Optional[int] = None) -> bool</signature>
+      <path>backend/app/services/homekit_service.py:627-685</path>
+    </interface>
+    <interface>
+      <name>HomekitService.trigger_occupancy (existing)</name>
+      <kind>method</kind>
+      <signature>def trigger_occupancy(self, camera_id: str, event_id: Optional[int] = None) -> bool</signature>
+      <path>backend/app/services/homekit_service.py:818-877</path>
+    </interface>
+    <interface>
+      <name>ProtectEventHandler._broadcast_doorbell_ring (existing)</name>
+      <kind>method</kind>
+      <signature>async def _broadcast_doorbell_ring(self, camera_id: str, camera_name: str, protect_event_id: str, snapshot_data: Optional[bytes], timestamp: datetime) -> None</signature>
+      <path>backend/app/services/protect_event_handler.py:2173-2230</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend tests use pytest with pytest-asyncio for async tests. Tests are organized in backend/tests/test_services/ for service layer tests. Mock HAP-python driver for isolated testing. Follow existing test patterns from test_homekit_detection_sensors.py and test_homekit_occupancy.py.
+    </standards>
+    <locations>
+      <location>backend/tests/test_services/test_homekit_doorbell.py (new)</location>
+      <location>backend/tests/test_services/test_homekit_detection_sensors.py (reference)</location>
+      <location>backend/tests/test_services/test_homekit_occupancy.py (reference)</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Test CameraDoorbellSensor class creation with correct service and characteristic</idea>
+      <idea ac="AC1">Test doorbell sensor only created for cameras with is_doorbell == True</idea>
+      <idea ac="AC1">Test non-doorbell cameras do not get doorbell sensor</idea>
+      <idea ac="AC1">Test doorbell sensor naming follows "{camera_name} Doorbell" pattern</idea>
+      <idea ac="AC2">Test trigger_ring() sets ProgrammableSwitchEvent to 0</idea>
+      <idea ac="AC2">Test trigger_doorbell() resolves camera ID correctly</idea>
+      <idea ac="AC2">Test trigger_doorbell() returns False for unknown camera</idea>
+      <idea ac="AC2">Test no reset timer is started (stateless event)</idea>
+      <idea ac="AC3">Test doorbell_count in HomekitStatus is accurate</idea>
+      <idea ac="AC4">Test integration with protect_event_handler (mock homekit_service)</idea>
+    </ideas>
+  </tests>
+</story-context>

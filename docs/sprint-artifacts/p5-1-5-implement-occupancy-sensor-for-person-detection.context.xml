@@ -1,0 +1,292 @@
+<story-context id="p5-1-5-implement-occupancy-sensor-for-person-detection" v="1.0">
+  <metadata>
+    <epicId>P5-1</epicId>
+    <storyId>P5-1.5</storyId>
+    <title>Implement Occupancy Sensor for Person Detection</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p5-1-5-implement-occupancy-sensor-for-person-detection.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>HomeKit user with Apple Home app</asA>
+    <iWant>occupancy sensors that only activate when my ArgusAI cameras detect a person (not just any motion)</iWant>
+    <soThat>I can create HomeKit automations specifically for human presence (e.g., "turn on lights when person detected" vs motion from animals or vehicles)</soThat>
+    <tasks>
+      <task id="1" title="Create CameraOccupancySensor Class" ac="1,4">
+        <file>backend/app/services/homekit_accessories.py</file>
+        <subtask>Create CameraOccupancySensor class based on CameraMotionSensor pattern</subtask>
+        <subtask>Use HAP-python OccupancySensor service instead of MotionSensor</subtask>
+        <subtask>Configure OccupancyDetected characteristic (boolean)</subtask>
+        <subtask>Add set_occupancy(), trigger_occupancy(), clear_occupancy() methods</subtask>
+        <subtask>Add create_occupancy_sensor() factory function</subtask>
+      </task>
+      <task id="2" title="Add Occupancy Configuration Options" ac="3">
+        <file>backend/app/config/homekit.py</file>
+        <subtask>Add DEFAULT_OCCUPANCY_TIMEOUT_SECONDS = 300 constant (5 minutes)</subtask>
+        <subtask>Add DEFAULT_MAX_OCCUPANCY_DURATION = 1800 constant (30 minutes)</subtask>
+        <subtask>Add occupancy_timeout_seconds to HomekitConfig dataclass</subtask>
+        <subtask>Add max_occupancy_duration to HomekitConfig dataclass</subtask>
+        <subtask>Load from environment variables HOMEKIT_OCCUPANCY_TIMEOUT_SECONDS, HOMEKIT_MAX_OCCUPANCY_DURATION</subtask>
+      </task>
+      <task id="3" title="Implement trigger_occupancy() in HomeKit Service" ac="2,3">
+        <file>backend/app/services/homekit_service.py</file>
+        <subtask>Add _occupancy_sensors: Dict[str, CameraOccupancySensor] storage</subtask>
+        <subtask>Add _occupancy_reset_tasks: Dict[str, asyncio.Task] for reset timers</subtask>
+        <subtask>Add _occupancy_start_times: Dict[str, float] for duration tracking</subtask>
+        <subtask>Implement trigger_occupancy(camera_id, event_id) method with 5-minute timer</subtask>
+        <subtask>Add _start_occupancy_reset_timer() and _cancel_occupancy_reset_timer() methods</subtask>
+        <subtask>Add _occupancy_reset_coroutine() for async timer</subtask>
+        <subtask>Add clear_all_occupancy() method</subtask>
+        <subtask>Update stop() to cancel occupancy timers and clear state</subtask>
+      </task>
+      <task id="4" title="Create Occupancy Sensors in Bridge Startup" ac="1">
+        <file>backend/app/services/homekit_service.py</file>
+        <subtask>In start() method, create occupancy sensor for each camera</subtask>
+        <subtask>Use name pattern: f"{camera_name} Occupancy"</subtask>
+        <subtask>Add occupancy sensor to bridge: self._bridge.add_accessory()</subtask>
+        <subtask>Update occupancy_count in HomekitStatus dataclass</subtask>
+        <subtask>Update get_status() to include occupancy sensor count</subtask>
+      </task>
+      <task id="5" title="Integrate with Event Processor" ac="2">
+        <file>backend/app/services/event_processor.py</file>
+        <subtask>Add trigger_homekit_occupancy() call when smart_detection_type == 'person'</subtask>
+        <subtask>Motion sensor continues to trigger on all detection types</subtask>
+        <subtask>Add async fire-and-forget pattern for occupancy trigger (same as motion)</subtask>
+        <subtask>Add logging for occupancy triggers</subtask>
+      </task>
+      <task id="6" title="Write Unit Tests" ac="1,2,3,4">
+        <file>backend/tests/test_services/test_homekit_occupancy.py</file>
+        <subtask>Test CameraOccupancySensor class creation</subtask>
+        <subtask>Test trigger_occupancy() sets sensor state</subtask>
+        <subtask>Test person detection triggers occupancy sensor</subtask>
+        <subtask>Test non-person events do NOT trigger occupancy sensor</subtask>
+        <subtask>Test 5-minute timeout resets state</subtask>
+        <subtask>Test rapid detections extend timeout</subtask>
+        <subtask>Test max occupancy duration enforcement</subtask>
+        <subtask>Test unknown camera returns False</subtask>
+        <subtask>Test event processor integration</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="Occupancy Sensor Separate from Motion Sensor">
+      <requirement>New CameraOccupancySensor class created in homekit_accessories.py</requirement>
+      <requirement>Uses HAP-python OccupancySensor service (not MotionSensor)</requirement>
+      <requirement>Each camera has separate occupancy sensor accessory alongside motion sensor</requirement>
+      <requirement>Occupancy sensor named "{camera_name} Occupancy" to distinguish from motion sensor</requirement>
+    </criterion>
+    <criterion id="AC2" title="Only Triggers on Person Detection Events">
+      <requirement>trigger_occupancy() method only called when smart_detection_type == 'person'</requirement>
+      <requirement>Vehicle, animal, package, motion events do NOT trigger occupancy sensor</requirement>
+      <requirement>Motion sensor still triggers on all event types (unchanged behavior)</requirement>
+      <requirement>Event routing logic in homekit_service properly filters by detection type</requirement>
+    </criterion>
+    <criterion id="AC3" title="Occupancy State Has 5-Minute Timeout Before Reset">
+      <requirement>Occupancy sensor state persists for 5 minutes (300 seconds) after last person detection</requirement>
+      <requirement>Timeout configurable via HOMEKIT_OCCUPANCY_TIMEOUT_SECONDS environment variable</requirement>
+      <requirement>Rapid person detections extend the 5-minute window (reset timer on each detection)</requirement>
+      <requirement>Max occupancy duration enforced to prevent stuck state (default 30 minutes)</requirement>
+    </criterion>
+    <criterion id="AC4" title="Distinct Icon in Home App">
+      <requirement>OccupancySensor service used (HAP-python automatically uses correct icon)</requirement>
+      <requirement>Occupancy sensor shows "Occupied" vs "Not Occupied" state in Home app</requirement>
+      <requirement>Visual differentiation clear between motion and occupancy sensors</requirement>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-p5-1.md</path>
+        <title>Epic P5-1 Technical Specification</title>
+        <section>Story P5-1.5: Occupancy Sensor for Person Detection</section>
+        <snippet>AC requirements: Occupancy sensor separate from motion sensor, triggers only on person detection, 5-minute timeout, distinct Home app icon.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics-phase5.md</path>
+        <title>Phase 5 Epics</title>
+        <section>Story P5-1.5</section>
+        <snippet>Occupancy sensor activates only on person detection (not other motion), has 5-minute timeout, distinct from motion sensor in Home app.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/phase-5-additions.md</path>
+        <title>Phase 5 Architecture Additions</title>
+        <section>HomeKit Architecture - Sensor State Management</section>
+        <snippet>Event → homekit_service.update_sensor_state(camera_id, event_type) → If person: Update OccupancySensor with 5-minute timeout.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD-phase5.md</path>
+        <title>Phase 5 PRD</title>
+        <section>FR6: Occupancy Sensor</section>
+        <snippet>Occupancy sensor accessory per camera, triggers on person detection only, distinct from motion sensor.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p5-1-4-implement-motion-sensor-accessories.md</path>
+        <title>Previous Story P5-1.4</title>
+        <section>Dev Agent Record</section>
+        <snippet>Motion sensor uses 30s default reset, configurable via env var. CameraMotionSensor class pattern to follow for occupancy.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>backend/app/services/homekit_accessories.py</path>
+        <kind>service</kind>
+        <symbol>CameraMotionSensor</symbol>
+        <lines>20-111</lines>
+        <reason>Pattern to follow for CameraOccupancySensor implementation. Contains HAP-python Accessory setup, service configuration, and state methods.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/homekit_accessories.py</path>
+        <kind>function</kind>
+        <symbol>create_motion_sensor</symbol>
+        <lines>113-144</lines>
+        <reason>Factory function pattern to follow for create_occupancy_sensor().</reason>
+      </file>
+      <file>
+        <path>backend/app/services/homekit_service.py</path>
+        <kind>service</kind>
+        <symbol>HomekitService</symbol>
+        <lines>69-721</lines>
+        <reason>Main HomeKit service. Add occupancy sensor storage, trigger/clear methods, and bridge integration here.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/homekit_service.py</path>
+        <kind>method</kind>
+        <symbol>trigger_motion</symbol>
+        <lines>504-562</lines>
+        <reason>Pattern for trigger_occupancy() implementation - timer management, camera ID resolution, state tracking.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/homekit_service.py</path>
+        <kind>method</kind>
+        <symbol>_motion_reset_coroutine</symbol>
+        <lines>616-632</lines>
+        <reason>Pattern for _occupancy_reset_coroutine() - async sleep, state clearing, cancellation handling.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/homekit_service.py</path>
+        <kind>method</kind>
+        <symbol>start</symbol>
+        <lines>257-371</lines>
+        <reason>Bridge startup where occupancy sensors need to be created and added for each camera.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/homekit_service.py</path>
+        <kind>method</kind>
+        <symbol>stop</symbol>
+        <lines>382-413</lines>
+        <reason>Shutdown method - needs to cancel occupancy timers and clear occupancy sensors dict.</reason>
+      </file>
+      <file>
+        <path>backend/app/config/homekit.py</path>
+        <kind>config</kind>
+        <symbol>HomekitConfig</symbol>
+        <lines>220-258</lines>
+        <reason>Config dataclass - add occupancy_timeout_seconds and max_occupancy_duration fields.</reason>
+      </file>
+      <file>
+        <path>backend/app/config/homekit.py</path>
+        <kind>function</kind>
+        <symbol>get_homekit_config</symbol>
+        <lines>261-287</lines>
+        <reason>Config loader - add HOMEKIT_OCCUPANCY_* environment variable loading.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/event_processor.py</path>
+        <kind>method</kind>
+        <symbol>_trigger_homekit_motion</symbol>
+        <lines>1391</lines>
+        <reason>Helper method for HomeKit motion triggering. Add similar _trigger_homekit_occupancy method.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/event_processor.py</path>
+        <kind>code_block</kind>
+        <symbol>HomeKit motion trigger</symbol>
+        <lines>1019-1040</lines>
+        <reason>Event processor integration point. Add occupancy trigger after motion trigger, filtered by smart_detection_type.</reason>
+      </file>
+      <file>
+        <path>backend/tests/test_services/test_homekit_motion.py</path>
+        <kind>test</kind>
+        <symbol>TestHomekitMotionTrigger</symbol>
+        <lines>39-196</lines>
+        <reason>Test pattern to follow for test_homekit_occupancy.py. Includes mock sensor, timer tests, integration tests.</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="HAP-python" version=">=4.9.0" reason="HomeKit Accessory Protocol - provides OccupancySensor service" />
+        <package name="pyhap" version=">=4.9.0" reason="HAP-python package import name" />
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Follow existing CameraMotionSensor class pattern for CameraOccupancySensor</constraint>
+    <constraint type="pattern">Use fire-and-forget asyncio.create_task() pattern for HomeKit triggers (non-blocking)</constraint>
+    <constraint type="pattern">Use environment variables for all configurable timeouts (HOMEKIT_OCCUPANCY_*)</constraint>
+    <constraint type="error-handling">HomeKit failures must not block event processing - catch and log exceptions</constraint>
+    <constraint type="testing">Tests must use mocks for HAP-python classes (CI doesn't have HAP)</constraint>
+    <constraint type="naming">Sensor names use pattern "{camera_name} Occupancy" to distinguish from "{camera_name} Motion"</constraint>
+    <constraint type="timing">Occupancy timeout: 300 seconds (5 minutes) default, Motion timeout: 30 seconds default</constraint>
+    <constraint type="scope">Only person detection (smart_detection_type == 'person') triggers occupancy sensor</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>CameraOccupancySensor</name>
+      <kind>class</kind>
+      <signature>class CameraOccupancySensor(driver, camera_id: str, name: str, manufacturer: str = "ArgusAI", model: str = "Occupancy Sensor")</signature>
+      <path>backend/app/services/homekit_accessories.py</path>
+    </interface>
+    <interface>
+      <name>create_occupancy_sensor</name>
+      <kind>function</kind>
+      <signature>def create_occupancy_sensor(driver, camera_id: str, camera_name: str, manufacturer: str = "ArgusAI") -> Optional[CameraOccupancySensor]</signature>
+      <path>backend/app/services/homekit_accessories.py</path>
+    </interface>
+    <interface>
+      <name>HomekitService.trigger_occupancy</name>
+      <kind>method</kind>
+      <signature>def trigger_occupancy(self, camera_id: str, event_id: Optional[int] = None) -> bool</signature>
+      <path>backend/app/services/homekit_service.py</path>
+    </interface>
+    <interface>
+      <name>HomekitService.clear_all_occupancy</name>
+      <kind>method</kind>
+      <signature>def clear_all_occupancy(self) -> None</signature>
+      <path>backend/app/services/homekit_service.py</path>
+    </interface>
+    <interface>
+      <name>HAP OccupancySensor Service</name>
+      <kind>HAP service</kind>
+      <signature>service = accessory.add_preload_service("OccupancySensor"); char = service.configure_char("OccupancyDetected", value=0)</signature>
+      <path>pyhap library</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>Tests use pytest with pytest-asyncio for async tests. Mock HAP-python classes since HAP is not available in CI. Follow existing test patterns in test_homekit_motion.py. Use dataclasses for mock sensors. Tests should cover: class creation, state changes, timer behavior, event filtering, integration with event processor.</standards>
+    <locations>
+      <location>backend/tests/test_services/test_homekit_occupancy.py</location>
+      <location>backend/tests/test_services/test_homekit_motion.py (reference)</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Test CameraOccupancySensor class creates valid HAP accessory with OccupancySensor service</idea>
+      <idea ac="AC1">Test occupancy sensor has distinct name from motion sensor ("{name} Occupancy" vs "{name} Motion")</idea>
+      <idea ac="AC2">Test trigger_occupancy() sets OccupancyDetected characteristic to True</idea>
+      <idea ac="AC2">Test event processor calls trigger_occupancy() only when smart_detection_type == 'person'</idea>
+      <idea ac="AC2">Test event processor does NOT call trigger_occupancy() for vehicle, animal, package events</idea>
+      <idea ac="AC3">Test occupancy state resets after 5-minute timeout (use short timeout in tests)</idea>
+      <idea ac="AC3">Test rapid person detections extend the occupancy timeout</idea>
+      <idea ac="AC3">Test max occupancy duration forces reset after 30 minutes</idea>
+      <idea ac="AC3">Test config loads occupancy timeout from environment variable</idea>
+      <idea ac="AC4">Test OccupancySensor service is used (not MotionSensor)</idea>
+    </ideas>
+  </tests>
+</story-context>

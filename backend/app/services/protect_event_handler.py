@@ -1,10 +1,12 @@
 """
-UniFi Protect Event Handler Service (Story P2-3.1, P2-3.3)
+UniFi Protect Event Handler Service (Story P2-3.1, P2-3.3, P5-1.7)
 
 Handles real-time motion/smart detection events from Protect WebSocket.
 Implements event filtering based on per-camera configuration and
 deduplication with cooldown logic. Submits events to AI pipeline and
 stores results in database.
+
+Story P5-1.7 adds HomeKit doorbell trigger for ring events.
 
 Event Flow:
     uiprotect WebSocket Event
@@ -30,6 +32,7 @@ Event Flow:
     9. Store event in database (Story P2-3.3)
             ↓
     10. Broadcast EVENT_CREATED via WebSocket (Story P2-3.3)
+    11. Trigger HomeKit doorbell if ring event (Story P5-1.7)
 """
 import asyncio
 import base64
@@ -303,6 +306,9 @@ class ProtectEventHandler:
                             thumbnail_url=snapshot_result.thumbnail_path,
                             timestamp=snapshot_result.timestamp
                         )
+
+                        # Story P5-1.7: Trigger HomeKit doorbell notification
+                        self._trigger_homekit_doorbell(camera.id, generated_event_id)
 
                     # Track total processing time (AC10, AC11)
                     pipeline_start = time.time()
@@ -2233,6 +2239,69 @@ class ProtectEventHandler:
                 }
             )
             return 0
+
+    def _trigger_homekit_doorbell(self, camera_id: str, event_id: Optional[str] = None) -> bool:
+        """
+        Trigger HomeKit doorbell notification for ring events (Story P5-1.7).
+
+        Fires a doorbell ring event on the HomeKit accessory for paired Apple devices.
+        This is a non-blocking, fire-and-forget operation - HomeKit failures should not
+        block the main event processing pipeline.
+
+        Args:
+            camera_id: Camera identifier (UUID)
+            event_id: Optional event ID for logging
+
+        Returns:
+            True if doorbell triggered successfully, False if unavailable or error
+        """
+        try:
+            # Lazy import to avoid circular imports
+            from app.services.homekit_service import get_homekit_service
+
+            homekit_service = get_homekit_service()
+
+            # Only trigger if HomeKit is running
+            if not homekit_service.is_running:
+                logger.debug(
+                    f"HomeKit not running, skipping doorbell trigger for camera {camera_id}",
+                    extra={"camera_id": camera_id, "event_id": event_id}
+                )
+                return False
+
+            # Trigger doorbell ring (non-blocking)
+            triggered = homekit_service.trigger_doorbell(camera_id, event_id)
+
+            if triggered:
+                logger.debug(
+                    f"HomeKit doorbell triggered for camera {camera_id}",
+                    extra={
+                        "event_type": "homekit_doorbell_trigger",
+                        "camera_id": camera_id,
+                        "event_id": event_id
+                    }
+                )
+            else:
+                logger.debug(
+                    f"No HomeKit doorbell sensor for camera {camera_id}",
+                    extra={"camera_id": camera_id, "event_id": event_id}
+                )
+
+            return triggered
+
+        except Exception as e:
+            # HomeKit failures should not block event processing
+            logger.warning(
+                f"HomeKit doorbell trigger error: {e}",
+                extra={
+                    "event_type": "homekit_doorbell_trigger_error",
+                    "camera_id": camera_id,
+                    "event_id": event_id,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e)
+                }
+            )
+            return False
 
     async def _broadcast_event_created(
         self,

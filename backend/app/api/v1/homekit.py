@@ -1,5 +1,5 @@
 """
-HomeKit API endpoints (Story P5-1.1)
+HomeKit API endpoints (Story P5-1.1, P5-1.8)
 
 Endpoints for HomeKit bridge configuration and management:
 - GET /api/v1/homekit/status - Get HomeKit bridge status
@@ -7,9 +7,11 @@ Endpoints for HomeKit bridge configuration and management:
 - POST /api/v1/homekit/disable - Disable HomeKit bridge
 - GET /api/v1/homekit/qrcode - Get pairing QR code (PNG image)
 - POST /api/v1/homekit/reset - Reset pairing state
+- GET /api/v1/homekit/pairings - List paired devices (Story P5-1.8)
+- DELETE /api/v1/homekit/pairings/{id} - Remove specific pairing (Story P5-1.8)
 """
 import logging
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status, Depends, Response
@@ -40,10 +42,14 @@ class HomeKitStatusResponse(BaseModel):
     enabled: bool = Field(..., description="Whether HomeKit is enabled in config")
     running: bool = Field(..., description="Whether bridge is currently running")
     paired: bool = Field(..., description="Whether any iOS devices are paired")
-    accessory_count: int = Field(..., description="Number of accessories in bridge")
+    accessory_count: int = Field(..., description="Number of motion sensor accessories in bridge")
+    camera_count: int = Field(0, description="Number of camera accessories (Story P5-1.3)")
+    active_streams: int = Field(0, description="Currently active camera streams (Story P5-1.3)")
     bridge_name: str = Field(..., description="Bridge name shown in Apple Home")
     setup_code: Optional[str] = Field(None, description="Pairing code (hidden if paired)")
+    setup_uri: Optional[str] = Field(None, description="X-HM:// Setup URI for QR code (Story P5-1.2)")
     port: int = Field(..., description="HAP server port")
+    ffmpeg_available: bool = Field(False, description="Whether ffmpeg is available for streaming (Story P5-1.3)")
     error: Optional[str] = Field(None, description="Error message if any")
 
     model_config = ConfigDict(
@@ -53,9 +59,13 @@ class HomeKitStatusResponse(BaseModel):
                 "running": True,
                 "paired": False,
                 "accessory_count": 3,
+                "camera_count": 3,
+                "active_streams": 1,
                 "bridge_name": "ArgusAI",
                 "setup_code": "123-45-678",
+                "setup_uri": "X-HM://0023B6WQLAB1C",
                 "port": 51826,
+                "ffmpeg_available": True,
                 "error": None
             }
         }
@@ -83,6 +93,7 @@ class HomeKitEnableResponse(BaseModel):
     running: bool
     port: int
     setup_code: str = Field(..., description="Pairing code in XXX-XX-XXX format")
+    setup_uri: Optional[str] = Field(None, description="X-HM:// Setup URI for QR code (Story P5-1.2)")
     qr_code_data: Optional[str] = Field(None, description="Base64 PNG QR code for pairing")
     bridge_name: str
     message: str
@@ -94,6 +105,7 @@ class HomeKitEnableResponse(BaseModel):
                 "running": True,
                 "port": 51826,
                 "setup_code": "123-45-678",
+                "setup_uri": "X-HM://0023B6WQLAB1C",
                 "qr_code_data": "data:image/png;base64,...",
                 "bridge_name": "ArgusAI",
                 "message": "HomeKit bridge enabled successfully"
@@ -141,6 +153,66 @@ class HomeKitConfigResponse(BaseModel):
                 "max_motion_duration": 300,
                 "created_at": "2025-12-14T10:00:00Z",
                 "updated_at": "2025-12-14T10:00:00Z"
+            }
+        }
+    )
+
+
+# ============================================================================
+# Pairings Schemas (Story P5-1.8)
+# ============================================================================
+
+
+class PairingInfo(BaseModel):
+    """Information about a paired HomeKit client (Story P5-1.8)."""
+    pairing_id: str = Field(..., description="Unique identifier for the pairing (client UUID)")
+    is_admin: bool = Field(..., description="Whether this client has admin permissions")
+    permissions: int = Field(..., description="HAP permission level (0=regular, 1=admin)")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "pairing_id": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+                "is_admin": True,
+                "permissions": 1
+            }
+        }
+    )
+
+
+class PairingsListResponse(BaseModel):
+    """Response containing list of paired devices (Story P5-1.8)."""
+    pairings: List[PairingInfo] = Field(default_factory=list, description="List of paired clients")
+    count: int = Field(..., description="Total number of paired clients")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "pairings": [
+                    {
+                        "pairing_id": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+                        "is_admin": True,
+                        "permissions": 1
+                    }
+                ],
+                "count": 1
+            }
+        }
+    )
+
+
+class RemovePairingResponse(BaseModel):
+    """Response after removing a pairing (Story P5-1.8)."""
+    success: bool
+    message: str
+    pairing_id: str = Field(..., description="ID of the removed pairing")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "success": True,
+                "message": "Pairing removed successfully",
+                "pairing_id": "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
             }
         }
     )
@@ -200,7 +272,7 @@ async def get_homekit_status(db: Session = Depends(get_db)):
     - Whether HomeKit is enabled and running
     - Pairing status
     - Number of accessories
-    - Setup code (hidden if already paired)
+    - Setup code and URI (hidden if already paired) - Story P5-1.2
     """
     try:
         # Get config from database
@@ -211,14 +283,19 @@ async def get_homekit_status(db: Session = Depends(get_db)):
         service_status = service.get_status()
 
         # Merge database config with runtime status
+        # Story P5-1.2 AC4: Hide setup_code and setup_uri when paired
         return HomeKitStatusResponse(
             enabled=config.enabled,
             running=service_status.running,
             paired=service_status.paired,
             accessory_count=service_status.accessory_count,
+            camera_count=service_status.camera_count,  # Story P5-1.3
+            active_streams=service_status.active_streams,  # Story P5-1.3
             bridge_name=config.bridge_name,
             setup_code=config.get_pin_code() if not service_status.paired else None,
+            setup_uri=service_status.setup_uri,  # Story P5-1.2: Include X-HM:// URI
             port=config.port,
+            ffmpeg_available=service_status.ffmpeg_available,  # Story P5-1.3
             error=service_status.error
         )
 
@@ -292,11 +369,13 @@ async def enable_homekit(
             }
         )
 
+        # Story P5-1.2: Include setup_uri in response
         return HomeKitEnableResponse(
             enabled=True,
             running=service.is_running,
             port=config.port,
             setup_code=config.get_pin_code(),
+            setup_uri=service.get_setup_uri(),
             qr_code_data=service.get_qr_code_data(),
             bridge_name=config.bridge_name,
             message=f"HomeKit bridge enabled with {len(cameras)} cameras"
@@ -479,4 +558,105 @@ async def get_homekit_config(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get config: {str(e)}"
+        )
+
+
+# ============================================================================
+# Pairings Endpoints (Story P5-1.8)
+# ============================================================================
+
+
+@router.get("/pairings", response_model=PairingsListResponse)
+async def get_pairings():
+    """
+    Get list of paired HomeKit devices (Story P5-1.8 AC3).
+
+    Returns a list of all iOS devices currently paired with the HomeKit bridge.
+    Each pairing includes:
+    - pairing_id: Unique client identifier (UUID)
+    - is_admin: Whether client has admin permissions
+    - permissions: HAP permission level (0=regular, 1=admin)
+    """
+    try:
+        service = get_homekit_service()
+        pairings = service.get_pairings()
+
+        return PairingsListResponse(
+            pairings=[
+                PairingInfo(
+                    pairing_id=p["pairing_id"],
+                    is_admin=p["is_admin"],
+                    permissions=p["permissions"]
+                )
+                for p in pairings
+            ],
+            count=len(pairings)
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get HomeKit pairings: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get pairings: {str(e)}"
+        )
+
+
+@router.delete("/pairings/{pairing_id}", response_model=RemovePairingResponse)
+async def remove_pairing(pairing_id: str):
+    """
+    Remove a specific HomeKit pairing (Story P5-1.8 AC4).
+
+    Removes the pairing for the specified device. After removal,
+    the device will no longer be able to control HomeKit accessories
+    and will need to re-pair to regain access.
+
+    Args:
+        pairing_id: The UUID of the pairing to remove
+
+    Returns:
+        Success status and confirmation message
+    """
+    try:
+        service = get_homekit_service()
+
+        # Check if pairing exists
+        pairings = service.get_pairings()
+        pairing_ids = [p["pairing_id"] for p in pairings]
+
+        if pairing_id not in pairing_ids:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Pairing not found: {pairing_id}"
+            )
+
+        # Remove the pairing
+        success = service.remove_pairing(pairing_id)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to remove pairing from state file"
+            )
+
+        logger.info(
+            "HomeKit pairing removed",
+            extra={
+                "event_type": "homekit_pairing_removed",
+                "pairing_id": pairing_id
+            }
+        )
+
+        return RemovePairingResponse(
+            success=True,
+            message="Pairing removed successfully. Device must re-pair to access accessories.",
+            pairing_id=pairing_id
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to remove HomeKit pairing: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to remove pairing: {str(e)}"
         )
