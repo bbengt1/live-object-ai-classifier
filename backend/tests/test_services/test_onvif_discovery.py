@@ -1,28 +1,39 @@
 """
-Unit Tests for ONVIF WS-Discovery Service (Story P5-2.1)
+Unit Tests for ONVIF WS-Discovery Service (Stories P5-2.1, P5-2.2)
 
 Tests the ONVIFDiscoveryService for:
-- WS-Discovery probe message generation
-- Response parsing and device extraction
-- Timeout behavior
-- Deduplication of devices
-- Cache behavior
-- Error handling for malformed responses
+- WS-Discovery probe message generation (P5-2.1)
+- Response parsing and device extraction (P5-2.1)
+- Timeout behavior (P5-2.1)
+- Deduplication of devices (P5-2.1)
+- Cache behavior (P5-2.1)
+- Error handling for malformed responses (P5-2.1)
+- Device details retrieval via ONVIF SOAP (P5-2.2)
+- Stream profile parsing (P5-2.2)
+- Authentication error handling (P5-2.2)
 """
 import asyncio
 import pytest
+from datetime import datetime
 from unittest.mock import Mock, patch, MagicMock
 from typing import List
 
-from app.schemas.discovery import DiscoveredDevice
+from app.schemas.discovery import (
+    DiscoveredDevice,
+    DeviceInfo,
+    StreamProfile,
+    DiscoveredCameraDetails,
+)
 from app.services.onvif_discovery_service import (
     ONVIFDiscoveryService,
     get_onvif_discovery_service,
     DiscoveryResult,
+    DeviceDetailsResult,
     MULTICAST_GROUP,
     MULTICAST_PORT,
     DEFAULT_TIMEOUT,
     ONVIF_NVT_TYPE,
+    DEVICE_QUERY_TIMEOUT,
 )
 
 
@@ -419,3 +430,564 @@ class TestDiscoveredDeviceSchema:
         assert json_data["endpoint_url"] == "http://192.168.1.100:80/onvif/device_service"
         assert json_data["scopes"] == ["scope1"]
         assert json_data["types"] == ["type1"]
+
+
+# ============================================================================
+# Story P5-2.2: Device Details Tests
+# ============================================================================
+
+
+class TestDeviceDetailsConstants:
+    """Test device details constants (P5-2.2)."""
+
+    def test_device_query_timeout(self):
+        """AC1: Verify device query timeout is reasonable."""
+        assert DEVICE_QUERY_TIMEOUT >= 2
+        assert DEVICE_QUERY_TIMEOUT <= 30
+
+
+class TestParseEndpointUrl:
+    """Test endpoint URL parsing helper (P5-2.2)."""
+
+    def test_parse_standard_url(self):
+        """AC4: Parse standard ONVIF endpoint URL."""
+        service = ONVIFDiscoveryService()
+        host, port = service._parse_endpoint_url(
+            "http://192.168.1.100:80/onvif/device_service"
+        )
+        assert host == "192.168.1.100"
+        assert port == 80
+
+    def test_parse_url_without_port(self):
+        """AC4: Parse URL without explicit port (defaults to 80)."""
+        service = ONVIFDiscoveryService()
+        host, port = service._parse_endpoint_url(
+            "http://192.168.1.100/onvif/device_service"
+        )
+        assert host == "192.168.1.100"
+        assert port == 80
+
+    def test_parse_url_with_non_standard_port(self):
+        """AC4: Parse URL with non-standard port."""
+        service = ONVIFDiscoveryService()
+        host, port = service._parse_endpoint_url(
+            "http://192.168.1.100:8080/onvif/device_service"
+        )
+        assert host == "192.168.1.100"
+        assert port == 8080
+
+    def test_parse_ipv6_url(self):
+        """AC4: Parse IPv6 address URL."""
+        service = ONVIFDiscoveryService()
+        host, port = service._parse_endpoint_url(
+            "http://[::1]:80/onvif/device_service"
+        )
+        assert host == "::1"
+        assert port == 80
+
+    def test_parse_invalid_url(self):
+        """AC4: Handle invalid URL gracefully."""
+        service = ONVIFDiscoveryService()
+        # Empty string should return None host
+        host, port = service._parse_endpoint_url("")
+        assert host is None or host == ""
+        # A string without scheme returns None hostname from urlparse
+        host2, port2 = service._parse_endpoint_url(":::")
+        assert host2 is None or host2 == ""
+
+
+class TestGenerateCameraId:
+    """Test camera ID generation (P5-2.2)."""
+
+    def test_generate_id_standard(self):
+        """Test standard camera ID generation."""
+        service = ONVIFDiscoveryService()
+        camera_id = service._generate_camera_id("192.168.1.100", 80)
+        assert camera_id == "camera-192-168-1-100-80"
+
+    def test_generate_id_different_port(self):
+        """Test camera ID with different port."""
+        service = ONVIFDiscoveryService()
+        camera_id = service._generate_camera_id("192.168.1.100", 8080)
+        assert camera_id == "camera-192-168-1-100-8080"
+
+    def test_generate_id_deterministic(self):
+        """Test camera ID generation is deterministic."""
+        service = ONVIFDiscoveryService()
+        id1 = service._generate_camera_id("192.168.1.100", 80)
+        id2 = service._generate_camera_id("192.168.1.100", 80)
+        assert id1 == id2
+
+
+class TestDeviceInfoSchema:
+    """Test DeviceInfo Pydantic model (P5-2.2)."""
+
+    def test_create_device_info(self):
+        """AC1: Test DeviceInfo creation with all fields."""
+        info = DeviceInfo(
+            name="Dahua IPC-HDW2431T",
+            manufacturer="Dahua",
+            model="IPC-HDW2431T-AS-S2",
+            firmware_version="2.800.0000000.44.R",
+            serial_number="6G12345678",
+            hardware_id="1.0"
+        )
+        assert info.manufacturer == "Dahua"
+        assert info.model == "IPC-HDW2431T-AS-S2"
+        assert info.firmware_version == "2.800.0000000.44.R"
+
+    def test_device_info_optional_fields(self):
+        """AC1: Test DeviceInfo with only required fields."""
+        info = DeviceInfo(
+            name="Test Camera",
+            manufacturer="Unknown",
+            model="Unknown"
+        )
+        assert info.firmware_version is None
+        assert info.serial_number is None
+        assert info.hardware_id is None
+
+
+class TestStreamProfileSchema:
+    """Test StreamProfile Pydantic model (P5-2.2)."""
+
+    def test_create_stream_profile(self):
+        """AC2, AC5: Test StreamProfile creation."""
+        profile = StreamProfile(
+            name="mainStream",
+            token="profile_1",
+            resolution="1920x1080",
+            width=1920,
+            height=1080,
+            fps=30,
+            rtsp_url="rtsp://192.168.1.100:554/stream",
+            encoding="H264"
+        )
+        assert profile.name == "mainStream"
+        assert profile.resolution == "1920x1080"
+        assert profile.width == 1920
+        assert profile.height == 1080
+        assert profile.fps == 30
+
+    def test_stream_profile_serialization(self):
+        """AC5: Test StreamProfile JSON serialization."""
+        profile = StreamProfile(
+            name="mainStream",
+            token="profile_1",
+            resolution="1920x1080",
+            width=1920,
+            height=1080,
+            fps=30,
+            rtsp_url="rtsp://192.168.1.100:554/stream"
+        )
+        data = profile.model_dump()
+        assert data["name"] == "mainStream"
+        assert data["resolution"] == "1920x1080"
+
+
+class TestDiscoveredCameraDetailsSchema:
+    """Test DiscoveredCameraDetails Pydantic model (P5-2.2)."""
+
+    def test_create_camera_details(self):
+        """AC4, AC5: Test DiscoveredCameraDetails creation."""
+        device_info = DeviceInfo(
+            name="Test Camera",
+            manufacturer="Dahua",
+            model="IPC-HDW2431T"
+        )
+        profile = StreamProfile(
+            name="mainStream",
+            token="profile_1",
+            resolution="1920x1080",
+            width=1920,
+            height=1080,
+            fps=30,
+            rtsp_url="rtsp://192.168.1.100:554/stream"
+        )
+
+        details = DiscoveredCameraDetails(
+            id="camera-192-168-1-100-80",
+            endpoint_url="http://192.168.1.100:80/onvif/device_service",
+            ip_address="192.168.1.100",
+            port=80,
+            device_info=device_info,
+            profiles=[profile],
+            primary_rtsp_url="rtsp://192.168.1.100:554/stream",
+            requires_auth=False,
+            discovered_at=datetime.utcnow()
+        )
+
+        assert details.id == "camera-192-168-1-100-80"
+        assert details.ip_address == "192.168.1.100"
+        assert details.device_info.manufacturer == "Dahua"
+        assert len(details.profiles) == 1
+        assert details.requires_auth is False
+
+
+class TestDeviceDetailsResult:
+    """Test DeviceDetailsResult dataclass (P5-2.2)."""
+
+    def test_success_result(self):
+        """Test success result creation."""
+        result = DeviceDetailsResult(
+            status="success",
+            duration_ms=1234
+        )
+        assert result.status == "success"
+        assert result.duration_ms == 1234
+        assert result.device is None
+        assert result.error is None
+
+    def test_auth_required_result(self):
+        """AC1: Test auth_required result."""
+        result = DeviceDetailsResult(
+            status="auth_required",
+            error="Authentication required"
+        )
+        assert result.status == "auth_required"
+        assert "Authentication" in result.error
+
+    def test_error_result(self):
+        """Test error result creation."""
+        result = DeviceDetailsResult(
+            status="error",
+            error="Connection timeout"
+        )
+        assert result.status == "error"
+        assert "timeout" in result.error
+
+
+class TestDeviceDetailsAvailability:
+    """Test device details availability checks (P5-2.2)."""
+
+    def test_is_device_details_available_property(self):
+        """Test is_device_details_available property exists."""
+        service = ONVIFDiscoveryService()
+        assert isinstance(service.is_device_details_available, bool)
+
+
+class TestAsyncGetDeviceDetails:
+    """Test async get_device_details method (P5-2.2)."""
+
+    @pytest.mark.asyncio
+    @patch('app.services.onvif_discovery_service.ONVIF_ZEEP_AVAILABLE', False)
+    async def test_returns_error_when_unavailable(self):
+        """Test get_device_details returns error when library unavailable."""
+        service = ONVIFDiscoveryService()
+
+        result = await service.get_device_details(
+            "http://192.168.1.100:80/onvif/device_service"
+        )
+
+        assert result.status == "error"
+        assert "onvif-zeep" in result.error
+
+    @pytest.mark.asyncio
+    @patch('app.services.onvif_discovery_service.ONVIF_ZEEP_AVAILABLE', True)
+    async def test_returns_error_for_invalid_url(self):
+        """AC4: Test error returned for invalid endpoint URL."""
+        service = ONVIFDiscoveryService()
+
+        # Mock _sync_get_device_details to avoid actual network call
+        with patch.object(service, '_parse_endpoint_url', return_value=(None, 0)):
+            result = await service.get_device_details("invalid-url")
+
+        assert result.status == "error"
+        assert "Invalid endpoint URL" in result.error
+
+    @pytest.mark.asyncio
+    @patch('app.services.onvif_discovery_service.ONVIF_ZEEP_AVAILABLE', True)
+    async def test_success_with_mock(self):
+        """AC1, AC4: Test successful device details retrieval with mock."""
+        service = ONVIFDiscoveryService()
+
+        mock_result = DeviceDetailsResult(
+            status="success",
+            device=DiscoveredCameraDetails(
+                id="camera-192-168-1-100-80",
+                endpoint_url="http://192.168.1.100:80/onvif/device_service",
+                ip_address="192.168.1.100",
+                port=80,
+                device_info=DeviceInfo(
+                    name="Test Camera",
+                    manufacturer="Dahua",
+                    model="IPC-HDW2431T"
+                ),
+                profiles=[],
+                primary_rtsp_url="rtsp://192.168.1.100:554/stream",
+                requires_auth=False,
+                discovered_at=datetime.utcnow()
+            ),
+            duration_ms=0
+        )
+
+        with patch.object(service, '_sync_get_device_details', return_value=mock_result):
+            result = await service.get_device_details(
+                "http://192.168.1.100:80/onvif/device_service"
+            )
+
+        assert result.status == "success"
+        assert result.device.ip_address == "192.168.1.100"
+        assert result.device.device_info.manufacturer == "Dahua"
+
+
+class TestSyncGetDeviceDetails:
+    """Test synchronous device details query (P5-2.2).
+
+    These tests mock the ONVIF camera client to test parsing logic.
+    """
+
+    @pytest.fixture(autouse=True)
+    def check_onvif_zeep(self):
+        """Skip tests if onvif-zeep not installed."""
+        from app.services.onvif_discovery_service import ONVIF_ZEEP_AVAILABLE
+        if not ONVIF_ZEEP_AVAILABLE:
+            pytest.skip("onvif-zeep library not installed")
+
+    def test_parse_device_info_response(self):
+        """AC1: Test parsing GetDeviceInformation response."""
+        service = ONVIFDiscoveryService()
+
+        # Create mock ONVIF camera and services
+        mock_camera = MagicMock()
+        mock_device_service = MagicMock()
+        mock_media_service = MagicMock()
+
+        # Mock GetDeviceInformation response
+        mock_device_info = MagicMock()
+        mock_device_info.Manufacturer = "Dahua"
+        mock_device_info.Model = "IPC-HDW2431T-AS-S2"
+        mock_device_info.FirmwareVersion = "2.800.0000000.44.R"
+        mock_device_info.SerialNumber = "6G12345678"
+        mock_device_info.HardwareId = "1.0"
+
+        mock_device_service.GetDeviceInformation.return_value = mock_device_info
+        mock_media_service.GetProfiles.return_value = []
+
+        mock_camera.create_devicemgmt_service.return_value = mock_device_service
+        mock_camera.create_media_service.return_value = mock_media_service
+
+        with patch('app.services.onvif_discovery_service.ONVIFCamera', return_value=mock_camera):
+            result = service._sync_get_device_details(
+                host="192.168.1.100",
+                port=80,
+                username="admin",
+                password="password",
+                endpoint_url="http://192.168.1.100:80/onvif/device_service"
+            )
+
+        assert result.status == "success"
+        assert result.device.device_info.manufacturer == "Dahua"
+        assert result.device.device_info.model == "IPC-HDW2431T-AS-S2"
+        assert result.device.device_info.firmware_version == "2.800.0000000.44.R"
+
+    def test_parse_stream_profiles(self):
+        """AC2, AC5: Test parsing GetProfiles response."""
+        service = ONVIFDiscoveryService()
+
+        # Create mock camera
+        mock_camera = MagicMock()
+        mock_device_service = MagicMock()
+        mock_media_service = MagicMock()
+
+        # Mock device info
+        mock_device_info = MagicMock()
+        mock_device_info.Manufacturer = "Dahua"
+        mock_device_info.Model = "IPC-HDW2431T"
+        mock_device_info.FirmwareVersion = None
+        mock_device_info.SerialNumber = None
+        mock_device_info.HardwareId = None
+
+        mock_device_service.GetDeviceInformation.return_value = mock_device_info
+
+        # Mock profile with resolution
+        mock_profile = MagicMock()
+        mock_profile.token = "profile_1"
+        mock_profile.Name = "mainStream"
+
+        mock_resolution = MagicMock()
+        mock_resolution.Width = 1920
+        mock_resolution.Height = 1080
+
+        mock_rate_control = MagicMock()
+        mock_rate_control.FrameRateLimit = 30
+
+        mock_video_encoder = MagicMock()
+        mock_video_encoder.Resolution = mock_resolution
+        mock_video_encoder.RateControl = mock_rate_control
+        mock_video_encoder.Encoding = "H264"
+
+        mock_profile.VideoEncoderConfiguration = mock_video_encoder
+
+        mock_media_service.GetProfiles.return_value = [mock_profile]
+
+        # Mock GetStreamUri
+        mock_uri_response = MagicMock()
+        mock_uri_response.Uri = "rtsp://192.168.1.100:554/stream"
+        mock_media_service.GetStreamUri.return_value = mock_uri_response
+
+        mock_camera.create_devicemgmt_service.return_value = mock_device_service
+        mock_camera.create_media_service.return_value = mock_media_service
+
+        with patch('app.services.onvif_discovery_service.ONVIFCamera', return_value=mock_camera):
+            result = service._sync_get_device_details(
+                host="192.168.1.100",
+                port=80,
+                username="",
+                password="",
+                endpoint_url="http://192.168.1.100:80/onvif/device_service"
+            )
+
+        assert result.status == "success"
+        assert len(result.device.profiles) == 1
+
+        profile = result.device.profiles[0]
+        assert profile.name == "mainStream"
+        assert profile.width == 1920
+        assert profile.height == 1080
+        assert profile.fps == 30
+        assert profile.rtsp_url == "rtsp://192.168.1.100:554/stream"
+
+    def test_profiles_sorted_by_resolution(self):
+        """AC5: Test profiles are sorted by resolution (highest first)."""
+        service = ONVIFDiscoveryService()
+
+        mock_camera = MagicMock()
+        mock_device_service = MagicMock()
+        mock_media_service = MagicMock()
+
+        mock_device_info = MagicMock()
+        mock_device_info.Manufacturer = "Test"
+        mock_device_info.Model = "Camera"
+
+        mock_device_service.GetDeviceInformation.return_value = mock_device_info
+
+        # Create two profiles with different resolutions
+        profiles = []
+        for name, width, height in [
+            ("subStream", 640, 480),
+            ("mainStream", 1920, 1080)
+        ]:
+            profile = MagicMock()
+            profile.token = f"token_{name}"
+            profile.Name = name
+            resolution = MagicMock()
+            resolution.Width = width
+            resolution.Height = height
+            rate_control = MagicMock()
+            rate_control.FrameRateLimit = 30
+            video_encoder = MagicMock()
+            video_encoder.Resolution = resolution
+            video_encoder.RateControl = rate_control
+            video_encoder.Encoding = "H264"
+            profile.VideoEncoderConfiguration = video_encoder
+            profiles.append(profile)
+
+        mock_media_service.GetProfiles.return_value = profiles
+
+        mock_uri_response = MagicMock()
+        mock_uri_response.Uri = "rtsp://test:554/stream"
+        mock_media_service.GetStreamUri.return_value = mock_uri_response
+
+        mock_camera.create_devicemgmt_service.return_value = mock_device_service
+        mock_camera.create_media_service.return_value = mock_media_service
+
+        with patch('app.services.onvif_discovery_service.ONVIFCamera', return_value=mock_camera):
+            result = service._sync_get_device_details(
+                host="192.168.1.100",
+                port=80,
+                username="",
+                password="",
+                endpoint_url="http://192.168.1.100/onvif/device_service"
+            )
+
+        assert result.status == "success"
+        assert len(result.device.profiles) == 2
+        # First profile should be highest resolution
+        assert result.device.profiles[0].width == 1920
+        assert result.device.profiles[1].width == 640
+        # Primary RTSP URL should be from highest resolution profile
+        assert result.device.primary_rtsp_url == result.device.profiles[0].rtsp_url
+
+    def test_auth_required_detection(self):
+        """AC1: Test authentication required error handling."""
+        service = ONVIFDiscoveryService()
+
+        mock_camera = MagicMock()
+        mock_device_service = MagicMock()
+
+        # Simulate authentication error
+        from app.services.onvif_discovery_service import ZeepFault
+        mock_device_service.GetDeviceInformation.side_effect = ZeepFault(
+            "Sender not authorized"
+        )
+
+        mock_camera.create_devicemgmt_service.return_value = mock_device_service
+
+        with patch('app.services.onvif_discovery_service.ONVIFCamera', return_value=mock_camera):
+            result = service._sync_get_device_details(
+                host="192.168.1.100",
+                port=80,
+                username="",
+                password="",
+                endpoint_url="http://192.168.1.100/onvif/device_service"
+            )
+
+        assert result.status == "auth_required"
+        assert "Authentication" in result.error or "authorized" in result.error.lower()
+
+    def test_connection_error_handling(self):
+        """Test connection error is handled gracefully."""
+        service = ONVIFDiscoveryService()
+
+        # Simulate connection error during ONVIFCamera creation
+        with patch(
+            'app.services.onvif_discovery_service.ONVIFCamera',
+            side_effect=Exception("Connection refused")
+        ):
+            result = service._sync_get_device_details(
+                host="192.168.1.100",
+                port=80,
+                username="",
+                password="",
+                endpoint_url="http://192.168.1.100/onvif/device_service"
+            )
+
+        assert result.status == "error"
+        assert "Connection refused" in result.error or "Failed to query" in result.error
+
+    def test_device_name_fallback_to_model(self):
+        """AC4: Test device name falls back to model when name unavailable."""
+        service = ONVIFDiscoveryService()
+
+        mock_camera = MagicMock()
+        mock_device_service = MagicMock()
+        mock_media_service = MagicMock()
+
+        # Device info without explicit name
+        mock_device_info = MagicMock()
+        mock_device_info.Manufacturer = "Dahua"
+        mock_device_info.Model = "IPC-HDW2431T"
+        mock_device_info.FirmwareVersion = None
+        mock_device_info.SerialNumber = None
+        mock_device_info.HardwareId = None
+
+        mock_device_service.GetDeviceInformation.return_value = mock_device_info
+        mock_media_service.GetProfiles.return_value = []
+
+        mock_camera.create_devicemgmt_service.return_value = mock_device_service
+        mock_camera.create_media_service.return_value = mock_media_service
+
+        with patch('app.services.onvif_discovery_service.ONVIFCamera', return_value=mock_camera):
+            result = service._sync_get_device_details(
+                host="192.168.1.100",
+                port=80,
+                username="",
+                password="",
+                endpoint_url="http://192.168.1.100/onvif/device_service"
+            )
+
+        assert result.status == "success"
+        # Name should be "Manufacturer Model"
+        assert "Dahua" in result.device.device_info.name
+        assert "IPC-HDW2431T" in result.device.device_info.name

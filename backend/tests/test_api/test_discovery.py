@@ -1,19 +1,29 @@
 """
-API Integration Tests for ONVIF Camera Discovery (Story P5-2.1)
+API Integration Tests for ONVIF Camera Discovery (Stories P5-2.1, P5-2.2)
 
 Tests the discovery API endpoints:
-- POST /api/v1/cameras/discover
-- GET /api/v1/cameras/discover/status
-- POST /api/v1/cameras/discover/clear-cache
+- POST /api/v1/cameras/discover (P5-2.1)
+- GET /api/v1/cameras/discover/status (P5-2.1)
+- POST /api/v1/cameras/discover/clear-cache (P5-2.1)
+- GET /api/v1/cameras/discover/device/status (P5-2.2)
+- POST /api/v1/cameras/discover/device (P5-2.2)
 """
 import pytest
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-from app.schemas.discovery import DiscoveredDevice, DiscoveryResponse
+from app.schemas.discovery import (
+    DiscoveredDevice,
+    DiscoveryResponse,
+    DeviceInfo,
+    StreamProfile,
+    DiscoveredCameraDetails,
+)
 from app.services.onvif_discovery_service import (
     ONVIFDiscoveryService,
     DiscoveryResult,
+    DeviceDetailsResult,
 )
 
 
@@ -320,3 +330,386 @@ class TestDiscoveryResponseSchema:
             # Timeout too low (min 1)
             response = client.post("/api/v1/cameras/discover", json={"timeout": 0})
             assert response.status_code == 422  # Validation error
+
+
+# ============================================================================
+# Story P5-2.2: Device Details API Tests
+# ============================================================================
+
+
+class TestDeviceDetailsStatusEndpoint:
+    """Tests for GET /api/v1/cameras/discover/device/status (P5-2.2)."""
+
+    def test_device_details_status_available(self, client, mock_discovery_service):
+        """Test status returns available when onvif-zeep installed."""
+        mock_discovery_service.is_device_details_available = True
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.get("/api/v1/cameras/discover/device/status")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["available"] is True
+        assert data["library_installed"] is True
+        assert "available" in data["message"].lower()
+
+    def test_device_details_status_unavailable(self, client, mock_discovery_service):
+        """Test status returns unavailable when onvif-zeep not installed."""
+        mock_discovery_service.is_device_details_available = False
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.get("/api/v1/cameras/discover/device/status")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["available"] is False
+        assert data["library_installed"] is False
+        assert "unavailable" in data["message"].lower()
+
+
+class TestGetDeviceDetailsEndpoint:
+    """Tests for POST /api/v1/cameras/discover/device (P5-2.2)."""
+
+    def test_get_device_details_success(self, client, mock_discovery_service):
+        """AC1, AC4, AC5: Test successful device details retrieval."""
+        mock_discovery_service.is_device_details_available = True
+
+        mock_device = DiscoveredCameraDetails(
+            id="camera-192-168-1-100-80",
+            endpoint_url="http://192.168.1.100:80/onvif/device_service",
+            ip_address="192.168.1.100",
+            port=80,
+            device_info=DeviceInfo(
+                name="Dahua IPC-HDW2431T",
+                manufacturer="Dahua",
+                model="IPC-HDW2431T-AS-S2",
+                firmware_version="2.800.0000000.44.R"
+            ),
+            profiles=[
+                StreamProfile(
+                    name="mainStream",
+                    token="profile_1",
+                    resolution="1920x1080",
+                    width=1920,
+                    height=1080,
+                    fps=30,
+                    rtsp_url="rtsp://192.168.1.100:554/stream",
+                    encoding="H264"
+                )
+            ],
+            primary_rtsp_url="rtsp://192.168.1.100:554/stream",
+            requires_auth=False,
+            discovered_at=datetime.utcnow()
+        )
+
+        mock_result = DeviceDetailsResult(
+            status="success",
+            device=mock_device,
+            duration_ms=1234
+        )
+
+        async def mock_get_device_details(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.get_device_details = mock_get_device_details
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/discover/device",
+                json={"endpoint_url": "http://192.168.1.100:80/onvif/device_service"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["status"] == "success"
+        assert data["duration_ms"] == 1234
+        assert data["device"]["ip_address"] == "192.168.1.100"
+        assert data["device"]["device_info"]["manufacturer"] == "Dahua"
+        assert len(data["device"]["profiles"]) == 1
+        assert data["device"]["profiles"][0]["resolution"] == "1920x1080"
+
+    def test_get_device_details_with_credentials(self, client, mock_discovery_service):
+        """AC1: Test device details with authentication credentials."""
+        mock_discovery_service.is_device_details_available = True
+
+        mock_device = DiscoveredCameraDetails(
+            id="camera-192-168-1-100-80",
+            endpoint_url="http://192.168.1.100:80/onvif/device_service",
+            ip_address="192.168.1.100",
+            port=80,
+            device_info=DeviceInfo(
+                name="Test Camera",
+                manufacturer="Test",
+                model="Model"
+            ),
+            profiles=[],
+            primary_rtsp_url="rtsp://192.168.1.100:554/stream",
+            requires_auth=False,
+            discovered_at=datetime.utcnow()
+        )
+
+        mock_result = DeviceDetailsResult(
+            status="success",
+            device=mock_device,
+            duration_ms=500
+        )
+
+        captured_args = {}
+
+        async def mock_get_device_details(endpoint_url, username=None, password=None):
+            captured_args["endpoint_url"] = endpoint_url
+            captured_args["username"] = username
+            captured_args["password"] = password
+            return mock_result
+
+        mock_discovery_service.get_device_details = mock_get_device_details
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/discover/device",
+                json={
+                    "endpoint_url": "http://192.168.1.100:80/onvif/device_service",
+                    "username": "admin",
+                    "password": "password123"
+                }
+            )
+
+        assert response.status_code == 200
+        assert captured_args["username"] == "admin"
+        assert captured_args["password"] == "password123"
+
+    def test_get_device_details_auth_required(self, client, mock_discovery_service):
+        """AC1: Test auth_required response when credentials needed."""
+        mock_discovery_service.is_device_details_available = True
+
+        mock_result = DeviceDetailsResult(
+            status="auth_required",
+            error="Authentication required to access this device",
+            duration_ms=234
+        )
+
+        async def mock_get_device_details(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.get_device_details = mock_get_device_details
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/discover/device",
+                json={"endpoint_url": "http://192.168.1.100:80/onvif/device_service"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["status"] == "auth_required"
+        assert "Authentication" in data["error_message"]
+        assert data["device"] is None
+
+    def test_get_device_details_service_unavailable(self, client, mock_discovery_service):
+        """Test 503 when onvif-zeep not installed."""
+        mock_discovery_service.is_device_details_available = False
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/discover/device",
+                json={"endpoint_url": "http://192.168.1.100:80/onvif/device_service"}
+            )
+
+        assert response.status_code == 503
+        data = response.json()
+        assert "device_details_unavailable" in str(data["detail"])
+
+    def test_get_device_details_connection_error(self, client, mock_discovery_service):
+        """Test error response for connection failures."""
+        mock_discovery_service.is_device_details_available = True
+
+        mock_result = DeviceDetailsResult(
+            status="error",
+            error="Connection refused",
+            duration_ms=100
+        )
+
+        async def mock_get_device_details(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.get_device_details = mock_get_device_details
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/discover/device",
+                json={"endpoint_url": "http://192.168.1.100:80/onvif/device_service"}
+            )
+
+        assert response.status_code == 200  # Returns 200 with error status
+        data = response.json()
+
+        assert data["status"] == "error"
+        assert "Connection refused" in data["error_message"]
+        assert data["device"] is None
+
+    def test_get_device_details_exception_handling(self, client, mock_discovery_service):
+        """Test 500 for unexpected exceptions."""
+        mock_discovery_service.is_device_details_available = True
+
+        async def mock_get_device_details(*args, **kwargs):
+            raise Exception("Unexpected error")
+
+        mock_discovery_service.get_device_details = mock_get_device_details
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/discover/device",
+                json={"endpoint_url": "http://192.168.1.100:80/onvif/device_service"}
+            )
+
+        assert response.status_code == 500
+        data = response.json()
+        assert "device_query_failed" in str(data["detail"])
+
+    def test_get_device_details_missing_endpoint_url(self, client, mock_discovery_service):
+        """Test validation error when endpoint_url is missing."""
+        mock_discovery_service.is_device_details_available = True
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/discover/device",
+                json={}  # Missing endpoint_url
+            )
+
+        assert response.status_code == 422  # Validation error
+
+
+class TestDeviceDetailsResponseSchema:
+    """Test DeviceDetailsResponse schema (P5-2.2)."""
+
+    def test_response_includes_all_fields(self, client, mock_discovery_service):
+        """AC4, AC5: Verify response includes all expected fields."""
+        mock_discovery_service.is_device_details_available = True
+
+        mock_device = DiscoveredCameraDetails(
+            id="camera-192-168-1-100-80",
+            endpoint_url="http://192.168.1.100:80/onvif/device_service",
+            ip_address="192.168.1.100",
+            port=80,
+            device_info=DeviceInfo(
+                name="Test Camera",
+                manufacturer="TestCo",
+                model="TestModel",
+                firmware_version="1.0.0",
+                serial_number="12345",
+                hardware_id="HW001"
+            ),
+            profiles=[
+                StreamProfile(
+                    name="mainStream",
+                    token="profile_1",
+                    resolution="1920x1080",
+                    width=1920,
+                    height=1080,
+                    fps=30,
+                    rtsp_url="rtsp://192.168.1.100:554/stream",
+                    encoding="H264"
+                ),
+                StreamProfile(
+                    name="subStream",
+                    token="profile_2",
+                    resolution="640x480",
+                    width=640,
+                    height=480,
+                    fps=15,
+                    rtsp_url="rtsp://192.168.1.100:554/stream2",
+                    encoding="H264"
+                )
+            ],
+            primary_rtsp_url="rtsp://192.168.1.100:554/stream",
+            requires_auth=False,
+            discovered_at=datetime.utcnow()
+        )
+
+        mock_result = DeviceDetailsResult(
+            status="success",
+            device=mock_device,
+            duration_ms=1234
+        )
+
+        async def mock_get_device_details(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.get_device_details = mock_get_device_details
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/discover/device",
+                json={"endpoint_url": "http://192.168.1.100:80/onvif/device_service"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Check top-level fields
+        assert "status" in data
+        assert "device" in data
+        assert "error_message" in data
+        assert "duration_ms" in data
+
+        # Check device fields
+        device = data["device"]
+        assert "id" in device
+        assert "endpoint_url" in device
+        assert "ip_address" in device
+        assert "port" in device
+        assert "device_info" in device
+        assert "profiles" in device
+        assert "primary_rtsp_url" in device
+        assert "requires_auth" in device
+
+        # Check device_info fields
+        device_info = device["device_info"]
+        assert device_info["manufacturer"] == "TestCo"
+        assert device_info["model"] == "TestModel"
+        assert device_info["firmware_version"] == "1.0.0"
+
+        # Check profiles
+        assert len(device["profiles"]) == 2
+        profile = device["profiles"][0]
+        assert "name" in profile
+        assert "token" in profile
+        assert "resolution" in profile
+        assert "width" in profile
+        assert "height" in profile
+        assert "fps" in profile
+        assert "rtsp_url" in profile

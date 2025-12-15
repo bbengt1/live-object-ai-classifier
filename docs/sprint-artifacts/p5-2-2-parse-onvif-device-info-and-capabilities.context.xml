@@ -1,0 +1,250 @@
+<story-context id="bmm/story-context" v="1.0">
+  <metadata>
+    <epicId>P5-2</epicId>
+    <storyId>P5-2.2</storyId>
+    <title>Parse ONVIF Device Info and Capabilities</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p5-2-2-parse-onvif-device-info-and-capabilities.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>homeowner setting up ArgusAI</asA>
+    <iWant>to see camera details like manufacturer, model, and stream options when discovering cameras</iWant>
+    <soThat>I can identify and select the correct camera and stream profile to add</soThat>
+    <tasks>
+      <task id="1" ac="4,5">Create Enhanced Pydantic Schemas
+        <subtask>Add StreamProfile model with: name, resolution, width, height, fps, rtsp_url</subtask>
+        <subtask>Add DeviceInfo model with: name, manufacturer, model, firmware_version, serial_number</subtask>
+        <subtask>Add DiscoveredCameraDetails model with full device details</subtask>
+        <subtask>Add DeviceDetailsRequest and DeviceDetailsResponse models</subtask>
+      </task>
+      <task id="2" ac="1,2,3">Implement ONVIF SOAP Client Integration
+        <subtask>Add get_device_details() method to ONVIFDiscoveryService</subtask>
+        <subtask>Create onvif-zeep client for device service URL</subtask>
+        <subtask>Implement GetDeviceInformation SOAP call</subtask>
+        <subtask>Implement GetCapabilities to discover Media service URL</subtask>
+        <subtask>Implement GetProfiles to list stream profiles</subtask>
+        <subtask>Implement GetStreamUri for RTSP URLs per profile</subtask>
+        <subtask>Handle authentication errors gracefully</subtask>
+        <subtask>Add 2-second timeout per device query</subtask>
+      </task>
+      <task id="3" ac="4">Extract IP Address from Endpoint URL
+        <subtask>Parse IP from device endpoint URL (http://IP:port/onvif/...)</subtask>
+        <subtask>Handle both IPv4 and IPv6 addresses</subtask>
+      </task>
+      <task id="4" ac="1,2,3,4,5">Create Device Details API Endpoint
+        <subtask>Add POST /api/v1/cameras/discover/device endpoint</subtask>
+        <subtask>Accept DeviceDetailsRequest with endpoint_url and optional credentials</subtask>
+        <subtask>Return DeviceDetailsResponse with full camera details</subtask>
+        <subtask>Handle errors (timeout, auth required, connection failed)</subtask>
+      </task>
+      <task id="5" ac="4,5">Enhance Discovery Response with Device Details
+        <subtask>Add optional include_details parameter to discover_cameras</subtask>
+        <subtask>Query each device for full info in parallel when requested</subtask>
+        <subtask>Limit concurrent device queries to 10</subtask>
+      </task>
+      <task id="6" ac="1,2,3">Write Unit Tests for Device Details
+        <subtask>Test GetDeviceInformation parsing with mock SOAP response</subtask>
+        <subtask>Test GetProfiles parsing with multiple profiles</subtask>
+        <subtask>Test GetStreamUri URL extraction</subtask>
+        <subtask>Test authentication error handling</subtask>
+        <subtask>Test timeout handling</subtask>
+      </task>
+      <task id="7" ac="4,5">Write API Integration Tests
+        <subtask>Test POST /api/v1/cameras/discover/device endpoint</subtask>
+        <subtask>Test with valid endpoint URL (mocked)</subtask>
+        <subtask>Test authentication required scenario</subtask>
+        <subtask>Test error responses</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1" title="GetDeviceInformation Returns Manufacturer and Model">
+      <requirement>ONVIF DeviceManagement.GetDeviceInformation SOAP call implemented</requirement>
+      <requirement>Manufacturer name extracted from response</requirement>
+      <requirement>Model name extracted from response</requirement>
+      <requirement>Firmware version extracted (optional field)</requirement>
+      <requirement>Handles cameras that require authentication for device info</requirement>
+    </criterion>
+    <criterion id="AC2" title="GetProfiles Returns Available Stream Profiles">
+      <requirement>ONVIF Media.GetProfiles SOAP call implemented</requirement>
+      <requirement>Profile names extracted (e.g., mainStream, subStream)</requirement>
+      <requirement>Video encoder configuration extracted per profile</requirement>
+      <requirement>Resolution (width x height) extracted per profile</requirement>
+      <requirement>Frame rate (FPS) extracted per profile</requirement>
+    </criterion>
+    <criterion id="AC3" title="GetStreamUri Returns Valid RTSP URLs">
+      <requirement>ONVIF Media.GetStreamUri SOAP call implemented</requirement>
+      <requirement>RTSP URL extracted for each profile</requirement>
+      <requirement>URL includes proper path for stream access</requirement>
+      <requirement>Works with both authenticated and unauthenticated cameras</requirement>
+    </criterion>
+    <criterion id="AC4" title="Device Name Displayed from Name or Model">
+      <requirement>Device name extracted from GetDeviceInformation.Name if available</requirement>
+      <requirement>Falls back to Model name if Name not present</requirement>
+      <requirement>Device name included in API response</requirement>
+    </criterion>
+    <criterion id="AC5" title="Multiple Stream Profiles Listed with Resolution/FPS">
+      <requirement>All available profiles returned in response</requirement>
+      <requirement>Each profile includes: name, resolution, fps, rtsp_url</requirement>
+      <requirement>Profiles sorted by resolution (highest first)</requirement>
+      <requirement>Primary/best stream URL identified in response</requirement>
+    </criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/PRD-phase5.md</path>
+        <title>Phase 5 PRD</title>
+        <section>Camera Discovery and Setup (FR15)</section>
+        <snippet>Discovered cameras display name, IP address, and manufacturer. System queries ONVIF devices for GetDeviceInformation (manufacturer, model) and GetProfiles (stream profiles with RTSP URLs).</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/phase-5-additions.md</path>
+        <title>Phase 5 Architecture</title>
+        <section>ONVIF Discovery Architecture</section>
+        <snippet>Discovery service queries each device for full details via SOAP: GetDeviceInformation for metadata, GetCapabilities for Media service URL, GetProfiles for streams, GetStreamUri for RTSP URLs.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-p5-2.md</path>
+        <title>Epic P5-2 Tech Spec</title>
+        <section>Story P5-2.2 Design</section>
+        <snippet>Data models: StreamProfile (name, resolution, fps, rtsp_url), DiscoveredCamera with device_info, profiles list. ONVIF Device Query sequence: GetDeviceInformation, GetCapabilities, GetProfiles, GetStreamUri.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics-phase5.md</path>
+        <title>Phase 5 Epics</title>
+        <section>Epic P5-2 Story P5-2.2</section>
+        <snippet>Query discovered devices for manufacturer, model, and stream capabilities. Device name extracted from GetDeviceInformation, RTSP URL extracted from Media service.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p5-2-1-implement-onvif-ws-discovery-scanner.md</path>
+        <title>Story P5-2.1</title>
+        <section>Dev Agent Record</section>
+        <snippet>Created ONVIFDiscoveryService with WS-Discovery, 30-second result caching, async interface. Service returns DiscoveredDevice with endpoint_url, scopes, types. onvif-zeep added to requirements.txt for P5-2.2.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <artifact>
+        <path>backend/app/services/onvif_discovery_service.py</path>
+        <kind>service</kind>
+        <symbol>ONVIFDiscoveryService</symbol>
+        <lines>57-339</lines>
+        <reason>Main service to extend with get_device_details() method. Contains discover_cameras(), caching, async patterns to follow.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/schemas/discovery.py</path>
+        <kind>schema</kind>
+        <symbol>DiscoveredDevice, DiscoveryRequest, DiscoveryResponse</symbol>
+        <lines>1-109</lines>
+        <reason>Existing schemas to extend with StreamProfile, DeviceInfo, DiscoveredCameraDetails models.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/api/v1/discovery.py</path>
+        <kind>router</kind>
+        <symbol>discover_cameras, get_discovery_status</symbol>
+        <lines>1-159</lines>
+        <reason>API router to add POST /api/v1/cameras/discover/device endpoint for device details.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/tests/test_services/test_onvif_discovery.py</path>
+        <kind>test</kind>
+        <symbol>test_onvif_discovery</symbol>
+        <reason>Existing tests to extend with device details tests, SOAP response parsing tests.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/tests/test_api/test_discovery.py</path>
+        <kind>test</kind>
+        <symbol>test_discovery_api</symbol>
+        <reason>Existing API tests to extend with device details endpoint tests.</reason>
+      </artifact>
+      <artifact>
+        <path>backend/main.py</path>
+        <kind>app</kind>
+        <symbol>app, discovery_router</symbol>
+        <reason>Main app where discovery router is registered. No changes needed, just context.</reason>
+      </artifact>
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="onvif-zeep" version=">=0.2.12" note="ONVIF SOAP client - use ONVIFCamera class for device queries"/>
+        <package name="WSDiscovery" version=">=2.0.0" note="WS-Discovery protocol - already used in P5-2.1"/>
+        <package name="fastapi" version="==0.115.0"/>
+        <package name="pydantic" version=">=2.10.0"/>
+        <package name="pytest" version="==7.4.3"/>
+        <package name="pytest-asyncio" version="==0.21.1"/>
+        <package name="httpx" version="==0.25.2"/>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Use existing singleton pattern from get_onvif_discovery_service()</constraint>
+    <constraint type="async">Run blocking ONVIF SOAP calls in thread pool via run_in_executor</constraint>
+    <constraint type="timeout">2-second timeout per device query, 10 concurrent device queries max</constraint>
+    <constraint type="error-handling">Return requires_auth flag if authentication needed, don't fail completely</constraint>
+    <constraint type="caching">Device details can be cached briefly (30s) to avoid repeat queries</constraint>
+    <constraint type="logging">Use structured logging at INFO for device queries, DEBUG for SOAP details</constraint>
+    <constraint type="security">Never log or return credentials in responses</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>ONVIFDiscoveryService.get_device_details</name>
+      <kind>method</kind>
+      <signature>async def get_device_details(self, endpoint_url: str, username: str = None, password: str = None) -> DiscoveredCameraDetails</signature>
+      <path>backend/app/services/onvif_discovery_service.py</path>
+    </interface>
+    <interface>
+      <name>POST /api/v1/cameras/discover/device</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /api/v1/cameras/discover/device
+Request: { endpoint_url: str, username?: str, password?: str }
+Response: { status: str, device?: DiscoveredCameraDetails, error_message?: str }</signature>
+      <path>backend/app/api/v1/discovery.py</path>
+    </interface>
+    <interface>
+      <name>ONVIFCamera (onvif-zeep)</name>
+      <kind>external library</kind>
+      <signature>ONVIFCamera(host: str, port: int, user: str, passwd: str, wsdl_dir: str = None)
+  .create_devicemgmt_service() -> DeviceManagementService
+  .create_media_service() -> MediaService
+DeviceManagementService.GetDeviceInformation() -> DeviceInfo
+MediaService.GetProfiles() -> List[Profile]
+MediaService.GetStreamUri(ProfileToken, StreamSetup) -> MediaUri</signature>
+      <path>external: onvif-zeep library</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend tests use pytest with pytest-asyncio for async code. Tests mock external dependencies (network, SOAP).
+      Use fixtures for common test data. Follow existing patterns in test_onvif_discovery.py.
+      API tests use httpx TestClient with FastAPI dependency overrides.
+    </standards>
+    <locations>
+      <location>backend/tests/test_services/test_onvif_discovery.py</location>
+      <location>backend/tests/test_api/test_discovery.py</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Test GetDeviceInformation with mocked SOAP response containing Manufacturer, Model, FirmwareVersion</idea>
+      <idea ac="AC1">Test handling of authentication error (401/403) returns requires_auth flag</idea>
+      <idea ac="AC2">Test GetProfiles parsing with mock response containing multiple profiles</idea>
+      <idea ac="AC2">Test extraction of resolution and FPS from VideoEncoderConfiguration</idea>
+      <idea ac="AC3">Test GetStreamUri returns valid RTSP URL with proper format</idea>
+      <idea ac="AC3">Test RTSP URL works for both authenticated and unauthenticated cameras</idea>
+      <idea ac="AC4">Test device name falls back to Model when Name is empty</idea>
+      <idea ac="AC4">Test IP address extraction from various endpoint URL formats</idea>
+      <idea ac="AC5">Test profiles sorted by resolution (highest first)</idea>
+      <idea ac="AC5">Test primary stream URL identified correctly</idea>
+      <idea ac="all">Test timeout handling (device query exceeds 2s)</idea>
+      <idea ac="all">Test graceful degradation when onvif-zeep not installed</idea>
+    </ideas>
+  </tests>
+</story-context>

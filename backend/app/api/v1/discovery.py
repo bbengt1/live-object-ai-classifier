@@ -1,11 +1,12 @@
 """
-Camera Discovery API Endpoints (Story P5-2.1)
+Camera Discovery API Endpoints (Stories P5-2.1, P5-2.2)
 
 ONVIF WS-Discovery endpoints for camera auto-discovery:
 - POST /api/v1/cameras/discover - Trigger network scan for ONVIF cameras
+- POST /api/v1/cameras/discover/device - Get detailed info for a specific device
 
 Architecture Reference: docs/architecture/phase-5-additions.md
-PRD Reference: docs/PRD-phase5.md (FR13, FR14)
+PRD Reference: docs/PRD-phase5.md (FR13, FR14, FR15)
 """
 import logging
 from typing import Optional
@@ -17,10 +18,13 @@ from app.schemas.discovery import (
     DiscoveredDevice,
     DiscoveryRequest,
     DiscoveryResponse,
+    DeviceDetailsRequest,
+    DeviceDetailsResponse,
 )
 from app.services.onvif_discovery_service import (
     get_onvif_discovery_service,
     WSDISCOVERY_AVAILABLE,
+    ONVIF_ZEEP_AVAILABLE,
 )
 
 logger = logging.getLogger(__name__)
@@ -156,3 +160,115 @@ async def clear_discovery_cache() -> dict:
     logger.info("Discovery cache cleared")
 
     return {"status": "success", "message": "Discovery cache cleared"}
+
+
+# ============================================================================
+# Device Details Endpoints (Story P5-2.2)
+# ============================================================================
+
+
+class DeviceDetailsStatusResponse(BaseModel):
+    """Response for device details status check."""
+    available: bool = Field(..., description="Whether device details query is available")
+    library_installed: bool = Field(..., description="Whether onvif-zeep is installed")
+    message: str = Field(..., description="Status message")
+
+
+@router.get(
+    "/discover/device/status",
+    response_model=DeviceDetailsStatusResponse,
+    summary="Check device details availability",
+    description="Check if ONVIF device details query feature is available"
+)
+async def get_device_details_status() -> DeviceDetailsStatusResponse:
+    """
+    Check if ONVIF device details query is available.
+
+    Returns availability status and whether required libraries are installed.
+    """
+    service = get_onvif_discovery_service()
+
+    if service.is_device_details_available:
+        return DeviceDetailsStatusResponse(
+            available=True,
+            library_installed=True,
+            message="ONVIF device details query is available"
+        )
+    else:
+        return DeviceDetailsStatusResponse(
+            available=False,
+            library_installed=False,
+            message=(
+                "ONVIF device details unavailable: onvif-zeep package not installed. "
+                "Install with: pip install onvif-zeep"
+            )
+        )
+
+
+@router.post(
+    "/discover/device",
+    response_model=DeviceDetailsResponse,
+    summary="Get device details",
+    description="Query a discovered ONVIF device for detailed information (manufacturer, model, stream profiles)"
+)
+async def get_device_details(
+    request: DeviceDetailsRequest
+) -> DeviceDetailsResponse:
+    """
+    Get detailed information from a discovered ONVIF device.
+
+    Queries the device using ONVIF SOAP protocol to retrieve:
+    - Device information (manufacturer, model, firmware version)
+    - Media profiles (stream configurations)
+    - RTSP URLs for each profile
+
+    Args:
+        request: Device details request with endpoint URL and optional credentials
+
+    Returns:
+        DeviceDetailsResponse with device info and profiles
+
+    Raises:
+        503: If onvif-zeep is not installed
+        500: If device query fails due to network error
+    """
+    service = get_onvif_discovery_service()
+
+    # Check availability
+    if not service.is_device_details_available:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "device_details_unavailable",
+                "message": (
+                    "ONVIF device details unavailable: onvif-zeep package not installed. "
+                    "Install with: pip install onvif-zeep"
+                )
+            }
+        )
+
+    logger.info(f"Querying device details for: {request.endpoint_url}")
+
+    try:
+        result = await service.get_device_details(
+            endpoint_url=request.endpoint_url,
+            username=request.username,
+            password=request.password
+        )
+
+        return DeviceDetailsResponse(
+            status=result.status,
+            device=result.device,
+            error_message=result.error,
+            duration_ms=result.duration_ms
+        )
+
+    except Exception as e:
+        logger.error(f"Device details endpoint error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "device_query_failed",
+                "message": f"Device query failed: {str(e)}"
+            }
+        )
