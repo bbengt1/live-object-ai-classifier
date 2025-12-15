@@ -1,0 +1,180 @@
+<story-context id="p5-2-1-implement-onvif-ws-discovery-scanner" v="1.0">
+  <metadata>
+    <epicId>P5-2</epicId>
+    <storyId>P5-2.1</storyId>
+    <title>Implement ONVIF WS-Discovery Scanner</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p5-2-1-implement-onvif-ws-discovery-scanner.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>homeowner setting up ArgusAI</asA>
+    <iWant>automatic discovery of ONVIF-compatible cameras on my network</iWant>
+    <soThat>I can add cameras without manually finding and entering RTSP URLs</soThat>
+    <tasks>
+      <task id="1" ac="4">Install ONVIF Discovery Dependencies - Add WSDiscovery and onvif-zeep libraries to requirements.txt</task>
+      <task id="2" ac="1,2,3,4">Create ONVIFDiscoveryService Class - Implement WS-Discovery probe sending and response collection</task>
+      <task id="3" ac="4,5">Create Discovery Data Models - DiscoveredDevice, DiscoveryResponse, DiscoveryRequest Pydantic schemas</task>
+      <task id="4" ac="5">Create Discovery API Endpoint - POST /api/v1/cameras/discover</task>
+      <task id="5" ac="5">Register Discovery Router - Add to main.py or API router init</task>
+      <task id="6" ac="1,3">Handle Network Interface Discovery - Multi-interface support with deduplication</task>
+      <task id="7" ac="1,2,3,4">Write Unit Tests for Discovery Service - Mock UDP socket tests</task>
+      <task id="8" ac="5">Write API Integration Tests - Mock discovery service tests</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">WS-Discovery Probe Sent to Multicast Address - UDP multicast probe to 239.255.255.250:3702, SOAP envelope per WS-Discovery spec, targets ONVIF NVT type</criterion>
+    <criterion id="AC2">Responses Collected with Configurable Timeout - Default 10 seconds, configurable parameter, graceful handling of no responses</criterion>
+    <criterion id="AC3">Works on Typical Home Networks - Supports up to 50 devices, handles single subnet, non-ONVIF devices ignored</criterion>
+    <criterion id="AC4">Discovery Service with Async Interface - ONVIFDiscoveryService class, async discover_cameras() method, returns endpoint URLs/scopes/types</criterion>
+    <criterion id="AC5">API Endpoint to Trigger Discovery - POST /api/v1/cameras/discover, returns DiscoveryResponse with results and duration</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/PRD-phase5.md</path>
+        <title>Phase 5 PRD</title>
+        <section>Functional Requirements</section>
+        <snippet>FR13: System can discover ONVIF-compatible cameras on the local network. FR14: Discovery scan completes within 10 seconds for typical home networks.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/phase-5-additions.md</path>
+        <title>Phase 5 Architecture Additions</title>
+        <section>Phase 5 ONVIF Discovery Architecture</section>
+        <snippet>WS-Discovery Flow diagram showing probe/response pattern. ONVIFDiscoveryService implementation pattern with MULTICAST_GROUP, MULTICAST_PORT, DEFAULT_TIMEOUT constants.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics-phase5.md</path>
+        <title>Phase 5 Epics</title>
+        <section>Epic P5-2: ONVIF Camera Discovery</section>
+        <snippet>Story P5-2.1: Implement ONVIF WS-Discovery Scanner - WS-Discovery probe sent to 239.255.255.250:3702, responses collected with 10-second timeout, works on home networks up to 50 devices.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p5-1-8-build-homekit-settings-ui.md</path>
+        <title>Previous Story P5-1.8</title>
+        <section>Dev Agent Record</section>
+        <snippet>Service singleton pattern, Pydantic schemas in app/schemas/, API endpoints in dedicated router file, test organization in test_services/ and test_api/.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <artifact>
+        <path>backend/app/services/homekit_service.py</path>
+        <kind>service</kind>
+        <symbol>HomekitService</symbol>
+        <lines>1-150</lines>
+        <reason>Reference pattern for service class structure - singleton, config injection, async methods, dataclass for status</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/api/v1/homekit.py</path>
+        <kind>api-router</kind>
+        <symbol>router</symbol>
+        <lines>1-100</lines>
+        <reason>Reference pattern for FastAPI router - prefix, tags, Pydantic schemas, endpoint structure</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/api/v1/cameras.py</path>
+        <kind>api-router</kind>
+        <symbol>router</symbol>
+        <lines>1-100</lines>
+        <reason>Camera API router - new discovery endpoint should be added here or as separate router</reason>
+      </artifact>
+      <artifact>
+        <path>backend/app/schemas/camera.py</path>
+        <kind>schema</kind>
+        <symbol>CameraCreate, CameraResponse</symbol>
+        <lines>all</lines>
+        <reason>Existing Pydantic schema patterns for camera-related models</reason>
+      </artifact>
+      <artifact>
+        <path>backend/requirements.txt</path>
+        <kind>config</kind>
+        <symbol>dependencies</symbol>
+        <lines>all</lines>
+        <reason>Add ONVIF discovery dependencies here - WSDiscovery, onvif-zeep</reason>
+      </artifact>
+      <artifact>
+        <path>backend/main.py</path>
+        <kind>entrypoint</kind>
+        <symbol>app</symbol>
+        <lines>all</lines>
+        <reason>Router registration location for new discovery endpoints</reason>
+      </artifact>
+    </code>
+
+    <dependencies>
+      <python>
+        <existing>
+          <package name="fastapi" version="0.115.0">Web framework</package>
+          <package name="pydantic" version="2.10.0+">Data validation and schemas</package>
+          <package name="sqlalchemy" version="2.0.36+">ORM (not needed for this story)</package>
+        </existing>
+        <new>
+          <package name="WSDiscovery" version="2.0+">WS-Discovery protocol implementation for UDP multicast probes</package>
+          <package name="onvif-zeep" version="latest">ONVIF SOAP client (used in P5-2.2 for GetDeviceInformation, but install now for full capability)</package>
+        </new>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="pattern">Service classes follow singleton pattern with async methods (see homekit_service.py)</constraint>
+    <constraint type="pattern">Pydantic schemas defined in separate file under backend/app/schemas/</constraint>
+    <constraint type="pattern">API routers use prefix and tags, Pydantic response models</constraint>
+    <constraint type="network">Discovery uses UDP multicast to 239.255.255.250:3702 - may require elevated permissions on some systems</constraint>
+    <constraint type="timeout">Default discovery timeout is 10 seconds per PRD/epics specification</constraint>
+    <constraint type="security">Do not log camera credentials or sensitive device information</constraint>
+    <constraint type="error-handling">Gracefully handle network errors, unresponsive cameras, malformed responses</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>ONVIFDiscoveryService.discover_cameras</name>
+      <kind>async-method</kind>
+      <signature>async def discover_cameras(self, timeout: int = 10) -> List[DiscoveredDevice]</signature>
+      <path>backend/app/services/onvif_discovery_service.py</path>
+    </interface>
+    <interface>
+      <name>POST /api/v1/cameras/discover</name>
+      <kind>REST-endpoint</kind>
+      <signature>POST /api/v1/cameras/discover -> DiscoveryResponse (status, duration_ms, devices[])</signature>
+      <path>backend/app/api/v1/discovery.py or backend/app/api/v1/cameras.py</path>
+    </interface>
+    <interface>
+      <name>DiscoveredDevice</name>
+      <kind>pydantic-model</kind>
+      <signature>DiscoveredDevice(endpoint_url: str, scopes: List[str], types: List[str], metadata_version: Optional[str])</signature>
+      <path>backend/app/schemas/discovery.py</path>
+    </interface>
+    <interface>
+      <name>DiscoveryResponse</name>
+      <kind>pydantic-model</kind>
+      <signature>DiscoveryResponse(status: str, duration_ms: int, devices: List[DiscoveredDevice], error_message: Optional[str])</signature>
+      <path>backend/app/schemas/discovery.py</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend tests use pytest with pytest-asyncio for async tests. Tests organized in backend/tests/ with subdirectories for test_api/, test_services/, test_models/. Mock external dependencies (network calls, sockets). Use pytest fixtures for setup. Coverage target 80%+.
+    </standards>
+    <locations>
+      <location>backend/tests/test_services/test_onvif_discovery.py</location>
+      <location>backend/tests/test_api/test_discovery.py</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test WS-Discovery probe message has correct SOAP structure and targets NVT scope</idea>
+      <idea ac="2">Test timeout parameter is respected and returns empty list on no responses</idea>
+      <idea ac="3">Test graceful handling of malformed ProbeMatch responses</idea>
+      <idea ac="4">Test discover_cameras returns proper DiscoveredDevice list</idea>
+      <idea ac="4">Test deduplication of devices found on multiple network interfaces</idea>
+      <idea ac="5">Test POST /api/v1/cameras/discover returns valid DiscoveryResponse</idea>
+      <idea ac="5">Test custom timeout parameter in request body</idea>
+      <idea ac="5">Test error response for network exceptions</idea>
+    </ideas>
+  </tests>
+</story-context>

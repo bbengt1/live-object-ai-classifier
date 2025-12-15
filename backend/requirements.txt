@@ -52,6 +52,10 @@ qrcode>=7.4.0  # QR code generation for HomeKit pairing
 # Temporal Context Engine (Phase 4 - Story P4-3.1)
 sentence-transformers>=2.2.0  # CLIP model for image embeddings
 
+# ONVIF Camera Discovery (Phase 5 - Story P5-2.1)
+WSDiscovery>=2.0.0  # WS-Discovery protocol for camera auto-discovery
+onvif-zeep>=0.2.12  # ONVIF SOAP client for camera capabilities
+
 # Logging and Monitoring
 python-json-logger>=2.0.0
 prometheus_client>=0.19.0
