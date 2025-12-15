@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/useToast';
 import { CameraPreview } from '@/components/cameras/CameraPreview';
 import { SourceTypeFilter, calculateSourceTypeCounts, type SourceTypeFilterValue } from '@/components/cameras/SourceTypeFilter';
 import { AddCameraDropdown } from '@/components/cameras/AddCameraDropdown';
+import { CameraDiscovery } from '@/components/cameras/CameraDiscovery';
 import { EmptyState } from '@/components/common/EmptyState';
 import { Loading } from '@/components/common/Loading';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -116,6 +117,21 @@ export default function CamerasPage() {
         </div>
         <AddCameraDropdown />
       </div>
+
+      {/* ONVIF Camera Discovery (Story P5-2.3) */}
+      {!loading && !error && (
+        <div className="mb-6">
+          <CameraDiscovery
+            existingCameras={cameras}
+            onDiscoveryComplete={(count) => {
+              if (count > 0) {
+                // Refresh cameras list when user adds a discovered camera
+                // The refresh happens automatically when navigating back from /cameras/new
+              }
+            }}
+          />
+        </div>
+      )}
 
       {/* Source type filter tabs */}
       {!loading && !error && cameras.length > 0 && (

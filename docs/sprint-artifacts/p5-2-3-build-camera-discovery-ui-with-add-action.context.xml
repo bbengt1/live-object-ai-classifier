@@ -1,0 +1,213 @@
+<story-context id="p5-2-3" v="1.0">
+  <metadata>
+    <epicId>P5-2</epicId>
+    <storyId>P5-2.3</storyId>
+    <title>Build Camera Discovery UI with Add Action</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p5-2-3-build-camera-discovery-ui-with-add-action.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>homeowner setting up ArgusAI</asA>
+    <iWant>a "Discover Cameras" button that scans my network and shows found cameras</iWant>
+    <soThat>I can add ONVIF cameras with one click instead of manually entering RTSP URLs</soThat>
+    <tasks>
+      <task id="1">Add API Client Functions for Discovery - frontend/lib/api-client.ts</task>
+      <task id="2">Create DiscoveredCameraCard Component - frontend/components/cameras/DiscoveredCameraCard.tsx</task>
+      <task id="3">Create CameraDiscovery Component - frontend/components/cameras/CameraDiscovery.tsx</task>
+      <task id="4">Integrate Discovery into Cameras Page - frontend/app/cameras/page.tsx</task>
+      <task id="5">Add URL Query Params for Pre-populated Form - frontend/app/cameras/new/page.tsx</task>
+      <task id="6">Add Discovery Types - frontend/types/discovery.ts</task>
+      <task id="7">Write Component Tests - frontend/__tests__/components/cameras/CameraDiscovery.test.tsx</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1">"Discover Cameras" button visible on Cameras page with scan/search icon, disabled during scan</criterion>
+    <criterion id="AC2">Loading spinner/state shown during discovery (up to 10 seconds), progress indication optional</criterion>
+    <criterion id="AC3">Discovered cameras listed with name, IP, manufacturer, model, profiles with resolution/FPS, "Already Added" marking</criterion>
+    <criterion id="AC4">"Add" button opens /cameras/new with pre-populated RTSP URL and camera name, profile selection available</criterion>
+    <criterion id="AC5">Manual RTSP entry still available via existing Add Camera dropdown</criterion>
+    <criterion id="AC6">Empty state message if no cameras found with guidance and retry option</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-p5-2.md</path>
+        <title>Epic Technical Specification: ONVIF Camera Discovery</title>
+        <section>Story P5-2.3 Acceptance Criteria</section>
+        <snippet>Button visible on Cameras page, loading spinner during discovery, discovered cameras list with name/IP/manufacturer, "Add" button opens form with pre-populated RTSP URL, manual entry still available, empty state message if no cameras found.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/phase-5-additions.md</path>
+        <title>Phase 5 Additions</title>
+        <section>Phase 5 ONVIF Discovery Architecture</section>
+        <snippet>Discovery Service Implementation with ONVIFDiscoveryService class. API Endpoints: POST /discover, GET /discover/results. UI component CameraDiscovery.tsx in frontend/components/settings/.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD-phase5.md</path>
+        <title>PRD Phase 5</title>
+        <section>FR16, FR19</section>
+        <snippet>FR16: Provide discovery UI with scan button and results list. FR19: One-click add discovered camera with auto-populated RTSP URL.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p5-2-2-parse-onvif-device-info-and-capabilities.md</path>
+        <title>Previous Story: Parse ONVIF Device Info</title>
+        <section>Dev Agent Record</section>
+        <snippet>Device details endpoint POST /api/v1/cameras/discover/device. Two-step discovery pattern. Error handling returns status: 'auth_required'. IP extraction from endpoint URL available in response.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>backend/app/api/v1/discovery.py</path>
+        <kind>router</kind>
+        <symbol>discover_cameras, get_device_details</symbol>
+        <lines>73-140, 208-274</lines>
+        <reason>Backend endpoints for ONVIF discovery - POST /api/v1/cameras/discover and POST /api/v1/cameras/discover/device</reason>
+      </file>
+      <file>
+        <path>backend/app/schemas/discovery.py</path>
+        <kind>schema</kind>
+        <symbol>DiscoveredDevice, DiscoveryResponse, DeviceDetailsResponse, StreamProfile, DeviceInfo, DiscoveredCameraDetails</symbol>
+        <lines>14-380</lines>
+        <reason>Pydantic schemas for discovery API - must mirror in frontend TypeScript interfaces</reason>
+      </file>
+      <file>
+        <path>frontend/lib/api-client.ts</path>
+        <kind>client</kind>
+        <symbol>apiClient</symbol>
+        <lines>all</lines>
+        <reason>API client where new discovery functions must be added</reason>
+      </file>
+      <file>
+        <path>frontend/app/cameras/page.tsx</path>
+        <kind>page</kind>
+        <symbol>CamerasPage</symbol>
+        <lines>all</lines>
+        <reason>Cameras page where CameraDiscovery component will be integrated</reason>
+      </file>
+      <file>
+        <path>frontend/app/cameras/new/page.tsx</path>
+        <kind>page</kind>
+        <symbol>NewCameraPage</symbol>
+        <lines>all</lines>
+        <reason>New camera page that must handle URL query params for pre-population</reason>
+      </file>
+      <file>
+        <path>frontend/components/cameras/CameraForm.tsx</path>
+        <kind>component</kind>
+        <symbol>CameraForm</symbol>
+        <lines>all</lines>
+        <reason>Camera form component that receives pre-populated values</reason>
+      </file>
+      <file>
+        <path>frontend/components/cameras/AddCameraDropdown.tsx</path>
+        <kind>component</kind>
+        <symbol>AddCameraDropdown</symbol>
+        <lines>all</lines>
+        <reason>Existing add camera dropdown - discovery UI should complement, not replace</reason>
+      </file>
+      <file>
+        <path>frontend/types/camera.ts</path>
+        <kind>types</kind>
+        <symbol>ICamera, CameraSourceType</symbol>
+        <lines>all</lines>
+        <reason>Existing camera types - new discovery types should follow similar patterns</reason>
+      </file>
+      <file>
+        <path>frontend/__tests__/components/cameras/CameraForm.test.tsx</path>
+        <kind>test</kind>
+        <symbol>CameraForm tests</symbol>
+        <lines>1-100</lines>
+        <reason>Example test file showing testing patterns for camera components</reason>
+      </file>
+      <file>
+        <path>frontend/__tests__/test-utils.tsx</path>
+        <kind>test-utils</kind>
+        <symbol>render, mockCamera</symbol>
+        <lines>all</lines>
+        <reason>Test utilities and mock factories to use in new tests</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <frontend>
+        <package name="next" version="^16.0.10" />
+        <package name="react" version="19.2.0" />
+        <package name="@tanstack/react-query" version="^5.90.10" />
+        <package name="lucide-react" version="^0.553.0" />
+        <package name="zod" version="^4.1.12" />
+        <package name="vitest" version="^4.0.15" devDependency="true" />
+        <package name="@testing-library/react" version="^16.3.0" devDependency="true" />
+        <package name="@testing-library/user-event" version="^14.6.1" devDependency="true" />
+      </frontend>
+    </dependencies>
+  </artifacts>
+
+  <interfaces>
+    <interface>
+      <name>POST /api/v1/cameras/discover</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /api/v1/cameras/discover { timeout?: number } -> DiscoveryResponse { status, duration_ms, devices[], device_count, error_message? }</signature>
+      <path>backend/app/api/v1/discovery.py:73</path>
+    </interface>
+    <interface>
+      <name>POST /api/v1/cameras/discover/device</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /api/v1/cameras/discover/device { endpoint_url, username?, password? } -> DeviceDetailsResponse { status, device?, error_message?, duration_ms }</signature>
+      <path>backend/app/api/v1/discovery.py:208</path>
+    </interface>
+    <interface>
+      <name>GET /api/v1/cameras/discover/status</name>
+      <kind>REST endpoint</kind>
+      <signature>GET /api/v1/cameras/discover/status -> DiscoveryStatusResponse { available, library_installed, message }</signature>
+      <path>backend/app/api/v1/discovery.py:42</path>
+    </interface>
+    <interface>
+      <name>POST /api/v1/cameras/discover/clear-cache</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /api/v1/cameras/discover/clear-cache -> { status, message }</signature>
+      <path>backend/app/api/v1/discovery.py:142</path>
+    </interface>
+  </interfaces>
+
+  <constraints>
+    <constraint>Use TanStack Query (useQuery, useMutation) for API calls following existing patterns</constraint>
+    <constraint>Use shadcn/ui components (Button, Card, Badge, Skeleton) matching existing UI</constraint>
+    <constraint>Use Lucide icons (Radar, Search, RefreshCw, Plus, CheckCircle)</constraint>
+    <constraint>Follow existing component file structure in frontend/components/cameras/</constraint>
+    <constraint>Create TypeScript interfaces matching backend Pydantic schemas exactly</constraint>
+    <constraint>Handle 503 errors gracefully when discovery libraries not installed</constraint>
+    <constraint>Discovery timeout is 10 seconds maximum</constraint>
+    <constraint>Path conversion: use project-relative paths only in context</constraint>
+    <constraint>Match existing test patterns using vitest, @testing-library/react, mock API client</constraint>
+  </constraints>
+
+  <tests>
+    <standards>
+      Use Vitest with React Testing Library. Tests located in frontend/__tests__/. Mock API client using vi.mock(). Use customRender from test-utils.tsx for provider wrapping. Follow AAA pattern (Arrange-Act-Assert). Test component rendering, user interactions, loading states, error states, and edge cases.
+    </standards>
+    <locations>
+      <location>frontend/__tests__/components/cameras/</location>
+      <location>frontend/__tests__/**/*.test.tsx</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1">Test "Discover Cameras" button renders with correct icon and text</idea>
+      <idea ac="AC1">Test button disabled state during active scan</idea>
+      <idea ac="AC2">Test loading spinner appears when scan starts</idea>
+      <idea ac="AC2">Test loading text shows "Scanning..."</idea>
+      <idea ac="AC3">Test discovered camera list renders with device info</idea>
+      <idea ac="AC3">Test "Already Added" badge for existing cameras</idea>
+      <idea ac="AC4">Test "Add" button click navigates with query params</idea>
+      <idea ac="AC5">Test manual entry still works via existing dropdown</idea>
+      <idea ac="AC6">Test empty state renders when no devices found</idea>
+      <idea ac="AC6">Test retry button functionality</idea>
+      <idea>Test error state when discovery fails</idea>
+      <idea>Test 503 error handling (library not installed)</idea>
+    </ideas>
+  </tests>
+</story-context>
