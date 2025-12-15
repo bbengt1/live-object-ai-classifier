@@ -67,7 +67,10 @@ jobs:
         run: npm run lint
 
       - name: Run type check
-        run: npx tsc --noEmit --project tsconfig.ci.json
+        run: npx next build
+        env:
+          # Skip telemetry for faster builds
+          NEXT_TELEMETRY_DISABLED: 1
 
       - name: Run tests with coverage
         run: npm run test:coverage
