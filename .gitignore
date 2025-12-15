@@ -213,4 +213,4 @@ backend/node_modules/
 backend/data/clips/
 
 # Generated service files (install.sh --services)
-services/
+/services/

@@ -1,5 +1,5 @@
 """
-HomeKit service for Apple Home integration (Story P4-6.1, P4-6.2, P5-1.2, P5-1.3, P5-1.5, P5-1.6)
+HomeKit service for Apple Home integration (Story P4-6.1, P4-6.2, P5-1.2, P5-1.3, P5-1.5, P5-1.6, P5-1.7)
 
 Manages the HAP-python accessory server and exposes cameras as motion sensors.
 Story P4-6.2 adds motion event triggering with auto-reset timers.
@@ -7,6 +7,7 @@ Story P5-1.2 adds proper HomeKit Setup URI for QR code pairing.
 Story P5-1.3 adds camera accessories with RTSP-to-SRTP streaming.
 Story P5-1.5 adds occupancy sensors for person-only detection with 5-minute timeout.
 Story P5-1.6 adds vehicle/animal/package sensors for detection-type-specific automations.
+Story P5-1.7 adds doorbell sensors for Protect doorbell ring events.
 """
 import asyncio
 import logging
@@ -51,6 +52,8 @@ from app.services.homekit_accessories import (
     create_animal_sensor,
     CameraPackageSensor,
     create_package_sensor,
+    CameraDoorbellSensor,
+    create_doorbell_sensor,
 )
 from app.services.homekit_camera import (
     HomeKitCameraAccessory,
@@ -73,6 +76,7 @@ class HomekitStatus:
     vehicle_count: int = 0  # Story P5-1.6: Number of vehicle sensor accessories
     animal_count: int = 0  # Story P5-1.6: Number of animal sensor accessories
     package_count: int = 0  # Story P5-1.6: Number of package sensor accessories
+    doorbell_count: int = 0  # Story P5-1.7: Number of doorbell sensor accessories
     active_streams: int = 0  # Story P5-1.3: Currently active camera streams
     bridge_name: str = "ArgusAI"
     setup_code: Optional[str] = None
@@ -140,6 +144,9 @@ class HomekitService:
         self._animal_reset_tasks: Dict[str, asyncio.Task] = {}
         self._package_reset_tasks: Dict[str, asyncio.Task] = {}
 
+        # Story P5-1.7: Doorbell sensors (stateless - no reset timers needed)
+        self._doorbell_sensors: Dict[str, CameraDoorbellSensor] = {}
+
     @property
     def is_available(self) -> bool:
         """Check if HAP-python is available."""
@@ -198,6 +205,11 @@ class HomekitService:
     def package_count(self) -> int:
         """Get the number of registered package sensor accessories (Story P5-1.6)."""
         return len(self._package_sensors)
+
+    @property
+    def doorbell_count(self) -> int:
+        """Get the number of registered doorbell sensor accessories (Story P5-1.7)."""
+        return len(self._doorbell_sensors)
 
     @property
     def pincode(self) -> str:
@@ -298,6 +310,7 @@ class HomekitService:
             vehicle_count=self.vehicle_count,  # Story P5-1.6
             animal_count=self.animal_count,  # Story P5-1.6
             package_count=self.package_count,  # Story P5-1.6
+            doorbell_count=self.doorbell_count,  # Story P5-1.7
             active_streams=HomeKitCameraAccessory.get_active_stream_count(),  # Story P5-1.3
             bridge_name=self.config.bridge_name,
             setup_code=self.pincode if not is_paired else None,
@@ -426,6 +439,19 @@ class HomekitService:
                     self._bridge.add_accessory(package_sensor.accessory)
                     logger.info(f"Added HomeKit package sensor for camera: {camera_name}")
 
+                # Story P5-1.7: Add doorbell sensor only for doorbell cameras
+                if hasattr(camera, 'is_doorbell') and camera.is_doorbell:
+                    doorbell_sensor = create_doorbell_sensor(
+                        driver=self._driver,
+                        camera_id=camera_id,
+                        camera_name=f"{camera_name} Doorbell",
+                        manufacturer=self.config.manufacturer,
+                    )
+                    if doorbell_sensor:
+                        self._doorbell_sensors[camera_id] = doorbell_sensor
+                        self._bridge.add_accessory(doorbell_sensor.accessory)
+                        logger.info(f"Added HomeKit doorbell sensor for camera: {camera_name}")
+
                 # Story P5-1.3: Add camera accessory for streaming (only if ffmpeg available)
                 if self._ffmpeg_available:
                     rtsp_url = self._get_camera_rtsp_url(camera)
@@ -462,7 +488,8 @@ class HomekitService:
             logger.info(
                 f"HomeKit accessory server started on port {self.config.port} "
                 f"with {len(self._sensors)} motion sensors, {len(self._occupancy_sensors)} occupancy sensors, "
-                f"and {len(self._cameras)} cameras. Pairing code: {self.pincode}"
+                f"{len(self._doorbell_sensors)} doorbell sensors, and {len(self._cameras)} cameras. "
+                f"Pairing code: {self.pincode}"
             )
 
             return True
@@ -527,6 +554,7 @@ class HomekitService:
             self._vehicle_sensors.clear()  # Story P5-1.6: Clear vehicle sensors
             self._animal_sensors.clear()  # Story P5-1.6: Clear animal sensors
             self._package_sensors.clear()  # Story P5-1.6: Clear package sensors
+            self._doorbell_sensors.clear()  # Story P5-1.7: Clear doorbell sensors
             self._cameras.clear()  # Story P5-1.3: Clear camera accessories
             self._camera_id_mapping.clear()
 
@@ -1187,6 +1215,48 @@ class HomekitService:
             sensor.clear_motion()
 
         logger.debug("Cleared all HomeKit detection sensor states")
+
+    # =========================================================================
+    # Story P5-1.7: Doorbell Sensor Methods (Protect Doorbell Ring Events)
+    # =========================================================================
+
+    def trigger_doorbell(self, camera_id: str, event_id: Optional[int] = None) -> bool:
+        """
+        Trigger doorbell ring event for a camera (Story P5-1.7).
+
+        Fires a single press event on the StatelessProgrammableSwitch to notify
+        all paired HomeKit devices of a doorbell ring. Unlike motion/occupancy sensors,
+        doorbell events are stateless - no reset timer is needed.
+
+        Only works for cameras where is_doorbell == True (doorbell sensor must exist).
+
+        Args:
+            camera_id: Camera identifier (UUID or MAC address)
+            event_id: Optional event ID for logging
+
+        Returns:
+            True if doorbell ring triggered successfully, False if sensor not found
+        """
+        # Resolve camera_id through mapping (for Protect cameras using MAC)
+        resolved_id = self._resolve_camera_id(camera_id)
+        sensor = self._doorbell_sensors.get(resolved_id)
+
+        if not sensor:
+            logger.debug(
+                f"No HomeKit doorbell sensor found for camera: {camera_id} (resolved: {resolved_id})",
+                extra={"camera_id": camera_id, "event_id": event_id}
+            )
+            return False
+
+        # Trigger doorbell ring (stateless - fires event immediately)
+        sensor.trigger_ring()
+
+        logger.info(
+            f"HomeKit doorbell ring triggered for camera: {sensor.name}",
+            extra={"camera_id": camera_id, "event_id": event_id}
+        )
+
+        return True
 
     async def reset_pairing(self) -> bool:
         """

@@ -303,7 +303,7 @@ development_status:
   p5-1-4-implement-motion-sensor-accessories: done
   p5-1-5-implement-occupancy-sensor-for-person-detection: done
   p5-1-6-add-vehicle-animal-package-sensor-accessories: done
-  p5-1-7-implement-doorbell-accessory-for-protect-events: backlog
+  p5-1-7-implement-doorbell-accessory-for-protect-events: done
   p5-1-8-build-homekit-settings-ui: backlog
   epic-p5-1-retrospective: optional
 
