@@ -146,7 +146,7 @@ def create_event(db_session, camera: Camera, timestamp: datetime = None) -> Even
     return event
 
 
-def create_feedback(db_session, event: Event, rating: str, correction: str = None) -> EventFeedback:
+def create_feedback(db_session, event: Event, rating: str, correction: str = None, created_at: datetime = None) -> EventFeedback:
     """Helper to create feedback for testing"""
     feedback = EventFeedback(
         event_id=event.id,
@@ -154,6 +154,9 @@ def create_feedback(db_session, event: Event, rating: str, correction: str = Non
         rating=rating,
         correction=correction
     )
+    # Set created_at if provided (for date filtering tests)
+    if created_at:
+        feedback.created_at = created_at
     db_session.add(feedback)
     db_session.commit()
     db_session.refresh(feedback)
@@ -239,9 +242,10 @@ class TestFeedbackStatsEndpoint:
         event_yesterday = create_event(db_session, test_camera, yesterday)
         event_week_ago = create_event(db_session, test_camera, week_ago)
 
-        create_feedback(db_session, event_now, "helpful")
-        create_feedback(db_session, event_yesterday, "not_helpful")
-        create_feedback(db_session, event_week_ago, "helpful")
+        # Create feedback with matching created_at timestamps (date filter applies to feedback, not event)
+        create_feedback(db_session, event_now, "helpful", created_at=now)
+        create_feedback(db_session, event_yesterday, "not_helpful", created_at=yesterday)
+        create_feedback(db_session, event_week_ago, "helpful", created_at=week_ago)
 
         # Filter to yesterday only
         start_date = yesterday.strftime("%Y-%m-%d")
@@ -289,18 +293,18 @@ class TestFeedbackStatsEndpoint:
         """Test daily trend data (AC9)"""
         now = datetime.now(timezone.utc)
 
-        # Create feedback for today
+        # Create feedback for today (with matching created_at)
         for i in range(3):
             event = create_event(db_session, test_camera, now)
             rating = "helpful" if i < 2 else "not_helpful"
-            create_feedback(db_session, event, rating)
+            create_feedback(db_session, event, rating, created_at=now)
 
-        # Create feedback for yesterday
+        # Create feedback for yesterday (with matching created_at)
         yesterday = now - timedelta(days=1)
         for i in range(2):
             event = create_event(db_session, test_camera, yesterday)
             rating = "helpful"
-            create_feedback(db_session, event, rating)
+            create_feedback(db_session, event, rating, created_at=yesterday)
 
         response = client.get("/api/v1/feedback/stats")
         assert response.status_code == 200
@@ -359,17 +363,17 @@ class TestFeedbackStatsEndpoint:
         now = datetime.now(timezone.utc)
         yesterday = now - timedelta(days=1)
 
-        # Camera 1, today: helpful
+        # Camera 1, today: helpful (with matching created_at)
         event1 = create_event(db_session, test_camera, now)
-        create_feedback(db_session, event1, "helpful")
+        create_feedback(db_session, event1, "helpful", created_at=now)
 
-        # Camera 1, yesterday: not_helpful
+        # Camera 1, yesterday: not_helpful (with matching created_at)
         event2 = create_event(db_session, test_camera, yesterday)
-        create_feedback(db_session, event2, "not_helpful")
+        create_feedback(db_session, event2, "not_helpful", created_at=yesterday)
 
-        # Camera 2, today: helpful
+        # Camera 2, today: helpful (with matching created_at)
         event3 = create_event(db_session, test_camera_2, now)
-        create_feedback(db_session, event3, "helpful")
+        create_feedback(db_session, event3, "helpful", created_at=now)
 
         # Filter: camera 1, today only
         today = now.strftime("%Y-%m-%d")

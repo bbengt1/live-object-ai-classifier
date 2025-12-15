@@ -3187,9 +3187,15 @@ class TestThumbnailGeneration:
         test_image = Image.new('RGB', (1920, 1080), color='red')
         timestamp = datetime.now(timezone.utc)
 
-        thumbnail_path = await service._generate_thumbnail(
+        api_url_path = await service._generate_thumbnail(
             test_image, "camera-123", timestamp
         )
+
+        # api_url_path is /api/v1/thumbnails/{date}/{filename}
+        # Convert to filesystem path: tmp_path/{date}/{filename}
+        # Extract the path after /api/v1/thumbnails/
+        relative_path = api_url_path.replace("/api/v1/thumbnails/", "")
+        thumbnail_path = os.path.join(str(tmp_path), relative_path)
 
         # File should exist
         assert os.path.exists(thumbnail_path)
@@ -3197,6 +3203,8 @@ class TestThumbnailGeneration:
         assert str(tmp_path) in thumbnail_path
         # File should be JPEG
         assert thumbnail_path.endswith('.jpg')
+        # Returned path should be API URL format
+        assert api_url_path.startswith('/api/v1/thumbnails/')
 
     @pytest.mark.asyncio
     async def test_generate_thumbnail_dimensions(self, tmp_path):
@@ -3211,9 +3219,13 @@ class TestThumbnailGeneration:
         test_image = Image.new('RGB', (1920, 1080), color='blue')
         timestamp = datetime.now(timezone.utc)
 
-        thumbnail_path = await service._generate_thumbnail(
+        api_url_path = await service._generate_thumbnail(
             test_image, "camera-456", timestamp
         )
+
+        # Convert API URL to filesystem path
+        relative_path = api_url_path.replace("/api/v1/thumbnails/", "")
+        thumbnail_path = os.path.join(str(tmp_path), relative_path)
 
         # Load saved thumbnail and check dimensions
         saved_thumb = Image.open(thumbnail_path)
@@ -3749,6 +3761,9 @@ class TestDoorbellRingAIPrompt:
             async def generate_description(self, *args, **kwargs):
                 pass
 
+            async def generate_multi_image_description(self, *args, **kwargs):
+                pass
+
         provider = TestProvider(api_key="test")
 
         # Test with custom prompt
@@ -3769,6 +3784,9 @@ class TestDoorbellRingAIPrompt:
 
         class TestProvider(AIProviderBase):
             async def generate_description(self, *args, **kwargs):
+                pass
+
+            async def generate_multi_image_description(self, *args, **kwargs):
                 pass
 
         provider = TestProvider(api_key="test")
@@ -3846,6 +3864,8 @@ class TestDoorbellRingEventStorage:
             provider: str = "openai"
             success: bool = True
             error: str = None
+            ai_confidence: int = 85
+            cost_estimate: float = 0.001
 
             def __post_init__(self):
                 if self.objects_detected is None:
