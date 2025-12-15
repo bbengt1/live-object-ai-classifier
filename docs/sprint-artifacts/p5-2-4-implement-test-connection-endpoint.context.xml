@@ -1,0 +1,198 @@
+<story-context id="p5-2-4-implement-test-connection-endpoint" v="1.0">
+  <metadata>
+    <epicId>P5-2</epicId>
+    <storyId>P5-2.4</storyId>
+    <title>Implement Test Connection Endpoint</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-14</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p5-2-4-implement-test-connection-endpoint.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>homeowner adding a new camera to ArgusAI</asA>
+    <iWant>test the RTSP connection before saving the camera configuration</iWant>
+    <soThat>I can verify the camera is accessible and credentials are correct without committing invalid settings</soThat>
+    <tasks>
+      <task n="1">Create Test Connection Schema - TestConnectionRequest and TestConnectionResponse in backend/app/schemas/discovery.py</task>
+      <task n="2">Implement test_connection method in ONVIFDiscoveryService with 5s timeout, OpenCV connection, metadata extraction</task>
+      <task n="3">Create POST /api/v1/cameras/test endpoint in backend/app/api/v1/discovery.py</task>
+      <task n="4">Add cameras.testConnection() function in frontend/lib/api-client.ts</task>
+      <task n="5">Add Test Connection button to CameraForm (for new cameras before save)</task>
+      <task n="6">Add Test button to DiscoveredCameraCard for testing before add</task>
+      <task n="7">Write backend unit tests for endpoint and service</task>
+      <task n="8">Write frontend component tests for Test Connection button</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <ac n="1">POST /api/v1/cameras/test endpoint accepts rtsp_url (required), username (optional), password (optional). Validates URL scheme rtsp:// or rtsps://. Password never logged or exposed.</ac>
+    <ac n="2">Successful connections return { success: true, latency_ms, resolution, fps, codec }. Resolution from first frame. FPS from stream metadata. Codec from stream info. Latency measured in ms.</ac>
+    <ac n="3">Invalid URLs return { success: false, error: "Invalid RTSP URL format" }. Unreachable hosts return appropriate error message.</ac>
+    <ac n="4">Auth failures return "Authentication failed - check username/password". Timeout returns "Connection timed out after 5 seconds". Stream not found returns "Stream not found - check RTSP path".</ac>
+    <ac n="5">Test completes within 5 seconds (timeout). Response returned immediately after timeout (no hang).</ac>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-p5-2.md</path>
+        <title>Epic P5-2 Technical Specification</title>
+        <section>Story P5-2.4 Acceptance Criteria</section>
+        <snippet>POST /api/v1/cameras/test endpoint accepts RTSP URL and optional credentials. Valid URLs return success with resolution/FPS/codec. Invalid URLs return error with diagnostic message. Test completes within 5 seconds.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/phase-5-additions.md</path>
+        <title>Phase 5 Architecture Additions</title>
+        <section>Camera Discovery Endpoints</section>
+        <snippet>POST /api/v1/cameras/test endpoint defined with TestConnectionRequest/Response schemas. Returns success with latency_ms, resolution, fps, codec or error with diagnostic message.</snippet>
+      </doc>
+      <doc>
+        <path>docs/PRD-phase5.md</path>
+        <title>PRD Phase 5</title>
+        <section>Functional Requirements FR17, FR19</section>
+        <snippet>FR17: Test connection endpoint validates RTSP before saving. FR19: Users can verify camera connectivity before committing configuration.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p5-2-3-build-camera-discovery-ui-with-add-action.md</path>
+        <title>Previous Story P5-2.3</title>
+        <section>Dev Agent Record</section>
+        <snippet>CameraDiscovery and DiscoveredCameraCard components created. API client extended with discovery.* namespace. Use TanStack Query mutations for API calls.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>backend/app/api/v1/discovery.py</path>
+        <kind>API router</kind>
+        <symbol>router</symbol>
+        <reason>Add POST /api/v1/cameras/test endpoint here alongside existing /discover endpoints</reason>
+      </file>
+      <file>
+        <path>backend/app/services/onvif_discovery_service.py</path>
+        <kind>Service</kind>
+        <symbol>ONVIFDiscoveryService</symbol>
+        <reason>Add test_connection async method for RTSP validation with OpenCV</reason>
+      </file>
+      <file>
+        <path>backend/app/schemas/discovery.py</path>
+        <kind>Pydantic schemas</kind>
+        <symbol>DiscoveredDevice, DeviceDetailsRequest, DeviceDetailsResponse</symbol>
+        <reason>Add TestConnectionRequest and TestConnectionResponse schemas</reason>
+      </file>
+      <file>
+        <path>frontend/lib/api-client.ts</path>
+        <kind>API client</kind>
+        <symbol>apiClient.discovery</symbol>
+        <lines>2020-2078</lines>
+        <reason>Add testConnection function to discovery namespace</reason>
+      </file>
+      <file>
+        <path>frontend/types/discovery.ts</path>
+        <kind>TypeScript types</kind>
+        <symbol>IDiscoveryResponse, IDeviceDetailsResponse</symbol>
+        <reason>Add ITestConnectionRequest and ITestConnectionResponse interfaces</reason>
+      </file>
+      <file>
+        <path>frontend/components/cameras/CameraForm.tsx</path>
+        <kind>React component</kind>
+        <symbol>CameraForm, handleTestConnection</symbol>
+        <reason>Enhance Test Connection to work for new cameras using new endpoint (currently only works for saved cameras)</reason>
+      </file>
+      <file>
+        <path>frontend/components/cameras/DiscoveredCameraCard.tsx</path>
+        <kind>React component</kind>
+        <symbol>DiscoveredCameraCard</symbol>
+        <reason>Add Test button to validate RTSP before adding camera</reason>
+      </file>
+      <file>
+        <path>backend/tests/test_api/test_discovery.py</path>
+        <kind>Test file</kind>
+        <symbol>test_discover_cameras</symbol>
+        <reason>Add test cases for test connection endpoint</reason>
+      </file>
+      <file>
+        <path>backend/tests/test_services/test_onvif_discovery.py</path>
+        <kind>Test file</kind>
+        <symbol>TestONVIFDiscoveryService</symbol>
+        <reason>Add test cases for test_connection method</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <python>
+        <package name="fastapi" version=">=0.115.0" />
+        <package name="pydantic" version=">=2.10.0" />
+        <package name="opencv-python" version=">=4.12.0" />
+        <package name="pytest" version="==7.4.3" />
+        <package name="pytest-asyncio" version="==0.21.1" />
+        <package name="httpx" version="==0.25.2" />
+      </python>
+      <node>
+        <package name="@tanstack/react-query" />
+        <package name="react-hook-form" />
+        <package name="@hookform/resolvers" />
+        <package name="zod" />
+        <package name="lucide-react" />
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="security">Never log passwords. Sanitize RTSP URLs in logs (replace password with ***). Do not include credentials in error responses.</constraint>
+    <constraint type="timeout">All RTSP connection attempts must timeout within 5 seconds. Use asyncio.wait_for or OpenCV timeout properties.</constraint>
+    <constraint type="pattern">Use existing discovery.py router for endpoint. Use ONVIFDiscoveryService for implementation. Follow existing Pydantic schema patterns.</constraint>
+    <constraint type="testing">Mock OpenCV for unit tests. Use pytest-asyncio for async tests. Cover success, auth failure, timeout, and invalid URL cases.</constraint>
+    <constraint type="frontend">Use TanStack Query mutations for API calls. Follow existing error handling patterns in CameraForm. Use Lucide icons for UI feedback.</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>POST /api/v1/cameras/test</name>
+      <kind>REST endpoint</kind>
+      <signature>TestConnectionRequest → TestConnectionResponse</signature>
+      <path>backend/app/api/v1/discovery.py</path>
+    </interface>
+    <interface>
+      <name>TestConnectionRequest</name>
+      <kind>Pydantic schema</kind>
+      <signature>{ rtsp_url: str, username: Optional[str], password: Optional[str] }</signature>
+      <path>backend/app/schemas/discovery.py</path>
+    </interface>
+    <interface>
+      <name>TestConnectionResponse</name>
+      <kind>Pydantic schema</kind>
+      <signature>{ success: bool, latency_ms: Optional[int], resolution: Optional[str], fps: Optional[int], codec: Optional[str], error: Optional[str] }</signature>
+      <path>backend/app/schemas/discovery.py</path>
+    </interface>
+    <interface>
+      <name>ONVIFDiscoveryService.test_connection</name>
+      <kind>async method</kind>
+      <signature>async def test_connection(rtsp_url: str, username: Optional[str] = None, password: Optional[str] = None) → TestConnectionResult</signature>
+      <path>backend/app/services/onvif_discovery_service.py</path>
+    </interface>
+    <interface>
+      <name>apiClient.discovery.testConnection</name>
+      <kind>TypeScript function</kind>
+      <signature>(rtspUrl: string, username?: string, password?: string) => Promise&lt;ITestConnectionResponse&gt;</signature>
+      <path>frontend/lib/api-client.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>Backend uses pytest with pytest-asyncio for async tests. Mock external services (OpenCV) using unittest.mock. Frontend uses Vitest with React Testing Library. Mock API responses using vi.mock. Follow existing test patterns in test_discovery.py and CameraDiscovery.test.tsx.</standards>
+    <locations>
+      <location>backend/tests/test_api/test_discovery.py</location>
+      <location>backend/tests/test_services/test_onvif_discovery.py</location>
+      <location>frontend/__tests__/components/cameras/CameraForm.test.tsx</location>
+      <location>frontend/__tests__/components/cameras/DiscoveredCameraCard.test.tsx</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test endpoint accepts valid request body with rtsp_url. Test URL validation rejects non-rtsp schemes. Test optional credentials are accepted.</idea>
+      <idea ac="2">Test successful connection returns success=true with all metadata fields. Mock OpenCV to return frame with known resolution.</idea>
+      <idea ac="3">Test invalid URL format returns proper error. Test unreachable host returns connection error.</idea>
+      <idea ac="4">Test authentication failure detection. Test timeout after 5 seconds. Test stream not found error.</idea>
+      <idea ac="5">Test that long-running connections are cut off at 5 seconds. Verify no hanging on unresponsive cameras.</idea>
+    </ideas>
+  </tests>
+</story-context>

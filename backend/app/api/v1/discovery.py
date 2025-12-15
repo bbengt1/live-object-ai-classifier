@@ -20,6 +20,8 @@ from app.schemas.discovery import (
     DiscoveryResponse,
     DeviceDetailsRequest,
     DeviceDetailsResponse,
+    TestConnectionRequest,
+    TestConnectionResponse,
 )
 from app.services.onvif_discovery_service import (
     get_onvif_discovery_service,
@@ -271,4 +273,108 @@ async def get_device_details(
                 "error": "device_query_failed",
                 "message": f"Device query failed: {str(e)}"
             }
+        )
+
+
+# ============================================================================
+# Test Connection Endpoint (Story P5-2.4)
+# ============================================================================
+
+
+@router.post(
+    "/test",
+    response_model=TestConnectionResponse,
+    summary="Test RTSP connection",
+    description="Test an RTSP camera connection without saving the camera configuration",
+    responses={
+        200: {
+            "description": "Connection test result",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "success": {
+                            "summary": "Successful connection",
+                            "value": {
+                                "success": True,
+                                "latency_ms": 234,
+                                "resolution": "1920x1080",
+                                "fps": 30,
+                                "codec": "H.264",
+                                "error": None
+                            }
+                        },
+                        "failure": {
+                            "summary": "Failed connection",
+                            "value": {
+                                "success": False,
+                                "latency_ms": 5000,
+                                "resolution": None,
+                                "fps": None,
+                                "codec": None,
+                                "error": "Connection timed out after 5 seconds"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        422: {
+            "description": "Invalid RTSP URL format"
+        }
+    }
+)
+async def test_camera_connection(
+    request: TestConnectionRequest
+) -> TestConnectionResponse:
+    """
+    Test an RTSP camera connection without saving the camera.
+
+    This endpoint validates connectivity to an RTSP stream and retrieves
+    stream metadata (resolution, FPS, codec) on success. Useful for
+    verifying camera settings before adding a camera.
+
+    The test times out after 5 seconds to prevent hanging on unresponsive cameras.
+
+    Args:
+        request: Test connection request with RTSP URL and optional credentials
+
+    Returns:
+        TestConnectionResponse with success status, stream metadata, or error message
+
+    Notes:
+        - Password is never logged or included in error messages
+        - URL must start with rtsp:// or rtsps://
+        - Test includes opening connection and reading first frame
+    """
+    service = get_onvif_discovery_service()
+
+    # Sanitize URL for logging (remove password)
+    sanitized_url = request.rtsp_url
+    if request.password:
+        sanitized_url = request.rtsp_url  # Password not embedded in URL yet
+
+    logger.info(f"Testing RTSP connection: {sanitized_url}")
+
+    try:
+        result = await service.test_connection(
+            rtsp_url=request.rtsp_url,
+            username=request.username,
+            password=request.password
+        )
+
+        if result.success:
+            logger.info(
+                f"Connection test successful: {sanitized_url} - "
+                f"{result.resolution} @ {result.fps}fps"
+            )
+        else:
+            logger.info(f"Connection test failed: {sanitized_url} - {result.error}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Test connection endpoint error: {e}", exc_info=True)
+        return TestConnectionResponse(
+            success=False,
+            error=f"Test failed: {str(e)}"
         )

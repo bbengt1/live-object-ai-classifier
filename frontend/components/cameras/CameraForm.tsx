@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/select';
 import { cameraFormSchema, type CameraFormValues } from '@/lib/validations/camera';
 import type { ICamera, ICameraTestResponse, IDetectionZone, IZoneVertex } from '@/types/camera';
+import type { ITestConnectionResponse } from '@/types/discovery';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { MotionSettingsSection } from './MotionSettingsSection';
 import { DetectionZoneDrawer } from './DetectionZoneDrawer';
@@ -67,10 +68,10 @@ export function CameraForm({
 }: CameraFormProps) {
   const isEditMode = !!initialData;
 
-  // Test connection state
+  // Test connection state - supports both new cameras (discovery API) and existing cameras
   const [testState, setTestState] = useState<{
     loading: boolean;
-    result: ICameraTestResponse | null;
+    result: (ICameraTestResponse & Partial<ITestConnectionResponse>) | null;
   }>({ loading: false, result: null });
 
   // Zone drawing state
@@ -127,27 +128,55 @@ export function CameraForm({
 
   /**
    * Test camera connection
-   * Note: For new cameras, this would require a temporary test endpoint
-   * For existing cameras, we can use the camera ID
+   * For new cameras: Uses discovery.testConnection with form values
+   * For existing cameras: Uses cameras.testConnection with camera ID
    */
   const handleTestConnection = async () => {
-    if (!initialData) {
-      // For new cameras, show info that test is only available after saving
-      setTestState({
-        loading: false,
-        result: {
-          success: false,
-          message: 'Save the camera first to test connection',
-        },
-      });
-      return;
-    }
-
     setTestState({ loading: true, result: null });
 
     try {
-      const result = await apiClient.cameras.testConnection(initialData.id);
-      setTestState({ loading: false, result });
+      if (initialData) {
+        // Existing camera: use camera ID endpoint
+        const result = await apiClient.cameras.testConnection(initialData.id);
+        setTestState({ loading: false, result });
+      } else {
+        // New camera: use discovery test endpoint with form values
+        const rtspUrl = form.getValues('rtsp_url');
+        const username = form.getValues('username');
+        const password = form.getValues('password');
+
+        if (!rtspUrl) {
+          setTestState({
+            loading: false,
+            result: {
+              success: false,
+              message: 'Enter an RTSP URL first',
+            },
+          });
+          return;
+        }
+
+        const result = await apiClient.discovery.testConnection(
+          rtspUrl,
+          username,
+          password
+        );
+
+        // Map discovery response to camera test response format
+        setTestState({
+          loading: false,
+          result: {
+            success: result.success,
+            message: result.success
+              ? `Connected: ${result.resolution || 'Unknown resolution'} @ ${result.fps || '?'}fps${result.codec ? ` (${result.codec})` : ''}`
+              : result.error || 'Connection test failed',
+            resolution: result.resolution,
+            fps: result.fps,
+            codec: result.codec,
+            latency_ms: result.latency_ms,
+          },
+        });
+      }
     } catch (err) {
       setTestState({
         loading: false,
@@ -438,14 +467,16 @@ export function CameraForm({
           sourceType={initialData?.source_type || cameraType}
         />
 
-        {/* Test Connection Button (edit mode only) */}
-        {isEditMode && (
+        {/* Test Connection Button - available for RTSP cameras (both new and edit mode) */}
+        {(cameraType === 'rtsp' || isEditMode) && (
           <div className="border rounded-lg p-4 bg-muted/20">
             <div className="flex items-start justify-between mb-3">
               <div>
                 <h3 className="font-medium">Test Connection</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Verify camera connectivity and see a preview
+                  {isEditMode
+                    ? 'Verify camera connectivity and see a preview'
+                    : 'Test RTSP connection before saving'}
                 </p>
               </div>
               <Button
@@ -453,7 +484,7 @@ export function CameraForm({
                 variant="outline"
                 size="sm"
                 onClick={handleTestConnection}
-                disabled={testState.loading}
+                disabled={testState.loading || (cameraType === 'rtsp' && !form.watch('rtsp_url'))}
               >
                 {testState.loading && (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -467,26 +498,32 @@ export function CameraForm({
               <div
                 className={`mt-3 p-3 rounded-md ${
                   testState.result.success
-                    ? 'bg-green-50 border border-green-200'
-                    : 'bg-red-50 border border-red-200'
+                    ? 'bg-green-50 border border-green-200 dark:bg-green-950 dark:border-green-800'
+                    : 'bg-red-50 border border-red-200 dark:bg-red-950 dark:border-red-800'
                 }`}
               >
                 <div className="flex items-start gap-2">
                   {testState.result.success ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
                   ) : (
-                    <XCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
                   )}
                   <div className="flex-1">
                     <p
                       className={`text-sm font-medium ${
                         testState.result.success
-                          ? 'text-green-900'
-                          : 'text-red-900'
+                          ? 'text-green-900 dark:text-green-100'
+                          : 'text-red-900 dark:text-red-100'
                       }`}
                     >
                       {testState.result.message}
                     </p>
+                    {/* Show latency for new camera tests */}
+                    {testState.result.success && testState.result.latency_ms && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Latency: {testState.result.latency_ms}ms
+                      </p>
+                    )}
                     {testState.result.thumbnail && (
                       <img
                         src={testState.result.thumbnail}

@@ -378,3 +378,103 @@ class DeviceDetailsResponse(BaseModel):
             }
         }
     )
+
+
+# ============================================================================
+# Story P5-2.4: Test Connection Schemas
+# ============================================================================
+
+
+class TestConnectionRequest(BaseModel):
+    """
+    Request to test an RTSP connection without saving the camera.
+
+    Validates the RTSP URL format and optionally includes credentials
+    for authenticated streams.
+    """
+    rtsp_url: str = Field(
+        ...,
+        description="RTSP URL to test (must start with rtsp:// or rtsps://)",
+        min_length=10
+    )
+    username: Optional[str] = Field(
+        None,
+        description="Username for RTSP authentication (if required)"
+    )
+    password: Optional[str] = Field(
+        None,
+        description="Password for RTSP authentication (if required)"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "rtsp_url": "rtsp://192.168.1.100:554/stream",
+                "username": "admin",
+                "password": "password123"
+            }
+        }
+    )
+
+    def model_post_init(self, __context) -> None:
+        """Validate RTSP URL scheme after model creation."""
+        url_lower = self.rtsp_url.lower()
+        if not url_lower.startswith("rtsp://") and not url_lower.startswith("rtsps://"):
+            raise ValueError(
+                "Invalid RTSP URL format - must start with rtsp:// or rtsps://"
+            )
+
+
+class TestConnectionResponse(BaseModel):
+    """
+    Response from RTSP connection test endpoint.
+
+    Returns stream metadata on success, or error details on failure.
+    """
+    success: bool = Field(
+        ...,
+        description="Whether the connection test was successful"
+    )
+    latency_ms: Optional[int] = Field(
+        None,
+        description="Time to establish connection and receive first frame (ms)"
+    )
+    resolution: Optional[str] = Field(
+        None,
+        description="Video resolution (e.g., '1920x1080')"
+    )
+    fps: Optional[int] = Field(
+        None,
+        description="Frame rate (frames per second)"
+    )
+    codec: Optional[str] = Field(
+        None,
+        description="Video codec (e.g., 'H.264', 'H.265')"
+    )
+    error: Optional[str] = Field(
+        None,
+        description="Error message if test failed"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "success": True,
+                    "latency_ms": 234,
+                    "resolution": "1920x1080",
+                    "fps": 30,
+                    "codec": "H.264",
+                    "error": None
+                },
+                {
+                    "success": False,
+                    "latency_ms": None,
+                    "resolution": None,
+                    "fps": None,
+                    "codec": None,
+                    "error": "Authentication failed - check username/password"
+                }
+            ]
+        }
+    )

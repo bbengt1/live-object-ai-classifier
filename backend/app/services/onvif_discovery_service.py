@@ -21,13 +21,16 @@ import time
 from datetime import datetime
 from typing import List, Optional, Set, Tuple
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse, quote
+
+import cv2
 
 from app.schemas.discovery import (
     DiscoveredDevice,
     DeviceInfo,
     StreamProfile,
     DiscoveredCameraDetails,
+    TestConnectionResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,6 +72,9 @@ ONVIF_SCOPE_PREFIX = "onvif://www.onvif.org"
 # Device details constants (P5-2.2)
 DEVICE_QUERY_TIMEOUT = 5  # seconds per device query
 MAX_CONCURRENT_QUERIES = 10  # max parallel device queries
+
+# Test connection constants (P5-2.4)
+TEST_CONNECTION_TIMEOUT = 5.0  # seconds for RTSP connection test
 
 
 @dataclass
@@ -703,6 +709,326 @@ class ONVIFDiscoveryService:
         except Exception as e:
             logger.debug(f"Failed to extract profile info: {e}")
             return None
+
+    # =========================================================================
+    # Test Connection Methods (Story P5-2.4)
+    # =========================================================================
+
+    async def test_connection(
+        self,
+        rtsp_url: str,
+        username: Optional[str] = None,
+        password: Optional[str] = None
+    ) -> TestConnectionResponse:
+        """
+        Test an RTSP connection without saving the camera.
+
+        Validates connectivity and retrieves stream metadata (resolution, FPS, codec).
+        Times out after 5 seconds to prevent hanging on unresponsive cameras.
+
+        Args:
+            rtsp_url: RTSP URL to test (rtsp:// or rtsps://)
+            username: Optional username for authentication
+            password: Optional password for authentication
+
+        Returns:
+            TestConnectionResponse with success status and stream metadata or error
+
+        Example:
+            >>> result = await service.test_connection(
+            ...     "rtsp://192.168.1.100:554/stream",
+            ...     username="admin",
+            ...     password="password123"
+            ... )
+            >>> if result.success:
+            ...     print(f"Connected: {result.resolution} @ {result.fps}fps")
+        """
+        start_time = time.time()
+
+        # Build authenticated URL if credentials provided
+        test_url = self._build_authenticated_url(rtsp_url, username, password)
+
+        # Log without exposing password
+        sanitized_url = self._sanitize_url_for_logging(rtsp_url)
+        logger.info(f"Testing RTSP connection: {sanitized_url}")
+
+        try:
+            # Run blocking OpenCV test in thread pool with timeout
+            result = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    self._sync_test_connection,
+                    test_url
+                ),
+                timeout=TEST_CONNECTION_TIMEOUT
+            )
+
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            if result["success"]:
+                logger.info(
+                    f"Connection test successful: {sanitized_url} - "
+                    f"{result['resolution']} @ {result['fps']}fps ({latency_ms}ms)"
+                )
+                return TestConnectionResponse(
+                    success=True,
+                    latency_ms=latency_ms,
+                    resolution=result.get("resolution"),
+                    fps=result.get("fps"),
+                    codec=result.get("codec"),
+                    error=None
+                )
+            else:
+                error_msg = self._map_error_message(result.get("error", "Unknown error"))
+                logger.warning(f"Connection test failed: {sanitized_url} - {error_msg}")
+                return TestConnectionResponse(
+                    success=False,
+                    latency_ms=latency_ms,
+                    error=error_msg
+                )
+
+        except asyncio.TimeoutError:
+            latency_ms = int((time.time() - start_time) * 1000)
+            error_msg = "Connection timed out after 5 seconds"
+            logger.warning(f"Connection test timed out: {sanitized_url}")
+            return TestConnectionResponse(
+                success=False,
+                latency_ms=latency_ms,
+                error=error_msg
+            )
+
+        except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            error_msg = self._map_error_message(str(e))
+            logger.error(f"Connection test error: {sanitized_url} - {e}", exc_info=True)
+            return TestConnectionResponse(
+                success=False,
+                latency_ms=latency_ms,
+                error=error_msg
+            )
+
+    def _sync_test_connection(self, rtsp_url: str) -> dict:
+        """
+        Synchronous RTSP connection test using OpenCV.
+
+        Runs in thread pool to avoid blocking the event loop.
+
+        Args:
+            rtsp_url: Full RTSP URL (may include embedded credentials)
+
+        Returns:
+            Dictionary with success status and stream metadata
+        """
+        cap = None
+        try:
+            # Configure OpenCV with timeouts
+            cap = cv2.VideoCapture(rtsp_url)
+
+            # Set timeout properties (may not be supported on all backends)
+            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, int(TEST_CONNECTION_TIMEOUT * 1000))
+            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, int(TEST_CONNECTION_TIMEOUT * 1000))
+
+            if not cap.isOpened():
+                return {
+                    "success": False,
+                    "error": "Failed to open RTSP stream"
+                }
+
+            # Try to read first frame
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                return {
+                    "success": False,
+                    "error": "Failed to read frame from stream"
+                }
+
+            # Extract stream metadata
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = int(cap.get(cv2.CAP_PROP_FPS) or 0)
+
+            # Try to determine codec
+            fourcc_code = int(cap.get(cv2.CAP_PROP_FOURCC))
+            codec = self._fourcc_to_codec_name(fourcc_code)
+
+            return {
+                "success": True,
+                "resolution": f"{width}x{height}",
+                "fps": fps if fps > 0 else None,
+                "codec": codec
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+        finally:
+            if cap is not None:
+                cap.release()
+
+    def _build_authenticated_url(
+        self,
+        rtsp_url: str,
+        username: Optional[str] = None,
+        password: Optional[str] = None
+    ) -> str:
+        """
+        Build RTSP URL with embedded credentials if provided.
+
+        Args:
+            rtsp_url: Base RTSP URL
+            username: Optional username
+            password: Optional password
+
+        Returns:
+            URL with embedded credentials or original URL if no credentials
+        """
+        if not username:
+            return rtsp_url
+
+        try:
+            parsed = urlparse(rtsp_url)
+
+            # URL-encode username and password to handle special characters
+            encoded_user = quote(username, safe='')
+            encoded_pass = quote(password or '', safe='')
+
+            # Build netloc with credentials
+            if password:
+                netloc = f"{encoded_user}:{encoded_pass}@{parsed.hostname}"
+            else:
+                netloc = f"{encoded_user}@{parsed.hostname}"
+
+            if parsed.port:
+                netloc += f":{parsed.port}"
+
+            return urlunparse((
+                parsed.scheme,
+                netloc,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment
+            ))
+        except Exception as e:
+            logger.warning(f"Failed to build authenticated URL: {e}")
+            return rtsp_url
+
+    def _sanitize_url_for_logging(self, rtsp_url: str) -> str:
+        """
+        Remove password from URL for safe logging.
+
+        Args:
+            rtsp_url: Original URL (may contain password)
+
+        Returns:
+            URL with password replaced by ***
+        """
+        try:
+            parsed = urlparse(rtsp_url)
+            if parsed.password:
+                # Replace password with ***
+                sanitized_netloc = parsed.netloc.replace(
+                    f":{parsed.password}@",
+                    ":***@"
+                )
+                return urlunparse((
+                    parsed.scheme,
+                    sanitized_netloc,
+                    parsed.path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment
+                ))
+            return rtsp_url
+        except Exception:
+            return rtsp_url
+
+    def _fourcc_to_codec_name(self, fourcc_code: int) -> Optional[str]:
+        """
+        Convert OpenCV FOURCC code to human-readable codec name.
+
+        Args:
+            fourcc_code: Integer FOURCC code from OpenCV
+
+        Returns:
+            Codec name string or None if unknown
+        """
+        if fourcc_code == 0:
+            return None
+
+        # Common FOURCC codes for RTSP streams
+        fourcc_map = {
+            # H.264 variants
+            0x34363248: "H.264",  # H264
+            0x34363261: "H.264",  # avc1
+            0x31637661: "H.264",  # avc1 (different byte order)
+            # H.265/HEVC
+            0x35363248: "H.265",  # H265
+            0x31637668: "H.265",  # hvc1
+            0x63766568: "H.265",  # hevc
+            # MJPEG
+            0x47504A4D: "MJPEG",  # MJPG
+            # VP8/VP9
+            0x30385056: "VP8",    # VP80
+            0x30395056: "VP9",    # VP90
+        }
+
+        codec = fourcc_map.get(fourcc_code)
+        if codec:
+            return codec
+
+        # Try to decode as ASCII characters
+        try:
+            chars = [chr((fourcc_code >> (8 * i)) & 0xFF) for i in range(4)]
+            decoded = ''.join(c for c in chars if c.isprintable())
+            return decoded if decoded else None
+        except Exception:
+            return None
+
+    def _map_error_message(self, error: str) -> str:
+        """
+        Map technical error messages to user-friendly messages.
+
+        Args:
+            error: Raw error message
+
+        Returns:
+            User-friendly error message
+        """
+        error_lower = error.lower()
+
+        # Authentication errors
+        if "401" in error_lower or "unauthorized" in error_lower or "authentication" in error_lower:
+            return "Authentication failed - check username/password"
+
+        # Connection errors
+        if "connection refused" in error_lower or "no route" in error_lower:
+            return "Connection refused - host unreachable"
+
+        if "timeout" in error_lower or "timed out" in error_lower:
+            return "Connection timed out after 5 seconds"
+
+        # Stream not found
+        if "404" in error_lower or "not found" in error_lower:
+            return "Stream not found - check RTSP path"
+
+        # SSL/TLS errors
+        if "ssl" in error_lower or "tls" in error_lower or "certificate" in error_lower:
+            return "Secure connection failed - try rtsp:// instead of rtsps://"
+
+        # Failed to open
+        if "failed to open" in error_lower:
+            return "Failed to connect to RTSP stream"
+
+        # Failed to read frame
+        if "failed to read" in error_lower:
+            return "Connected but failed to read video frame"
+
+        # Default: return cleaned up error
+        return error if len(error) < 100 else error[:97] + "..."
 
 
 # Singleton instance

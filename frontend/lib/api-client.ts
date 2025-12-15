@@ -86,6 +86,7 @@ import type {
   IDiscoveredCameraDetails,
   IStreamProfile,
   IDeviceInfo,
+  ITestConnectionResponse,
 } from '@/types/discovery';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -2075,6 +2076,29 @@ export const apiClient = {
         method: 'POST',
       });
     },
+
+    /**
+     * Test an RTSP connection without saving the camera (Story P5-2.4)
+     * Validates connectivity and returns stream metadata on success
+     * @param rtspUrl RTSP URL to test (must start with rtsp:// or rtsps://)
+     * @param username Optional username for RTSP authentication
+     * @param password Optional password for RTSP authentication
+     * @returns Test result with success status and stream metadata
+     */
+    testConnection: async (
+      rtspUrl: string,
+      username?: string | null,
+      password?: string | null
+    ): Promise<ITestConnectionResponse> => {
+      return apiFetch<ITestConnectionResponse>('/cameras/test', {
+        method: 'POST',
+        body: JSON.stringify({
+          rtsp_url: rtspUrl,
+          username: username || null,
+          password: password || null,
+        }),
+      });
+    },
   },
 };
 
@@ -2217,7 +2241,7 @@ export interface SummaryListResponse {
   total: number;
 }
 
-// Story P5-2.3: ONVIF Discovery Types (re-exported from types/discovery.ts)
+// Story P5-2.3 & P5-2.4: ONVIF Discovery Types (re-exported from types/discovery.ts)
 export type {
   IDiscoveryResponse,
   IDiscoveryStatusResponse,
@@ -2226,4 +2250,5 @@ export type {
   IDiscoveredCameraDetails,
   IStreamProfile,
   IDeviceInfo,
+  ITestConnectionResponse,
 } from '@/types/discovery';

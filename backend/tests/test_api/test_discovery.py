@@ -713,3 +713,411 @@ class TestDeviceDetailsResponseSchema:
         assert "height" in profile
         assert "fps" in profile
         assert "rtsp_url" in profile
+
+
+# ============================================================================
+# Story P5-2.4: Test Connection API Tests
+# ============================================================================
+
+
+class TestTestConnectionEndpoint:
+    """Tests for POST /api/v1/cameras/test (P5-2.4)."""
+
+    def test_test_connection_success(self, client, mock_discovery_service):
+        """AC1, AC2: Test successful connection returns stream metadata."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=True,
+            latency_ms=234,
+            resolution="1920x1080",
+            fps=30,
+            codec="H.264",
+            error=None
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsp://192.168.1.100:554/stream"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["success"] is True
+        assert data["latency_ms"] == 234
+        assert data["resolution"] == "1920x1080"
+        assert data["fps"] == 30
+        assert data["codec"] == "H.264"
+        assert data["error"] is None
+
+    def test_test_connection_with_credentials(self, client, mock_discovery_service):
+        """AC1: Test connection with username and password."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        captured_args = {}
+
+        mock_result = TestConnectionResponse(
+            success=True,
+            latency_ms=500,
+            resolution="1280x720",
+            fps=25,
+            codec="H.264"
+        )
+
+        async def mock_test_connection(rtsp_url, username=None, password=None):
+            captured_args["rtsp_url"] = rtsp_url
+            captured_args["username"] = username
+            captured_args["password"] = password
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={
+                    "rtsp_url": "rtsp://192.168.1.100:554/stream",
+                    "username": "admin",
+                    "password": "secret123"
+                }
+            )
+
+        assert response.status_code == 200
+        assert captured_args["username"] == "admin"
+        assert captured_args["password"] == "secret123"
+
+    def test_test_connection_invalid_url_scheme(self, client, mock_discovery_service):
+        """AC1, AC3: Test rejection of non-RTSP URL schemes."""
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            # HTTP URL should fail validation
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "http://192.168.1.100/stream"}
+            )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "rtsp://" in str(data["detail"]).lower() or "invalid" in str(data["detail"]).lower()
+
+    def test_test_connection_rtsps_url_accepted(self, client, mock_discovery_service):
+        """AC1: Test that rtsps:// URLs are accepted."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=True,
+            latency_ms=300,
+            resolution="1920x1080",
+            fps=30,
+            codec="H.265"
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsps://192.168.1.100:322/secure_stream"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+
+    def test_test_connection_auth_failure(self, client, mock_discovery_service):
+        """AC4: Test authentication failure error message."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=False,
+            latency_ms=100,
+            error="Authentication failed - check username/password"
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsp://192.168.1.100:554/stream"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["success"] is False
+        assert "Authentication failed" in data["error"]
+
+    def test_test_connection_timeout(self, client, mock_discovery_service):
+        """AC4, AC5: Test timeout error message."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=False,
+            latency_ms=5000,
+            error="Connection timed out after 5 seconds"
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsp://192.168.1.100:554/stream"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["success"] is False
+        assert "timed out" in data["error"].lower()
+
+    def test_test_connection_host_unreachable(self, client, mock_discovery_service):
+        """AC3, AC4: Test connection refused error message."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=False,
+            latency_ms=50,
+            error="Connection refused - host unreachable"
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsp://10.0.0.1:554/stream"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["success"] is False
+        assert "unreachable" in data["error"].lower() or "refused" in data["error"].lower()
+
+    def test_test_connection_stream_not_found(self, client, mock_discovery_service):
+        """AC4: Test stream not found error message."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=False,
+            latency_ms=200,
+            error="Stream not found - check RTSP path"
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsp://192.168.1.100:554/invalid_path"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["success"] is False
+        assert "not found" in data["error"].lower()
+
+    def test_test_connection_missing_rtsp_url(self, client, mock_discovery_service):
+        """AC1: Test validation error when rtsp_url is missing."""
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={}  # Missing rtsp_url
+            )
+
+        assert response.status_code == 422
+
+    def test_test_connection_password_not_in_response(self, client, mock_discovery_service):
+        """AC1: Verify password is not included in response."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=True,
+            latency_ms=200,
+            resolution="1920x1080",
+            fps=30
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={
+                    "rtsp_url": "rtsp://192.168.1.100:554/stream",
+                    "username": "admin",
+                    "password": "supersecret123"
+                }
+            )
+
+        assert response.status_code == 200
+        response_text = response.text
+
+        # Password should not appear in response
+        assert "supersecret123" not in response_text
+        assert "password" not in response_text.lower() or '"password":null' in response_text.lower()
+
+    def test_test_connection_service_exception(self, client, mock_discovery_service):
+        """Test error handling for service exceptions."""
+        async def mock_test_connection(*args, **kwargs):
+            raise Exception("Unexpected OpenCV error")
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsp://192.168.1.100:554/stream"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["success"] is False
+        assert data["error"] is not None
+
+
+class TestTestConnectionResponseSchema:
+    """Test TestConnectionResponse schema validation (P5-2.4)."""
+
+    def test_response_includes_all_success_fields(self, client, mock_discovery_service):
+        """AC2: Verify successful response includes all metadata fields."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=True,
+            latency_ms=234,
+            resolution="2560x1440",
+            fps=25,
+            codec="H.265",
+            error=None
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsp://192.168.1.100:554/stream"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Check all expected fields
+        assert "success" in data
+        assert "latency_ms" in data
+        assert "resolution" in data
+        assert "fps" in data
+        assert "codec" in data
+        assert "error" in data
+
+        # Verify values
+        assert data["success"] is True
+        assert isinstance(data["latency_ms"], int)
+        assert data["latency_ms"] > 0
+        assert "x" in data["resolution"]
+        assert isinstance(data["fps"], int)
+        assert data["codec"] in ["H.264", "H.265", "MJPEG", None]
+
+    def test_response_includes_all_failure_fields(self, client, mock_discovery_service):
+        """AC3, AC4: Verify failure response includes error message."""
+        from app.schemas.discovery import TestConnectionResponse
+
+        mock_result = TestConnectionResponse(
+            success=False,
+            latency_ms=100,
+            resolution=None,
+            fps=None,
+            codec=None,
+            error="Connection refused - host unreachable"
+        )
+
+        async def mock_test_connection(*args, **kwargs):
+            return mock_result
+
+        mock_discovery_service.test_connection = mock_test_connection
+
+        with patch(
+            'app.api.v1.discovery.get_onvif_discovery_service',
+            return_value=mock_discovery_service
+        ):
+            response = client.post(
+                "/api/v1/cameras/test",
+                json={"rtsp_url": "rtsp://10.0.0.1:554/stream"}
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["success"] is False
+        assert data["error"] is not None
+        assert data["resolution"] is None
+        assert data["fps"] is None
+        assert data["codec"] is None

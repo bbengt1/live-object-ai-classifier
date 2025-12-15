@@ -2,18 +2,20 @@
  * DiscoveredCameraCard - Card component for displaying a discovered ONVIF camera
  *
  * Story P5-2.3: Build Camera Discovery UI with Add Action
+ * Story P5-2.4: Add Test Connection button
  *
  * Shows camera details (name, manufacturer, model, IP) and stream profiles.
- * Provides "Add" button to add camera to ArgusAI.
+ * Provides "Test" and "Add" buttons for RTSP connection verification.
  */
 
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Camera, CheckCircle, Loader2, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Camera, CheckCircle, Loader2, AlertCircle, ChevronDown, ChevronUp, Play, XCircle, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -21,8 +23,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { IDiscoveredCameraDetails, IStreamProfile } from '@/types/discovery';
+import type { IDiscoveredCameraDetails, IStreamProfile, ITestConnectionResponse } from '@/types/discovery';
 import type { ICamera } from '@/types/camera';
+import { apiClient, ApiError } from '@/lib/api-client';
 
 interface DiscoveredCameraCardProps {
   /** Camera details from ONVIF discovery */
@@ -85,6 +88,15 @@ export function DiscoveredCameraCard({
   const [selectedProfileToken, setSelectedProfileToken] = useState<string | null>(null);
   const [showProfiles, setShowProfiles] = useState(false);
 
+  // Test connection state (Story P5-2.4)
+  const [showCredentials, setShowCredentials] = useState(false);
+  const [testUsername, setTestUsername] = useState('');
+  const [testPassword, setTestPassword] = useState('');
+  const [testState, setTestState] = useState<{
+    loading: boolean;
+    result: ITestConnectionResponse | null;
+  }>({ loading: false, result: null });
+
   const alreadyAdded = isAlreadyAdded(camera.ip_address, camera.port, existingCameras);
   const bestProfile = getBestProfile(camera.profiles);
 
@@ -103,7 +115,41 @@ export function DiscoveredCameraCard({
       rtsp_url: rtspUrl,
       name: camera.device_info.name || `${camera.device_info.manufacturer} ${camera.device_info.model}`,
     });
+    // Include credentials if provided during test
+    if (testUsername) {
+      params.append('username', testUsername);
+    }
     router.push(`/cameras/new?${params.toString()}`);
+  };
+
+  /**
+   * Handle test connection click (Story P5-2.4)
+   */
+  const handleTestConnection = async () => {
+    setTestState({ loading: true, result: null });
+
+    try {
+      const result = await apiClient.discovery.testConnection(
+        rtspUrl,
+        testUsername || null,
+        testPassword || null
+      );
+
+      setTestState({ loading: false, result });
+
+      // If auth failed and no credentials shown, suggest entering them
+      if (!result.success && result.error?.includes('Authentication') && !showCredentials) {
+        setShowCredentials(true);
+      }
+    } catch (err) {
+      setTestState({
+        loading: false,
+        result: {
+          success: false,
+          error: err instanceof ApiError ? err.message : 'Connection test failed',
+        },
+      });
+    }
   };
 
   return (
@@ -228,24 +274,113 @@ export function DiscoveredCameraCard({
             </div>
           )}
 
-          {/* Auth required indicator */}
-          {camera.requires_auth && (
-            <div className="flex items-center gap-2 text-amber-600 text-sm mb-3">
-              <AlertCircle className="h-4 w-4" />
-              <span>Credentials may be required</span>
+          {/* Auth required indicator / Credentials toggle */}
+          {(camera.requires_auth || showCredentials) && (
+            <div className="mb-3">
+              {!showCredentials && (
+                <button
+                  type="button"
+                  onClick={() => setShowCredentials(true)}
+                  className="flex items-center gap-2 text-amber-600 text-sm hover:text-amber-700 transition-colors"
+                >
+                  <Key className="h-4 w-4" />
+                  <span>Credentials may be required - click to enter</span>
+                </button>
+              )}
+
+              {showCredentials && (
+                <div className="space-y-2 p-3 bg-muted/50 rounded-md">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                    <Key className="h-4 w-4" />
+                    <span>RTSP Credentials</span>
+                  </div>
+                  <Input
+                    type="text"
+                    placeholder="Username"
+                    value={testUsername}
+                    onChange={(e) => setTestUsername(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                  <Input
+                    type="password"
+                    placeholder="Password"
+                    value={testPassword}
+                    onChange={(e) => setTestPassword(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+              )}
             </div>
           )}
 
-          {/* Add button */}
-          <Button
-            onClick={handleAddCamera}
-            disabled={alreadyAdded}
-            className="w-full"
-            variant={alreadyAdded ? 'secondary' : 'default'}
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            {alreadyAdded ? 'Already Added' : 'Add Camera'}
-          </Button>
+          {/* Test Result (Story P5-2.4) */}
+          {testState.result && (
+            <div
+              className={`mb-3 p-3 rounded-md text-sm ${
+                testState.result.success
+                  ? 'bg-green-50 border border-green-200 dark:bg-green-950 dark:border-green-800'
+                  : 'bg-red-50 border border-red-200 dark:bg-red-950 dark:border-red-800'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                {testState.result.success ? (
+                  <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1">
+                  {testState.result.success ? (
+                    <>
+                      <span className="font-medium text-green-900 dark:text-green-100">
+                        Connected: {testState.result.resolution}
+                      </span>
+                      <span className="text-green-700 dark:text-green-300">
+                        {' '}@ {testState.result.fps}fps
+                        {testState.result.codec && ` (${testState.result.codec})`}
+                      </span>
+                      {testState.result.latency_ms && (
+                        <span className="text-green-600 dark:text-green-400 text-xs ml-1">
+                          ({testState.result.latency_ms}ms)
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-red-900 dark:text-red-100">
+                      {testState.result.error}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Action buttons - Test and Add */}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleTestConnection}
+              disabled={testState.loading}
+              className="flex-1"
+            >
+              {testState.loading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              Test
+            </Button>
+            <Button
+              onClick={handleAddCamera}
+              disabled={alreadyAdded}
+              className="flex-1"
+              variant={alreadyAdded ? 'secondary' : 'default'}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              {alreadyAdded ? 'Added' : 'Add'}
+            </Button>
+          </div>
         </>
       )}
     </div>

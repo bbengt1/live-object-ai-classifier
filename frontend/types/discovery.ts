@@ -163,3 +163,39 @@ export interface IDiscoveryState {
   /** Discovery duration in milliseconds */
   duration?: number | null;
 }
+
+
+// ============================================================================
+// Story P5-2.4: Test Connection Types
+// ============================================================================
+
+
+/**
+ * Request to test an RTSP connection without saving the camera.
+ */
+export interface ITestConnectionRequest {
+  /** RTSP URL to test (must start with rtsp:// or rtsps://) */
+  rtsp_url: string;
+  /** Username for RTSP authentication (if required) */
+  username?: string | null;
+  /** Password for RTSP authentication (if required) */
+  password?: string | null;
+}
+
+/**
+ * Response from RTSP connection test endpoint.
+ */
+export interface ITestConnectionResponse {
+  /** Whether the connection test was successful */
+  success: boolean;
+  /** Time to establish connection and receive first frame (ms) */
+  latency_ms?: number | null;
+  /** Video resolution (e.g., '1920x1080') */
+  resolution?: string | null;
+  /** Frame rate (frames per second) */
+  fps?: number | null;
+  /** Video codec (e.g., 'H.264', 'H.265') */
+  codec?: string | null;
+  /** Error message if test failed */
+  error?: string | null;
+}
