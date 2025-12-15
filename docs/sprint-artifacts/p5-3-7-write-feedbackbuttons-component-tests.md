@@ -1,7 +1,7 @@
 # Story P5-3.7: Write FeedbackButtons Component Tests
 
 **Epic:** P5-3 CI/CD & Testing Infrastructure
-**Status:** review
+**Status:** done
 **Created:** 2025-12-15
 **Story Key:** p5-3-7-write-feedbackbuttons-component-tests
 
