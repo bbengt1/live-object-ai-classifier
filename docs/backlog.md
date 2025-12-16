@@ -57,7 +57,7 @@ Technical debt, improvements, and future work items identified during developmen
 | ID | Date | Priority | Type | Description | Source | Status |
 |----|------|----------|------|-------------|--------|--------|
 | IMP-001 | 2025-12-06 | P4 | Code Quality | Remove console.log debug statements from EventCard.tsx (lines 104, 107) before production deployment | Story P3-3.4 Code Review | Done |
-| IMP-004 | 2025-12-14 | P4 | Code Quality | **Accessibility Enhancements** - Improve frontend accessibility: (1) Add ARIA labels for screen readers, (2) Keyboard navigation testing, (3) Focus management in dialogs, (4) Skip to content links. | F1.2 Code Review | Open |
+| IMP-004 | 2025-12-14 | P4 | Code Quality | **Accessibility Enhancements** - Improve frontend accessibility: (1) ~~Add ARIA labels for screen readers~~ (Done in Story P5-5.1, PR #52), (2) Keyboard navigation testing, (3) Focus management in dialogs, (4) Skip to content links. | F1.2 Code Review | Partial |
 | IMP-005 | 2025-12-14 | P4 | Performance | **Camera List Optimizations** - If camera list grows large: (1) Add React.memo for CameraPreview component, (2) Virtual scrolling for large lists, (3) Consider SWR or React Query for caching. | F1.2 Code Review | Open |
 
 ---
