@@ -30,6 +30,7 @@ class MQTTConfig(Base):
         enabled: Whether MQTT publishing is enabled
         retain_messages: Whether to retain messages on broker
         use_tls: Whether to use TLS/SSL connection
+        message_expiry_seconds: MQTT 5.0 message expiry interval (60-3600 seconds, default 300)
         is_connected: Current connection status (runtime, not persisted preference)
         last_connected_at: Last successful connection timestamp
         last_error: Last connection error message
@@ -52,6 +53,7 @@ class MQTTConfig(Base):
     enabled = Column(Boolean, nullable=False, default=False)
     retain_messages = Column(Boolean, nullable=False, default=True)
     use_tls = Column(Boolean, nullable=False, default=False)
+    message_expiry_seconds = Column(Integer, nullable=False, default=300)
     is_connected = Column(Boolean, nullable=False, default=False)
     last_connected_at = Column(DateTime(timezone=True), nullable=True)
     last_error = Column(Text, nullable=True)
@@ -113,6 +115,13 @@ class MQTTConfig(Base):
             raise ValueError(f"Port must be between 1 and 65535, got {value}")
         return value
 
+    @validates('message_expiry_seconds')
+    def validate_message_expiry(self, key, value):
+        """Validate message expiry is in valid range (60-3600 seconds)."""
+        if not (60 <= value <= 3600):
+            raise ValueError(f"Message expiry must be between 60 and 3600 seconds, got {value}")
+        return value
+
     def get_decrypted_password(self) -> str | None:
         """
         Decrypt password for use in MQTT connection.
@@ -161,6 +170,7 @@ class MQTTConfig(Base):
             "enabled": self.enabled,
             "retain_messages": self.retain_messages,
             "use_tls": self.use_tls,
+            "message_expiry_seconds": self.message_expiry_seconds,
             "is_connected": self.is_connected,
             "last_connected_at": self.last_connected_at.isoformat() if self.last_connected_at else None,
             "last_error": self.last_error,

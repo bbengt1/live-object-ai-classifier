@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-// Validation schema (AC 8)
+// Validation schema (AC 8, P5-6.1)
 const mqttConfigSchema = z.object({
   broker_host: z.string().min(1, 'Broker host is required').max(255),
   broker_port: z.coerce.number().int().min(1, 'Port must be between 1-65535').max(65535, 'Port must be between 1-65535'),
@@ -56,6 +56,7 @@ const mqttConfigSchema = z.object({
   enabled: z.boolean(),
   retain_messages: z.boolean(),
   use_tls: z.boolean(),
+  message_expiry_seconds: z.coerce.number().int().min(60, 'Expiry must be at least 60 seconds').max(3600, 'Expiry must be at most 3600 seconds'),
 });
 
 interface MQTTFormData {
@@ -70,6 +71,7 @@ interface MQTTFormData {
   enabled: boolean;
   retain_messages: boolean;
   use_tls: boolean;
+  message_expiry_seconds: number;
 }
 
 export function MQTTSettings() {
@@ -107,6 +109,7 @@ export function MQTTSettings() {
       enabled: false,
       retain_messages: true,
       use_tls: false,
+      message_expiry_seconds: 300,
     },
   });
 
@@ -128,6 +131,7 @@ export function MQTTSettings() {
         enabled: config.enabled,
         retain_messages: config.retain_messages,
         use_tls: config.use_tls,
+        message_expiry_seconds: config.message_expiry_seconds,
       });
     }
   }, [configQuery.data, form]);
@@ -520,6 +524,25 @@ export function MQTTSettings() {
                   onCheckedChange={(checked) => form.setValue('retain_messages', checked, { shouldDirty: true })}
                 />
               </div>
+            </div>
+
+            {/* Message Expiry (P5-6.1) */}
+            <div className="space-y-2">
+              <Label htmlFor="message_expiry_seconds">Message Expiry (seconds)</Label>
+              <Input
+                id="message_expiry_seconds"
+                type="number"
+                min={60}
+                max={3600}
+                placeholder="300"
+                {...form.register('message_expiry_seconds')}
+              />
+              {errors.message_expiry_seconds && (
+                <p className="text-sm text-destructive">{errors.message_expiry_seconds.message}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                MQTT 5.0 message expiry interval (60-3600 seconds). Messages not consumed within this time are discarded by the broker.
+              </p>
             </div>
           </div>
 

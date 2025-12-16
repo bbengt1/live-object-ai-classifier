@@ -120,6 +120,36 @@ class TestMQTTConfig:
         with pytest.raises(ValueError):
             config.broker_port = 65536
 
+    def test_config_message_expiry_validation(self):
+        """Message expiry validation rejects invalid values (P5-6.1)."""
+        config = MQTTConfig()
+
+        # Valid expiry values
+        config.message_expiry_seconds = 60  # Minimum
+        assert config.message_expiry_seconds == 60
+
+        config.message_expiry_seconds = 300  # Default
+        assert config.message_expiry_seconds == 300
+
+        config.message_expiry_seconds = 3600  # Maximum
+        assert config.message_expiry_seconds == 3600
+
+        # Invalid expiry values - too low
+        with pytest.raises(ValueError, match="between 60 and 3600"):
+            config.message_expiry_seconds = 59
+
+        # Invalid expiry values - too high
+        with pytest.raises(ValueError, match="between 60 and 3600"):
+            config.message_expiry_seconds = 3601
+
+    def test_config_message_expiry_default(self, db_session):
+        """Message expiry has correct default value (P5-6.1)."""
+        config = MQTTConfig(broker_host="test.local")
+        db_session.add(config)
+        db_session.flush()
+
+        assert config.message_expiry_seconds == 300  # Default 5 minutes
+
     def test_config_password_encryption(self, db_session):
         """Password is encrypted when set."""
         from app.models.mqtt_config import MQTTConfig
@@ -694,3 +724,107 @@ class TestSerializationCompleteness:
         assert "analysis_mode" not in payload
         assert "ai_confidence" not in payload
         assert "correlation_group_id" not in payload
+
+
+class TestMQTT5MessageExpiry:
+    """Tests for MQTT 5.0 message expiry feature (Story P5-6.1)."""
+
+    def test_mqtt5_flag_default_true(self):
+        """Service defaults to attempting MQTT 5.0 (AC1)."""
+        service = MQTTService()
+        assert service._use_mqtt5 is True
+
+    @pytest.mark.asyncio
+    async def test_publish_includes_message_expiry_when_mqtt5(self):
+        """Publish includes MessageExpiryInterval when using MQTT 5.0 (AC1, AC4)."""
+        from paho.mqtt.properties import Properties
+        from paho.mqtt.packettypes import PacketTypes
+
+        service = MQTTService()
+        service._connected = True
+        service._use_mqtt5 = True
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            qos=1,
+            retain_messages=True,
+            message_expiry_seconds=600  # 10 minutes
+        )
+
+        # Mock client
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.rc = 0
+        mock_client.publish.return_value = mock_result
+        service._client = mock_client
+
+        await service.publish("test/topic", {"event_id": "123"})
+
+        # Verify publish was called with properties
+        call_args = mock_client.publish.call_args
+        properties = call_args.kwargs.get("properties") or call_args[1].get("properties")
+
+        assert properties is not None
+        assert properties.MessageExpiryInterval == 600
+
+    @pytest.mark.asyncio
+    async def test_publish_no_expiry_when_mqtt311(self):
+        """Publish does not include expiry when using MQTT 3.1.1 (AC6)."""
+        service = MQTTService()
+        service._connected = True
+        service._use_mqtt5 = False  # Fallback to MQTT 3.1.1
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            qos=1,
+            retain_messages=True,
+            message_expiry_seconds=300
+        )
+
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.rc = 0
+        mock_client.publish.return_value = mock_result
+        service._client = mock_client
+
+        await service.publish("test/topic", {"event_id": "123"})
+
+        # Verify properties is None when MQTT 3.1.1
+        call_args = mock_client.publish.call_args
+        properties = call_args.kwargs.get("properties") or call_args[1].get("properties")
+
+        assert properties is None
+
+    @pytest.mark.asyncio
+    async def test_publish_uses_config_expiry_value(self):
+        """Publish uses message_expiry_seconds from config (AC2)."""
+        service = MQTTService()
+        service._connected = True
+        service._use_mqtt5 = True
+        service._config = MQTTConfig(
+            broker_host="test.local",
+            message_expiry_seconds=120  # 2 minutes
+        )
+
+        mock_client = MagicMock()
+        mock_result = MagicMock()
+        mock_result.rc = 0
+        mock_client.publish.return_value = mock_result
+        service._client = mock_client
+
+        await service.publish("test/topic", {"event_id": "123"})
+
+        call_args = mock_client.publish.call_args
+        properties = call_args.kwargs.get("properties") or call_args[1].get("properties")
+
+        assert properties.MessageExpiryInterval == 120
+
+    def test_config_message_expiry_in_to_dict(self):
+        """to_dict includes message_expiry_seconds (AC2)."""
+        config = MQTTConfig(
+            broker_host="test.local",
+            message_expiry_seconds=900
+        )
+
+        result = config.to_dict()
+
+        assert "message_expiry_seconds" in result
+        assert result["message_expiry_seconds"] == 900

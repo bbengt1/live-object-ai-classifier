@@ -168,6 +168,7 @@ export interface MQTTConfigResponse {
   enabled: boolean;
   retain_messages: boolean;
   use_tls: boolean;
+  message_expiry_seconds: number;
   has_password: boolean;
   created_at: string | null;
   updated_at: string | null;
@@ -185,6 +186,7 @@ export interface MQTTConfigUpdate {
   enabled: boolean;
   retain_messages: boolean;
   use_tls: boolean;
+  message_expiry_seconds: number;
 }
 
 export interface MQTTStatusResponse {

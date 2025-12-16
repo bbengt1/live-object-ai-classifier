@@ -46,6 +46,7 @@ class MQTTConfigResponse(BaseModel):
     enabled: bool
     retain_messages: bool
     use_tls: bool
+    message_expiry_seconds: int = Field(300, description="MQTT 5.0 message expiry in seconds (60-3600)")
     has_password: bool = Field(..., description="Whether password is configured")
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -64,6 +65,7 @@ class MQTTConfigResponse(BaseModel):
                 "enabled": True,
                 "retain_messages": True,
                 "use_tls": False,
+                "message_expiry_seconds": 300,
                 "has_password": True,
                 "created_at": "2025-12-10T10:00:00Z",
                 "updated_at": "2025-12-10T10:00:00Z"
@@ -84,6 +86,7 @@ class MQTTConfigUpdate(BaseModel):
     enabled: bool = Field(True, description="Enable MQTT publishing")
     retain_messages: bool = Field(True, description="Retain messages on broker")
     use_tls: bool = Field(False, description="Use TLS/SSL connection")
+    message_expiry_seconds: int = Field(300, ge=60, le=3600, description="MQTT 5.0 message expiry in seconds (60-3600)")
 
     @field_validator('qos')
     @classmethod
@@ -105,7 +108,8 @@ class MQTTConfigUpdate(BaseModel):
                 "qos": 1,
                 "enabled": True,
                 "retain_messages": True,
-                "use_tls": False
+                "use_tls": False,
+                "message_expiry_seconds": 300
             }
         }
 
@@ -211,6 +215,7 @@ async def get_mqtt_config(db: Session = Depends(get_db)):
             enabled=False,
             retain_messages=True,
             use_tls=False,
+            message_expiry_seconds=300,
             has_password=False,
             created_at=None,
             updated_at=None
@@ -228,6 +233,7 @@ async def get_mqtt_config(db: Session = Depends(get_db)):
         enabled=config.enabled,
         retain_messages=config.retain_messages,
         use_tls=config.use_tls,
+        message_expiry_seconds=config.message_expiry_seconds,
         has_password=bool(config.password),
         created_at=config.created_at.isoformat() if config.created_at else None,
         updated_at=config.updated_at.isoformat() if config.updated_at else None
@@ -260,7 +266,8 @@ async def update_mqtt_config(
             qos=config_update.qos,
             enabled=config_update.enabled,
             retain_messages=config_update.retain_messages,
-            use_tls=config_update.use_tls
+            use_tls=config_update.use_tls,
+            message_expiry_seconds=config_update.message_expiry_seconds
         )
         db.add(config)
     else:
@@ -278,6 +285,7 @@ async def update_mqtt_config(
         config.enabled = config_update.enabled
         config.retain_messages = config_update.retain_messages
         config.use_tls = config_update.use_tls
+        config.message_expiry_seconds = config_update.message_expiry_seconds
 
     db.commit()
     db.refresh(config)
@@ -311,6 +319,7 @@ async def update_mqtt_config(
         enabled=config.enabled,
         retain_messages=config.retain_messages,
         use_tls=config.use_tls,
+        message_expiry_seconds=config.message_expiry_seconds,
         has_password=bool(config.password),
         created_at=config.created_at.isoformat() if config.created_at else None,
         updated_at=config.updated_at.isoformat() if config.updated_at else None
