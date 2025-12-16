@@ -86,7 +86,7 @@ export function Header() {
                   key={item.name}
                   href={item.available ? item.href : '#'}
                   className={cn(
-                    'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
+                    'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -195,7 +195,7 @@ export function Header() {
                   key={item.name}
                   href={item.available ? item.href : '#'}
                   className={cn(
-                    'flex items-center gap-3 px-4 py-3 rounded-md text-sm font-medium transition-colors',
+                    'flex items-center gap-3 px-4 py-3 rounded-md text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-muted hover:text-foreground',
