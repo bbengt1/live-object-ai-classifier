@@ -42,8 +42,10 @@ export function MobileNav() {
                   ? 'text-blue-600'
                   : 'text-muted-foreground hover:text-foreground'
               )}
+              aria-label={item.name}
+              aria-current={isActive ? 'page' : undefined}
             >
-              <Icon className={cn('h-5 w-5', isActive && 'fill-blue-600/20')} />
+              <Icon className={cn('h-5 w-5', isActive && 'fill-blue-600/20')} aria-hidden="true" />
               <span className="text-xs font-medium">{item.name}</span>
             </Link>
           );
