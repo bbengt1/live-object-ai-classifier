@@ -25,7 +25,10 @@ except ImportError:
 
 from app.core.database import get_db
 from app.models.camera import Camera
-from app.schemas.camera import CameraCreate, CameraUpdate, CameraResponse, CameraTestResponse
+from app.schemas.camera import (
+    CameraCreate, CameraUpdate, CameraResponse, CameraTestResponse,
+    CameraTestRequest, CameraTestDetailedResponse
+)
 from app.schemas.motion import (
     MotionConfigUpdate, MotionConfigResponse, MotionTestRequest, MotionTestResponse,
     DetectionZone, DetectionSchedule
@@ -144,6 +147,223 @@ def list_cameras(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve cameras"
+        )
+
+
+@router.post("/test", response_model=CameraTestDetailedResponse)
+def test_camera_connection_presave(
+    camera_config: CameraTestRequest
+):
+    """
+    Test camera connection before saving to database (Story P6-1.1)
+
+    Tests RTSP or USB camera connection using provided configuration.
+    No database record is created - this is a pre-validation endpoint.
+
+    Args:
+        camera_config: Camera configuration to test (type, rtsp_url, credentials, device_index)
+
+    Returns:
+        Test result with success status, stream info (resolution, FPS, codec), and thumbnail
+
+    Raises:
+        422: Validation error (invalid RTSP URL format, missing required fields)
+    """
+    try:
+        # Build connection string based on camera type
+        if camera_config.type == "rtsp":
+            rtsp_url = camera_config.rtsp_url
+
+            # Add credentials to URL if provided
+            if camera_config.username:
+                password = camera_config.password or ""
+                if "://" in rtsp_url:
+                    protocol, rest = rtsp_url.split("://", 1)
+                    creds = camera_config.username
+                    if password:
+                        creds += f":{password}"
+                    rtsp_url = f"{protocol}://{creds}@{rest}"
+
+            connection_str = rtsp_url
+
+        elif camera_config.type == "usb":
+            connection_str = camera_config.device_index
+        else:
+            return CameraTestDetailedResponse(
+                success=False,
+                message=f"Unknown camera type: {camera_config.type}"
+            )
+
+        # Attempt connection and capture frame
+        frame = None
+        cap = None
+        av_container = None
+        width = None
+        height = None
+        fps = None
+        codec = None
+
+        # Use PyAV for secure RTSP (rtsps://) streams
+        if camera_config.type == "rtsp" and PYAV_AVAILABLE and connection_str.startswith("rtsps://"):
+            try:
+                av_container = av.open(connection_str, options={'rtsp_transport': 'tcp'}, timeout=10)
+                av_stream = av_container.streams.video[0]
+
+                # Extract stream info
+                width = av_stream.codec_context.width
+                height = av_stream.codec_context.height
+                fps = float(av_stream.average_rate) if av_stream.average_rate else None
+                codec = av_stream.codec_context.name
+
+                # Capture a frame
+                for av_frame in av_container.decode(av_stream):
+                    frame = av_frame.to_ndarray(format='bgr24')
+                    break
+                av_container.close()
+            except Exception as e:
+                if av_container:
+                    av_container.close()
+                error_str = str(e).lower()
+
+                # Provide diagnostic error messages
+                if "401" in error_str or "authentication" in error_str or "unauthorized" in error_str:
+                    message = "Authentication failed. Check username and password."
+                elif "timeout" in error_str or "timed out" in error_str:
+                    message = "Connection timeout. Check IP address and network connectivity."
+                elif "refused" in error_str:
+                    message = "Connection refused. Check port number and camera RTSP service."
+                else:
+                    message = f"Failed to connect to secure RTSP stream: {str(e)}"
+
+                return CameraTestDetailedResponse(
+                    success=False,
+                    message=message
+                )
+        else:
+            # Use OpenCV for USB cameras and non-secure RTSP
+            if camera_config.type == "rtsp":
+                cap = cv2.VideoCapture(connection_str, cv2.CAP_FFMPEG)
+            else:
+                cap = cv2.VideoCapture(connection_str)
+            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
+
+            if not cap.isOpened():
+                cap.release()
+
+                # Provide type-specific error message
+                if camera_config.type == "usb":
+                    return CameraTestDetailedResponse(
+                        success=False,
+                        message=f"USB camera not found at device index {camera_config.device_index}. Check that camera is connected."
+                    )
+                else:
+                    return CameraTestDetailedResponse(
+                        success=False,
+                        message="Failed to connect to camera. Check IP address, port, and network connectivity."
+                    )
+
+            # Extract stream info from OpenCV
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+            # Decode FOURCC to codec name
+            if fourcc > 0:
+                codec = "".join([chr((fourcc >> 8 * i) & 0xFF) for i in range(4)])
+            else:
+                codec = None
+
+            # Try to read a test frame
+            ret, frame = cap.read()
+            cap.release()
+
+            if not ret or frame is None:
+                return CameraTestDetailedResponse(
+                    success=False,
+                    message="Connected to camera but failed to capture frame. Check camera stream format."
+                )
+
+        # Generate thumbnail
+        try:
+            # Resize frame to thumbnail size (240px height, maintain aspect ratio)
+            thumbnail_height = 240
+            aspect_ratio = frame.shape[1] / frame.shape[0]
+            thumbnail_width = int(thumbnail_height * aspect_ratio)
+
+            thumbnail = cv2.resize(frame, (thumbnail_width, thumbnail_height))
+
+            # Encode as JPEG
+            _, buffer = cv2.imencode('.jpg', thumbnail)
+
+            # Convert to base64 with data URI prefix
+            thumbnail_b64 = f"data:image/jpeg;base64,{base64.b64encode(buffer).decode('utf-8')}"
+
+            # Build resolution string
+            resolution = f"{width}x{height}" if width and height else None
+
+            # Type-specific success message
+            if camera_config.type == "usb":
+                success_msg = f"USB camera connected successfully (device {camera_config.device_index})"
+            else:
+                success_msg = "Connection successful"
+
+            logger.info(
+                f"Pre-save camera test successful: type={camera_config.type}, "
+                f"resolution={resolution}, fps={fps}, codec={codec}"
+            )
+
+            return CameraTestDetailedResponse(
+                success=True,
+                message=success_msg,
+                thumbnail=thumbnail_b64,
+                resolution=resolution,
+                fps=fps if fps and fps > 0 else None,
+                codec=codec
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to generate thumbnail: {e}")
+            return CameraTestDetailedResponse(
+                success=True,
+                message="Connection successful (thumbnail generation failed)",
+                resolution=f"{width}x{height}" if width and height else None,
+                fps=fps if fps and fps > 0 else None,
+                codec=codec
+            )
+
+    except Exception as e:
+        logger.error(f"Pre-save camera test failed: {e}", exc_info=True)
+
+        # Try to determine error type
+        error_str = str(e).lower()
+
+        # USB-specific errors
+        if camera_config.type == "usb":
+            if "permission" in error_str or "denied" in error_str:
+                message = (
+                    f"Permission denied for USB camera at device index {camera_config.device_index}. "
+                    "On Linux, add user to 'video' group: sudo usermod -a -G video $USER"
+                )
+            elif "busy" in error_str or "in use" in error_str:
+                message = (
+                    f"USB camera at device index {camera_config.device_index} is already in use by another application. "
+                    "Close other apps using the camera and try again."
+                )
+            else:
+                message = f"USB camera connection failed: {str(e)}"
+        # RTSP-specific errors
+        elif "401" in error_str or "authentication" in error_str or "unauthorized" in error_str:
+            message = "Authentication failed. Check username and password."
+        elif "timeout" in error_str or "timed out" in error_str:
+            message = "Connection timeout. Check IP address and network connectivity."
+        elif "refused" in error_str:
+            message = "Connection refused. Check port number and camera RTSP service."
+        else:
+            message = f"Connection failed: {str(e)}"
+
+        return CameraTestDetailedResponse(
+            success=False,
+            message=message
         )
 
 
