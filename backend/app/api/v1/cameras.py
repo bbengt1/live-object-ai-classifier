@@ -89,6 +89,10 @@ def create_camera(
             motion_sensitivity=camera_data.motion_sensitivity,
             motion_cooldown=camera_data.motion_cooldown,
             analysis_mode=camera_data.analysis_mode,  # Phase 3: Analysis mode
+            # Phase 6 (P6-3.3): Audio settings
+            audio_enabled=camera_data.audio_enabled,
+            audio_event_types=camera_data.audio_event_types,
+            audio_threshold=camera_data.audio_threshold,
         )
 
         # Save to database

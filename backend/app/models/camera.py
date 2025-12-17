@@ -1,5 +1,5 @@
 """Camera SQLAlchemy ORM model"""
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, CheckConstraint, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, CheckConstraint, ForeignKey, Float
 from sqlalchemy.orm import validates, relationship
 from app.core.database import Base
 from app.utils.encryption import encrypt_password, decrypt_password
@@ -77,6 +77,9 @@ class Camera(Base):
     # Phase 6 (P6-3.1): Audio stream extraction configuration
     audio_enabled = Column(Boolean, default=False, nullable=False)
     audio_codec = Column(String(20), nullable=True)  # Detected codec: 'aac', 'pcmu', 'opus', etc.
+    # Phase 6 (P6-3.3): Per-camera audio event settings
+    audio_event_types = Column(Text, nullable=True)  # JSON array: ["glass_break", "gunshot", "scream", "doorbell"]
+    audio_threshold = Column(Float, nullable=True)  # Per-camera threshold override (0.0-1.0), null = use global
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
