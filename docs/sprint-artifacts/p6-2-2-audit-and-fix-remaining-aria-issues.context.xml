@@ -1,0 +1,162 @@
+<story-context id="bmad/bmm/workflows/4-implementation/story-context/template" v="1.0">
+  <metadata>
+    <epicId>P6-2</epicId>
+    <storyId>2</storyId>
+    <title>Audit and Fix Remaining ARIA Issues</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-17</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p6-2-2-audit-and-fix-remaining-aria-issues.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>user with accessibility needs</asA>
+    <iWant>all interactive elements to have proper ARIA labels and accessibility attributes</iWant>
+    <soThat>I can effectively navigate and use the application with assistive technologies</soThat>
+    <tasks>
+      <task id="1">Set up accessibility audit infrastructure (AC: #1)
+        <subtask>Install @axe-core/react for development audit integration</subtask>
+        <subtask>Create accessibility audit script using axe-core CLI or Playwright</subtask>
+        <subtask>Document how to run accessibility audits locally</subtask>
+      </task>
+      <task id="2">Run initial audit and document issues (AC: #1)
+        <subtask>Run axe-core audit on Dashboard page</subtask>
+        <subtask>Run axe-core audit on Cameras page</subtask>
+        <subtask>Run axe-core audit on Events page</subtask>
+        <subtask>Run axe-core audit on Settings page</subtask>
+        <subtask>Compile list of critical/serious issues with locations</subtask>
+      </task>
+      <task id="3">Fix critical ARIA issues (AC: #2)
+        <subtask>Add missing aria-labels to icon-only buttons</subtask>
+        <subtask>Add aria-describedby for form fields with helper text</subtask>
+        <subtask>Fix any missing or incorrect role attributes</subtask>
+        <subtask>Ensure all images have alt text or aria-hidden if decorative</subtask>
+      </task>
+      <task id="4">Implement live regions for dynamic content (AC: #3)
+        <subtask>Add aria-live="polite" regions for toast notifications</subtask>
+        <subtask>Add aria-live for event feed updates</subtask>
+        <subtask>Ensure loading states are announced</subtask>
+        <subtask>Add status announcements for async operations</subtask>
+      </task>
+      <task id="5">Fix form accessibility (AC: #4)
+        <subtask>Associate error messages with fields using aria-describedby</subtask>
+        <subtask>Ensure error messages have role="alert" or aria-live</subtask>
+        <subtask>Add aria-invalid to fields with errors</subtask>
+        <subtask>Verify label associations with htmlFor/id</subtask>
+      </task>
+      <task id="6">Verify color contrast (AC: #5)
+        <subtask>Run color contrast checker on all text/background combinations</subtask>
+        <subtask>Fix any text that fails WCAG AA (4.5:1) ratio</subtask>
+        <subtask>Verify UI component states (focus, hover, disabled) have sufficient contrast</subtask>
+        <subtask>Document any intentional exceptions with rationale</subtask>
+      </task>
+      <task id="7">Write accessibility tests (AC: #1, #2)
+        <subtask>Create axe-core integration test for critical pages</subtask>
+        <subtask>Add tests for live region announcements</subtask>
+        <subtask>Add tests for form error accessibility</subtask>
+        <subtask>Verify no regressions in CI</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">axe-core or similar audit tool run against all pages</criterion>
+    <criterion id="2">All critical/serious accessibility issues resolved</criterion>
+    <criterion id="3">Dynamic content announcements work (live regions for status updates)</criterion>
+    <criterion id="4">Form error messages are accessible (associated with fields, announced by screen readers)</criterion>
+    <criterion id="5">Color contrast meets WCAG AA (4.5:1 for normal text, 3:1 for large text)</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics-phase6.md" title="Phase 6 Epics" section="Epic P6-2: Accessibility Completion" snippet="Story P6-2.2: Audit and Fix Remaining ARIA Issues - Complete accessibility audit and fix any remaining ARIA label gaps. FRs: WCAG compliance." />
+      <doc path="docs/architecture/08-implementation-patterns.md" title="Implementation Patterns" section="Frontend Component Test" snippet="Uses @testing-library/react for component tests with vitest framework." />
+      <doc path="docs/sprint-artifacts/p6-2-1-add-skip-to-content-link.md" title="Previous Story" section="Dev Agent Record" snippet="SkipToContent component demonstrates accessibility pattern with sr-only and focus:not-sr-only classes. 14 tests written for accessibility testing patterns." />
+    </docs>
+    <code>
+      <file path="frontend/components/layout/SkipToContent.tsx" kind="component" symbol="SkipToContent" lines="1-23" reason="Reference implementation for accessibility patterns (sr-only, focus styles, WCAG 2.4.1)" />
+      <file path="frontend/components/layout/AppShell.tsx" kind="layout" symbol="AppShell" lines="49-52" reason="Main content landmark with id=main-content and tabIndex=-1 for focus management" />
+      <file path="frontend/__tests__/components/layout/SkipToContent.test.tsx" kind="test" symbol="SkipToContent tests" reason="Example accessibility testing patterns to follow" />
+      <file path="frontend/components/ui/form.tsx" kind="component" symbol="Form components" reason="Form field components that need aria-describedby and aria-invalid additions" />
+      <file path="frontend/components/ui/input.tsx" kind="component" symbol="Input" reason="Base input component needing accessibility attribute patterns" />
+      <file path="frontend/components/ui/button.tsx" kind="component" symbol="Button" reason="Button component - ensure icon-only buttons have aria-label" />
+      <file path="frontend/components/ui/sonner.tsx" kind="component" symbol="Sonner toaster" reason="Toast notifications - verify aria-live region implementation" />
+      <file path="frontend/components/events/EventCard.tsx" kind="component" symbol="EventCard" reason="Dynamic content card - may need aria-live announcements" />
+      <file path="frontend/components/notifications/NotificationDropdown.tsx" kind="component" symbol="NotificationDropdown" reason="Dynamic dropdown with notifications - needs live region" />
+      <file path="frontend/app/page.tsx" kind="page" reason="Dashboard page - primary audit target" />
+      <file path="frontend/app/cameras/page.tsx" kind="page" reason="Cameras page - audit target" />
+      <file path="frontend/app/events/page.tsx" kind="page" reason="Events page - audit target" />
+      <file path="frontend/app/settings/page.tsx" kind="page" reason="Settings page - audit target with forms" />
+    </code>
+    <dependencies>
+      <frontend>
+        <package name="react" version="19.2.0" />
+        <package name="next" version="^16.0.10" />
+        <package name="@testing-library/react" version="^16.3.0" />
+        <package name="@testing-library/user-event" version="^14.6.1" />
+        <package name="vitest" version="^4.0.15" />
+        <package name="tailwindcss" version="^4" note="sr-only and focus utilities" />
+        <toInstall>
+          <package name="@axe-core/react" purpose="Development-time accessibility auditing" />
+          <package name="axe-core" purpose="Programmatic accessibility testing" optional="true" />
+        </toInstall>
+      </frontend>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="compliance">WCAG 2.1 AA is the target compliance level</constraint>
+    <constraint type="testing">All tests use vitest and @testing-library/react</constraint>
+    <constraint type="styling">Use Tailwind sr-only class for visually hidden accessible text</constraint>
+    <constraint type="pattern">Use focus:not-sr-only for skip links and elements hidden until focused</constraint>
+    <constraint type="forms">shadcn/ui form components should be extended, not replaced</constraint>
+    <constraint type="ci">Accessibility tests must pass in GitHub Actions CI</constraint>
+    <constraint type="audit">axe-core detects ~57% of issues - manual testing still required</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="axe-core run" kind="library API">
+      <signature>axe.run(context?, options?): Promise&lt;AxeResults&gt;</signature>
+      <path>node_modules/axe-core</path>
+      <note>Returns { violations, passes, incomplete, inapplicable }</note>
+    </interface>
+    <interface name="@axe-core/react" kind="React integration">
+      <signature>import React from 'react'; import ReactDOM from 'react-dom'; import axe from '@axe-core/react'; axe(React, ReactDOM, 1000);</signature>
+      <note>Logs accessibility issues to console in development</note>
+    </interface>
+    <interface name="aria-live region" kind="HTML pattern">
+      <signature>&lt;div role="status" aria-live="polite"&gt;{dynamicContent}&lt;/div&gt;</signature>
+      <note>polite waits for pause, assertive interrupts immediately</note>
+    </interface>
+    <interface name="aria-describedby" kind="HTML pattern">
+      <signature>&lt;input aria-describedby="error-id" /&gt; &lt;span id="error-id"&gt;Error message&lt;/span&gt;</signature>
+      <note>Associates descriptive text with form controls</note>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Tests use vitest and @testing-library/react. Component tests should verify:
+      1. Accessible names via getByRole with name option
+      2. ARIA attributes present with correct values
+      3. Keyboard navigation works (userEvent.tab, userEvent.keyboard)
+      4. Focus management correct (document.activeElement)
+      For accessibility integration tests, use axe-core with toHaveNoViolations matcher.
+    </standards>
+    <locations>
+      <location>frontend/__tests__/accessibility/ (new directory)</location>
+      <location>frontend/__tests__/components/**/*.test.tsx (existing component tests)</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test axe-core integration runs without violations on Dashboard page</idea>
+      <idea ac="1">Test axe-core integration runs without violations on Cameras page</idea>
+      <idea ac="1">Test axe-core integration runs without violations on Events page</idea>
+      <idea ac="1">Test axe-core integration runs without violations on Settings page</idea>
+      <idea ac="3">Test toast notifications have aria-live region</idea>
+      <idea ac="3">Test loading states announce to screen readers</idea>
+      <idea ac="4">Test form error messages linked via aria-describedby</idea>
+      <idea ac="4">Test form fields have aria-invalid when errors present</idea>
+      <idea ac="5">Color contrast ratios documented in audit results</idea>
+    </ideas>
+  </tests>
+</story-context>

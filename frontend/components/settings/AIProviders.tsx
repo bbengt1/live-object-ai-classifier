@@ -438,8 +438,10 @@ export function AIProviders({
                   variant="outline"
                   size="icon"
                   onClick={() => setShowApiKey(!showApiKey)}
+                  aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                  aria-pressed={showApiKey}
                 >
-                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showApiKey ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                 </Button>
               </div>
               {testResult && !testResult.valid && (
