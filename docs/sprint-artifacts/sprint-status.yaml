@@ -363,7 +363,7 @@ development_status:
   epic-p6-1-retrospective: optional
 
   # Epic P6-2: Accessibility Completion
-  epic-p6-2: backlog
+  epic-p6-2: contexted
   p6-2-1-add-skip-to-content-link: backlog
   p6-2-2-audit-and-fix-remaining-aria-issues: backlog
   epic-p6-2-retrospective: optional
