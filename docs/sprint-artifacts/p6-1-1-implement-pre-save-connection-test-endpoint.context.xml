@@ -1,0 +1,141 @@
+<story-context id="p6-1-1" v="1.0">
+  <metadata>
+    <epicId>P6-1</epicId>
+    <storyId>1</storyId>
+    <title>Implement Pre-Save Connection Test Endpoint</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-16</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p6-1-1-implement-pre-save-connection-test-endpoint.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>user setting up a new camera</asA>
+    <iWant>test the RTSP/USB connection before saving the camera to the database</iWant>
+    <soThat>I can verify my credentials and URL are correct without creating an incomplete camera record</soThat>
+    <tasks>
+      <task id="1" title="Create pre-save test endpoint">
+        <subtask>1.1: Create new CameraTestRequest schema accepting camera config without requiring ID</subtask>
+        <subtask>1.2: Create new CameraTestDetailedResponse schema with stream info fields</subtask>
+        <subtask>1.3: Add POST /api/v1/cameras/test endpoint at collection level (before /{camera_id})</subtask>
+        <subtask>1.4: Ensure endpoint does NOT create any database record</subtask>
+      </task>
+      <task id="2" title="Implement URL validation">
+        <subtask>2.1: Validate RTSP URL format (must start with rtsp:// or rtsps://)</subtask>
+        <subtask>2.2: Validate USB device index is non-negative integer</subtask>
+        <subtask>2.3: Return 422 with clear message for invalid format</subtask>
+      </task>
+      <task id="3" title="Implement connection test logic">
+        <subtask>3.1: Build connection string with credentials (reuse _build_rtsp_url pattern)</subtask>
+        <subtask>3.2: Use PyAV for secure RTSP (rtsps://) streams</subtask>
+        <subtask>3.3: Use OpenCV for standard RTSP and USB cameras</subtask>
+        <subtask>3.4: Return specific error messages for common failures (auth, timeout, refused)</subtask>
+      </task>
+      <task id="4" title="Extract and return stream info">
+        <subtask>4.1: Extract resolution (width x height) from captured stream</subtask>
+        <subtask>4.2: Extract FPS from stream if available</subtask>
+        <subtask>4.3: Extract codec info from stream if available</subtask>
+        <subtask>4.4: Include stream info in response schema</subtask>
+      </task>
+      <task id="5" title="Generate and return thumbnail">
+        <subtask>5.1: Capture test frame from stream</subtask>
+        <subtask>5.2: Resize to thumbnail (240px height, maintain aspect ratio)</subtask>
+        <subtask>5.3: Encode as JPEG base64 with data URI prefix</subtask>
+        <subtask>5.4: Include in response on success</subtask>
+      </task>
+      <task id="6" title="Write tests">
+        <subtask>6.1: Add unit test for valid RTSP URL validation</subtask>
+        <subtask>6.2: Add unit test for USB device index validation</subtask>
+        <subtask>6.3: Add integration test for successful connection (mock)</subtask>
+        <subtask>6.4: Add integration test for connection failure (mock)</subtask>
+        <subtask>6.5: Verify no database records created during test</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">POST /api/v1/cameras/test endpoint created (accepts camera config in body)</criterion>
+    <criterion id="2">Validates RTSP URL format and credentials</criterion>
+    <criterion id="3">Tests actual connection to camera</criterion>
+    <criterion id="4">Returns stream info (resolution, FPS, codec) on success</criterion>
+    <criterion id="5">Returns diagnostic error message on failure</criterion>
+    <criterion id="6">Returns preview thumbnail on success</criterion>
+    <criterion id="7">No database record created during test</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/epics-phase6.md" title="Phase 6 Epics" section="P6-1.1">
+        Story definition with acceptance criteria for pre-save connection test endpoint.
+      </doc>
+      <doc path="docs/architecture/07-api-contracts.md" title="API Contracts" section="Cameras">
+        REST API patterns for camera endpoints including POST /cameras/{id}/test.
+      </doc>
+      <doc path="docs/architecture/08-implementation-patterns.md" title="Implementation Patterns" section="Testing Patterns">
+        Backend unit test patterns using pytest, fixtures, and Arrange-Act-Assert style.
+      </doc>
+    </docs>
+    <code>
+      <file path="backend/app/api/v1/cameras.py" kind="router" symbol="test_camera_connection" lines="416-597" reason="Existing POST /{camera_id}/test endpoint - reuse connection logic pattern for new pre-save endpoint"/>
+      <file path="backend/app/schemas/camera.py" kind="schema" symbol="CameraTestResponse" lines="199-220" reason="Existing test response schema - extend for new detailed response with stream info"/>
+      <file path="backend/app/schemas/camera.py" kind="schema" symbol="CameraCreate" lines="37-83" reason="Request validation patterns - adapt for CameraTestRequest schema"/>
+      <file path="backend/app/services/camera_service.py" kind="service" symbol="_build_rtsp_url" reason="RTSP URL building with credentials - reuse in new endpoint"/>
+      <file path="backend/tests/test_api/test_cameras.py" kind="test" symbol="TestCameraAPI" lines="74-150" reason="Existing test patterns for camera API - follow for new test cases"/>
+    </code>
+    <dependencies>
+      <python>
+        <package name="fastapi" version="0.115.0">Web framework for API endpoint</package>
+        <package name="pydantic" version="2.10.0">Request/response schema validation</package>
+        <package name="opencv-python" version="4.12.0">Video capture for RTSP and USB cameras</package>
+        <package name="av" version="12.0.0">PyAV for secure RTSP (rtsps://) streams</package>
+        <package name="pytest" version="7.4.3">Testing framework</package>
+        <package name="httpx" version="0.25.2">Test client for FastAPI</package>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="architecture">Router endpoint order matters: POST /cameras/test must be defined BEFORE POST /cameras/{camera_id}/test to avoid path parameter conflict</constraint>
+    <constraint type="pattern">Follow existing error message patterns from cameras.py:568-592 for diagnostic messages</constraint>
+    <constraint type="pattern">Use Literal type hints for enum fields (e.g., type: Literal['rtsp', 'usb'])</constraint>
+    <constraint type="security">Password in request is plain text (not persisted) - do not log it</constraint>
+    <constraint type="testing">All API tests must mock cv2.VideoCapture and av.open to avoid requiring actual cameras</constraint>
+    <constraint type="database">Endpoint must NOT create, read, update, or delete any database records</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="POST /api/v1/cameras/test" kind="REST endpoint">
+      <signature>POST /api/v1/cameras/test - Test camera connection without creating database record</signature>
+      <request>CameraTestRequest: {type: 'rtsp'|'usb', rtsp_url?: string, username?: string, password?: string, device_index?: int}</request>
+      <response>CameraTestDetailedResponse: {success: bool, message: string, thumbnail?: string, resolution?: string, fps?: float, codec?: string}</response>
+      <path>backend/app/api/v1/cameras.py</path>
+    </interface>
+    <interface name="CameraTestRequest" kind="Pydantic schema">
+      <signature>class CameraTestRequest(BaseModel): type, rtsp_url?, username?, password?, device_index?</signature>
+      <path>backend/app/schemas/camera.py</path>
+    </interface>
+    <interface name="CameraTestDetailedResponse" kind="Pydantic schema">
+      <signature>class CameraTestDetailedResponse(BaseModel): success, message, thumbnail?, resolution?, fps?, codec?</signature>
+      <path>backend/app/schemas/camera.py</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>Backend tests use pytest with fixtures for database and dependency injection. Follow Arrange-Act-Assert pattern. Mock external services (cv2.VideoCapture, av.open) using unittest.mock. Use TestClient from FastAPI for integration tests.</standards>
+    <locations>
+      <location>backend/tests/test_api/test_cameras.py</location>
+      <location>backend/tests/test_api/</location>
+    </locations>
+    <ideas>
+      <idea ac="1,7">test_presave_test_endpoint_exists - Verify POST /cameras/test endpoint returns 200/422, no DB records created</idea>
+      <idea ac="2">test_presave_test_invalid_rtsp_url - Returns 422 for malformed RTSP URL (missing protocol)</idea>
+      <idea ac="2">test_presave_test_invalid_usb_index - Returns 422 for negative device index</idea>
+      <idea ac="3,5">test_presave_test_connection_failure - Mock failed connection returns success=false with diagnostic message</idea>
+      <idea ac="3,6">test_presave_test_connection_success_rtsp - Mock successful RTSP returns success=true with thumbnail</idea>
+      <idea ac="3,6">test_presave_test_connection_success_usb - Mock successful USB returns success=true with thumbnail</idea>
+      <idea ac="4">test_presave_test_returns_stream_info - Verify resolution, fps, codec in successful response</idea>
+      <idea ac="5">test_presave_test_auth_failure_message - Auth error returns "Authentication failed" message</idea>
+      <idea ac="5">test_presave_test_timeout_message - Timeout returns "Connection timeout" message</idea>
+    </ideas>
+  </tests>
+</story-context>

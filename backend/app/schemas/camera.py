@@ -218,3 +218,75 @@ class CameraTestResponse(BaseModel):
             ]
         }
     }
+
+
+class CameraTestRequest(BaseModel):
+    """Schema for testing camera connection before saving (no database record created)"""
+
+    type: Literal['rtsp', 'usb'] = Field(..., description="Camera type: rtsp or usb")
+    rtsp_url: Optional[str] = Field(None, max_length=500, description="Full RTSP URL")
+    username: Optional[str] = Field(None, max_length=100, description="RTSP authentication username")
+    password: Optional[str] = Field(None, max_length=100, description="RTSP password (plain text, not persisted)")
+    device_index: Optional[int] = Field(None, ge=0, description="USB camera device index (0, 1, 2, ...)")
+
+    @model_validator(mode='after')
+    def validate_camera_fields(self):
+        """Validate camera-type-specific required fields"""
+        if self.type == 'rtsp':
+            if not self.rtsp_url:
+                raise ValueError("RTSP URL required for RTSP cameras")
+            if not self.rtsp_url.startswith(('rtsp://', 'rtsps://')):
+                raise ValueError("RTSP URL must start with rtsp:// or rtsps://")
+
+        if self.type == 'usb':
+            if self.device_index is None:
+                raise ValueError("Device index required for USB cameras")
+
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "type": "rtsp",
+                    "rtsp_url": "rtsp://192.168.1.50:554/stream1",
+                    "username": "admin",
+                    "password": "secret123"
+                },
+                {
+                    "type": "usb",
+                    "device_index": 0
+                }
+            ]
+        }
+    }
+
+
+class CameraTestDetailedResponse(BaseModel):
+    """Schema for pre-save camera connection test response with stream info"""
+
+    success: bool = Field(..., description="Whether connection test succeeded")
+    message: str = Field(..., description="Human-readable result message")
+    thumbnail: Optional[str] = Field(None, description="Base64-encoded JPEG thumbnail with data URI prefix")
+    resolution: Optional[str] = Field(None, description="Stream resolution (e.g., '1920x1080')")
+    fps: Optional[float] = Field(None, description="Frames per second")
+    codec: Optional[str] = Field(None, description="Video codec (e.g., 'h264', 'MJPG')")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "success": True,
+                    "message": "Connection successful",
+                    "thumbnail": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+                    "resolution": "1920x1080",
+                    "fps": 30.0,
+                    "codec": "h264"
+                },
+                {
+                    "success": False,
+                    "message": "Authentication failed. Check username and password."
+                }
+            ]
+        }
+    }

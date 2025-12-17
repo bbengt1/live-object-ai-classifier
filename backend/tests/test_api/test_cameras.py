@@ -499,6 +499,265 @@ class TestCameraAPI:
         assert "another application" in data["message"].lower()
 
 
+# ==================== Pre-Save Connection Test Tests (Story P6-1.1) ====================
+
+
+class TestCameraPreSaveTestAPI:
+    """Test suite for pre-save camera connection test endpoint (Story P6-1.1)"""
+
+    def test_presave_test_invalid_rtsp_url_missing_protocol(self):
+        """POST /cameras/test with invalid RTSP URL should return 422 (AC-2)"""
+        test_data = {
+            "type": "rtsp",
+            "rtsp_url": "192.168.1.50:554/stream1"  # Missing protocol
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 422
+
+    def test_presave_test_invalid_rtsp_url_wrong_protocol(self):
+        """POST /cameras/test with HTTP URL should return 422 (AC-2)"""
+        test_data = {
+            "type": "rtsp",
+            "rtsp_url": "http://192.168.1.50/stream1"  # Wrong protocol
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 422
+
+    def test_presave_test_missing_rtsp_url(self):
+        """POST /cameras/test for RTSP without URL should return 422 (AC-2)"""
+        test_data = {
+            "type": "rtsp"
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 422
+
+    def test_presave_test_missing_usb_device_index(self):
+        """POST /cameras/test for USB without device_index should return 422 (AC-2)"""
+        test_data = {
+            "type": "usb"
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 422
+
+    def test_presave_test_negative_device_index(self):
+        """POST /cameras/test with negative device_index should return 422 (AC-2)"""
+        test_data = {
+            "type": "usb",
+            "device_index": -1
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 422
+
+    @patch('app.api.v1.cameras.cv2.VideoCapture')
+    def test_presave_test_rtsp_success(self, mock_videocapture):
+        """POST /cameras/test with valid RTSP config should return success with stream info (AC-1,3,4,6)"""
+        import cv2 as cv2_module
+        # Mock successful connection
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: {
+            cv2_module.CAP_PROP_FRAME_WIDTH: 1920,
+            cv2_module.CAP_PROP_FRAME_HEIGHT: 1080,
+            cv2_module.CAP_PROP_FPS: 30.0,
+            cv2_module.CAP_PROP_FOURCC: cv2_module.VideoWriter_fourcc('H', '2', '6', '4')
+        }.get(prop, 0)
+
+        # Create fake frame
+        import numpy as np
+        fake_frame = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        mock_cap.read.return_value = (True, fake_frame)
+
+        mock_videocapture.return_value = mock_cap
+
+        test_data = {
+            "type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.50:554/stream1",
+            "username": "admin",
+            "password": "password123"
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "successful" in data["message"].lower()
+        assert data["thumbnail"] is not None
+        assert data["thumbnail"].startswith("data:image/jpeg;base64,")
+        assert data["resolution"] == "1920x1080"
+        assert data["fps"] == 30.0
+        assert data["codec"] is not None
+
+    @patch('app.api.v1.cameras.cv2.VideoCapture')
+    def test_presave_test_usb_success(self, mock_videocapture):
+        """POST /cameras/test with valid USB config should return success (AC-1,3,4,6)"""
+        import cv2 as cv2_module
+        # Mock successful connection
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: {
+            cv2_module.CAP_PROP_FRAME_WIDTH: 640,
+            cv2_module.CAP_PROP_FRAME_HEIGHT: 480,
+            cv2_module.CAP_PROP_FPS: 15.0,
+            cv2_module.CAP_PROP_FOURCC: cv2_module.VideoWriter_fourcc('M', 'J', 'P', 'G')
+        }.get(prop, 0)
+
+        # Create fake frame
+        import numpy as np
+        fake_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        mock_cap.read.return_value = (True, fake_frame)
+
+        mock_videocapture.return_value = mock_cap
+
+        test_data = {
+            "type": "usb",
+            "device_index": 0
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "usb camera connected successfully" in data["message"].lower()
+        assert "device 0" in data["message"].lower()
+        assert data["thumbnail"] is not None
+        assert data["resolution"] == "640x480"
+        assert data["fps"] == 15.0
+
+    @patch('app.api.v1.cameras.cv2.VideoCapture')
+    def test_presave_test_connection_failure(self, mock_videocapture):
+        """POST /cameras/test with connection failure should return diagnostic message (AC-3,5)"""
+        # Mock failed connection
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = False
+        mock_videocapture.return_value = mock_cap
+
+        test_data = {
+            "type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.50:554/stream1"
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "failed" in data["message"].lower() or "check" in data["message"].lower()
+        assert data["thumbnail"] is None
+
+    @patch('app.api.v1.cameras.cv2.VideoCapture')
+    def test_presave_test_usb_not_found(self, mock_videocapture):
+        """POST /cameras/test with USB not found should return device not found message (AC-5)"""
+        # Mock device not found
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = False
+        mock_videocapture.return_value = mock_cap
+
+        test_data = {
+            "type": "usb",
+            "device_index": 99
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "usb camera not found" in data["message"].lower()
+        assert "device index 99" in data["message"].lower()
+
+    @patch('app.api.v1.cameras.cv2.VideoCapture')
+    def test_presave_test_auth_failure(self, mock_videocapture):
+        """POST /cameras/test with auth failure should return authentication message (AC-5)"""
+        # Mock authentication error
+        mock_videocapture.side_effect = Exception("401 Unauthorized")
+
+        test_data = {
+            "type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.50:554/stream1",
+            "username": "admin",
+            "password": "wrongpassword"
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "authentication failed" in data["message"].lower()
+
+    @patch('app.api.v1.cameras.cv2.VideoCapture')
+    def test_presave_test_timeout(self, mock_videocapture):
+        """POST /cameras/test with timeout should return timeout message (AC-5)"""
+        # Mock timeout error
+        mock_videocapture.side_effect = Exception("Connection timed out")
+
+        test_data = {
+            "type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.50:554/stream1"
+        }
+
+        response = client.post("/api/v1/cameras/test", json=test_data)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "timeout" in data["message"].lower()
+
+    def test_presave_test_no_database_record_created(self):
+        """POST /cameras/test should NOT create any database record (AC-7)"""
+        # Count cameras before test
+        list_response_before = client.get("/api/v1/cameras")
+        count_before = len(list_response_before.json())
+
+        # Even though this will fail (no mock), it shouldn't create a DB record
+        test_data = {
+            "type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.50:554/stream1"
+        }
+
+        # This will return success=false (connection fails), but should not create DB record
+        client.post("/api/v1/cameras/test", json=test_data)
+
+        # Count cameras after test
+        list_response_after = client.get("/api/v1/cameras")
+        count_after = len(list_response_after.json())
+
+        # No new cameras should be created
+        assert count_after == count_before
+
+    def test_presave_test_valid_rtsp_url_formats(self):
+        """POST /cameras/test should accept both rtsp:// and rtsps:// URLs (AC-2)"""
+        # Test rtsp:// format - validation should pass (422 only for format errors)
+        test_data_rtsp = {
+            "type": "rtsp",
+            "rtsp_url": "rtsp://192.168.1.50:554/stream1"
+        }
+        response_rtsp = client.post("/api/v1/cameras/test", json=test_data_rtsp)
+        # Should not be 422 (validation passes, connection may fail)
+        assert response_rtsp.status_code == 200
+
+        # Test rtsps:// format
+        test_data_rtsps = {
+            "type": "rtsp",
+            "rtsp_url": "rtsps://192.168.1.50:7441/secure-stream"
+        }
+        response_rtsps = client.post("/api/v1/cameras/test", json=test_data_rtsps)
+        # Should not be 422 (validation passes)
+        assert response_rtsps.status_code == 200
+
+
 # ==================== Detection Zone Tests (F2.2) ====================
 
 
