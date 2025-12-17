@@ -229,8 +229,9 @@ function NotificationItem({ notification, onClick, onDelete }: NotificationItemP
           size="icon"
           className="h-8 w-8 text-muted-foreground hover:text-destructive"
           onClick={onDelete}
+          aria-label="Delete notification"
         >
-          <Trash2 className="h-4 w-4" />
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
     </div>

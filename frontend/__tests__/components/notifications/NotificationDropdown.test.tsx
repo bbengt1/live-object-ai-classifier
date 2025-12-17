@@ -318,7 +318,7 @@ describe('NotificationDropdown', () => {
       render(<NotificationDropdown />)
 
       // Find delete button (trash icon button)
-      const deleteButton = screen.getByRole('button', { name: '' })
+      const deleteButton = screen.getByRole('button', { name: /delete notification/i })
       await user.click(deleteButton)
 
       expect(mockDeleteNotification).toHaveBeenCalledWith('notif-to-delete')
@@ -338,7 +338,7 @@ describe('NotificationDropdown', () => {
 
       render(<NotificationDropdown onClose={mockOnClose} />)
 
-      const deleteButton = screen.getByRole('button', { name: '' })
+      const deleteButton = screen.getByRole('button', { name: /delete notification/i })
       await user.click(deleteButton)
 
       // Should not navigate

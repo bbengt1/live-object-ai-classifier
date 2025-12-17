@@ -101,11 +101,12 @@ export function EntityNameEdit({ entityId, currentName }: EntityNameEditProps) {
           className="h-8 w-8"
           onClick={handleSave}
           disabled={updateMutation.isPending}
+          aria-label={updateMutation.isPending ? 'Saving name...' : 'Save name'}
         >
           {updateMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (
-            <Check className="h-4 w-4 text-green-600" />
+            <Check className="h-4 w-4 text-green-600" aria-hidden="true" />
           )}
         </Button>
         <Button
@@ -114,8 +115,9 @@ export function EntityNameEdit({ entityId, currentName }: EntityNameEditProps) {
           className="h-8 w-8"
           onClick={handleCancel}
           disabled={updateMutation.isPending}
+          aria-label="Cancel editing"
         >
-          <X className="h-4 w-4 text-red-600" />
+          <X className="h-4 w-4 text-red-600" aria-hidden="true" />
         </Button>
       </div>
     );
@@ -136,9 +138,9 @@ export function EntityNameEdit({ entityId, currentName }: EntityNameEditProps) {
         size="icon"
         className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
         onClick={handleStartEdit}
-        title="Edit name"
+        aria-label="Edit entity name"
       >
-        <Pencil className="h-3 w-3" />
+        <Pencil className="h-3 w-3" aria-hidden="true" />
       </Button>
     </div>
   );
