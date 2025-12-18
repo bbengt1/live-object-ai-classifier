@@ -1,6 +1,6 @@
 # Story P7-1.4: Add HomeKit Connection Status Monitoring
 
-Status: review
+Status: done
 
 ## Story
 
