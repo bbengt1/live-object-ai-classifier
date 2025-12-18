@@ -80,17 +80,18 @@ export interface HomekitNetworkBinding {
 }
 
 /**
- * Last event delivery info (Story P7-1.1)
+ * Last event delivery info (Story P7-1.1, P7-1.4)
  */
 export interface HomekitLastEventDelivery {
   camera_id: string;
+  camera_name?: string | null;  // Story P7-1.4 (optional for backward compat)
   sensor_type: string;
   timestamp: string;
   delivered: boolean;
 }
 
 /**
- * Diagnostics response (Story P7-1.1)
+ * Diagnostics response (Story P7-1.1, P7-1.4)
  */
 export interface HomekitDiagnosticsResponse {
   bridge_running: boolean;
@@ -98,6 +99,7 @@ export interface HomekitDiagnosticsResponse {
   network_binding: HomekitNetworkBinding | null;
   connected_clients: number;
   last_event_delivery: HomekitLastEventDelivery | null;
+  sensor_deliveries: HomekitLastEventDelivery[];  // Story P7-1.4 AC3
   recent_logs: HomekitDiagnosticEntry[];
   warnings: string[];
   errors: string[];
@@ -234,13 +236,14 @@ export function useHomekitRemovePairing() {
 // ============================================================================
 
 /**
- * Fetch HomeKit diagnostics from the API (Story P7-1.1)
+ * Fetch HomeKit diagnostics from the API (Story P7-1.1, P7-1.4)
  */
 async function fetchHomekitDiagnostics(): Promise<HomekitDiagnosticsResponse> {
   const data = await apiClient.homekit.getDiagnostics();
   // Cast the API response to our typed interface (API returns generic strings, we type them)
   return {
     ...data,
+    sensor_deliveries: data.sensor_deliveries || [],  // Story P7-1.4 AC3
     recent_logs: data.recent_logs.map((log) => ({
       ...log,
       level: log.level as HomekitDiagnosticEntry['level'],

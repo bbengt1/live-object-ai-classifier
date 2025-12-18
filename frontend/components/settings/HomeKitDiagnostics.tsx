@@ -1,18 +1,20 @@
 'use client';
 
 /**
- * HomeKitDiagnostics component (Story P7-1.1 AC6, P7-1.2, P7-1.3)
+ * HomeKitDiagnostics component (Story P7-1.1 AC6, P7-1.2, P7-1.3, P7-1.4)
  *
  * Displays diagnostic information for HomeKit troubleshooting including:
  * - Bridge status and mDNS advertising state
  * - Network binding info
  * - Connected clients count
+ * - Connection status panel with per-sensor delivery tracking (P7-1.4)
  * - Recent diagnostic logs with category filtering
  * - Warnings and errors prominently displayed
  * - Connectivity test button (P7-1.2 AC6)
  * - Test event trigger button (P7-1.3 AC5)
  */
 import React, { useState } from 'react';
+import { formatDistanceToNow } from 'date-fns';
 import {
   useHomekitDiagnostics,
   useHomekitConnectivity,
@@ -21,6 +23,7 @@ import {
   type HomekitConnectivityResult,
   type HomekitTestEventType,
   type HomekitTestEventResult,
+  type HomekitLastEventDelivery,
 } from '@/hooks/useHomekitStatus';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
@@ -47,6 +50,9 @@ import {
   AlertTriangle,
   Play,
   Zap,
+  Pause,
+  RefreshCw,
+  Signal,
 } from 'lucide-react';
 import {
   Select,
@@ -273,6 +279,195 @@ function ConnectivityTestPanel() {
 }
 
 /**
+ * Format relative time from timestamp (Story P7-1.4)
+ */
+function formatRelativeTime(timestamp: string): string {
+  try {
+    return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
+  } catch {
+    return 'Unknown';
+  }
+}
+
+/**
+ * ConnectionStatusPanel component (Story P7-1.4 AC1-5)
+ *
+ * Displays real-time connection health status including:
+ * - mDNS advertisement status with green/red indicator
+ * - Connected clients count with numeric badge
+ * - Per-sensor delivery status table with relative timestamps
+ * - Errors and warnings display
+ * - Auto-refresh toggle for debugging
+ */
+interface ConnectionStatusPanelProps {
+  mdnsAdvertising: boolean;
+  connectedClients: number;
+  sensorDeliveries: HomekitLastEventDelivery[];
+  warnings: string[];
+  errors: string[];
+  isPolling: boolean;
+  onTogglePolling: () => void;
+}
+
+function ConnectionStatusPanel({
+  mdnsAdvertising,
+  connectedClients,
+  sensorDeliveries,
+  warnings,
+  errors,
+  isPolling,
+  onTogglePolling,
+}: ConnectionStatusPanelProps) {
+  const [isDeliveryExpanded, setIsDeliveryExpanded] = useState(true);
+
+  return (
+    <div className="border rounded-lg p-4 bg-muted/30 space-y-4">
+      {/* Header with refresh toggle */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Signal className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Connection Status</span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onTogglePolling}
+          className="h-7 text-xs"
+        >
+          {isPolling ? (
+            <>
+              <Pause className="h-3 w-3 mr-1" />
+              Pause Refresh
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Resume Refresh
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* Status Grid */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* mDNS Status (AC1) */}
+        <div className="flex items-center gap-2">
+          <div
+            className={`w-2.5 h-2.5 rounded-full ${
+              mdnsAdvertising ? 'bg-green-500' : 'bg-red-500'
+            }`}
+          />
+          <span className="text-sm">
+            mDNS {mdnsAdvertising ? 'Advertising' : 'Not Advertising'}
+          </span>
+        </div>
+
+        {/* Connected Clients (AC2) */}
+        <div className="flex items-center gap-2">
+          <Users className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm">{connectedClients} Connected</span>
+          {connectedClients > 0 && (
+            <Badge variant="secondary" className="text-xs h-5">
+              {connectedClients}
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {/* Errors Display (AC4) */}
+      {errors.length > 0 && (
+        <Alert variant="destructive" className="py-2">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle className="text-sm">Errors ({errors.length})</AlertTitle>
+          <AlertDescription className="text-xs">
+            <ul className="list-disc list-inside mt-1">
+              {errors.slice(0, 3).map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+              {errors.length > 3 && (
+                <li className="text-muted-foreground">+{errors.length - 3} more...</li>
+              )}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Warnings Display (AC4) */}
+      {warnings.length > 0 && (
+        <Alert className="py-2 border-yellow-500 bg-yellow-500/10">
+          <AlertTriangle className="h-4 w-4 text-yellow-500" />
+          <AlertTitle className="text-sm text-yellow-600">Warnings ({warnings.length})</AlertTitle>
+          <AlertDescription className="text-xs">
+            <ul className="list-disc list-inside mt-1">
+              {warnings.slice(0, 3).map((warn, i) => (
+                <li key={i}>{warn}</li>
+              ))}
+              {warnings.length > 3 && (
+                <li className="text-muted-foreground">+{warnings.length - 3} more...</li>
+              )}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Per-Sensor Delivery Status (AC3) */}
+      <div className="border rounded-lg overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-3 py-2 bg-muted/50 hover:bg-muted text-sm font-medium"
+          onClick={() => setIsDeliveryExpanded(!isDeliveryExpanded)}
+        >
+          <span className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            Last Event Delivery per Sensor
+            <Badge variant="outline" className="text-xs">
+              {sensorDeliveries.length}
+            </Badge>
+          </span>
+          {isDeliveryExpanded ? (
+            <ChevronUp className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </button>
+
+        {isDeliveryExpanded && (
+          <div className="max-h-48 overflow-y-auto">
+            {sensorDeliveries.length === 0 ? (
+              <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                No event deliveries recorded yet
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {sensorDeliveries.map((delivery, i) => (
+                  <div key={`${delivery.camera_id}-${delivery.sensor_type}-${i}`} className="px-3 py-2 flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      {delivery.delivered ? (
+                        <Check className="h-3.5 w-3.5 text-green-500" />
+                      ) : (
+                        <X className="h-3.5 w-3.5 text-red-500" />
+                      )}
+                      <span className="font-medium">
+                        {delivery.camera_name || delivery.camera_id.slice(0, 8)}
+                      </span>
+                      <Badge variant="outline" className="text-xs h-5">
+                        {delivery.sensor_type}
+                      </Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {formatRelativeTime(delivery.timestamp)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
  * TestEventPanel component (Story P7-1.3 AC5)
  *
  * Displays the "Test Event" panel with camera and event type selection
@@ -415,10 +610,12 @@ export function HomeKitDiagnostics({ enabled = true }: HomeKitDiagnosticsProps) 
   const [selectedLevels, setSelectedLevels] = useState<Set<string>>(
     new Set(['debug', 'info', 'warning', 'error'])
   );
+  // Story P7-1.4 AC5: Polling state control for "Pause Auto-Refresh" toggle
+  const [isPolling, setIsPolling] = useState(true);
 
   const { data: diagnostics, isLoading, error } = useHomekitDiagnostics({
     enabled,
-    refetchInterval: 5000, // 5-second polling
+    refetchInterval: isPolling ? 5000 : false, // Story P7-1.4 AC5: 5-second polling when enabled
   });
 
   const toggleCategory = (category: string) => {
@@ -489,41 +686,16 @@ export function HomeKitDiagnostics({ enabled = true }: HomeKitDiagnosticsProps) 
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Errors Alert */}
-        {diagnostics.errors.length > 0 && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Errors ({diagnostics.errors.length})</AlertTitle>
-            <AlertDescription>
-              <ul className="list-disc list-inside mt-2">
-                {diagnostics.errors.map((err, i) => (
-                  <li key={i} className="text-sm">
-                    {err}
-                  </li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Warnings Alert */}
-        {diagnostics.warnings.length > 0 && (
-          <Alert className="border-yellow-500">
-            <AlertCircle className="h-4 w-4 text-yellow-500" />
-            <AlertTitle className="text-yellow-500">
-              Warnings ({diagnostics.warnings.length})
-            </AlertTitle>
-            <AlertDescription>
-              <ul className="list-disc list-inside mt-2">
-                {diagnostics.warnings.map((warn, i) => (
-                  <li key={i} className="text-sm">
-                    {warn}
-                  </li>
-                ))}
-              </ul>
-            </AlertDescription>
-          </Alert>
-        )}
+        {/* Connection Status Panel (Story P7-1.4 AC1-5) */}
+        <ConnectionStatusPanel
+          mdnsAdvertising={diagnostics.mdns_advertising}
+          connectedClients={diagnostics.connected_clients}
+          sensorDeliveries={diagnostics.sensor_deliveries || []}
+          warnings={diagnostics.warnings}
+          errors={diagnostics.errors}
+          isPolling={isPolling}
+          onTogglePolling={() => setIsPolling(!isPolling)}
+        />
 
         {/* Status Grid */}
         <div className="grid grid-cols-2 gap-4">

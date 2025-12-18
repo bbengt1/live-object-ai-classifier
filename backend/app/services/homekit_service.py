@@ -342,10 +342,11 @@ class HomekitService:
 
     def get_diagnostics(self) -> HomeKitDiagnosticsResponse:
         """
-        Get diagnostic information for HomeKit troubleshooting (Story P7-1.1 AC5).
+        Get diagnostic information for HomeKit troubleshooting (Story P7-1.1 AC5, P7-1.4 AC1-4).
 
         Returns:
-            HomeKitDiagnosticsResponse with bridge status, logs, warnings, and errors
+            HomeKitDiagnosticsResponse with bridge status, logs, warnings, errors,
+            and per-sensor delivery history (Story P7-1.4 AC3)
         """
         return HomeKitDiagnosticsResponse(
             bridge_running=self.is_running,
@@ -353,6 +354,7 @@ class HomekitService:
             network_binding=self._network_binding,
             connected_clients=self._get_connected_client_count(),
             last_event_delivery=self._diagnostic_handler.get_last_event_delivery(),
+            sensor_deliveries=self._diagnostic_handler.get_sensor_deliveries(),  # Story P7-1.4 AC3
             recent_logs=self._diagnostic_handler.get_recent_logs(),
             warnings=self._diagnostic_handler.get_warnings(),
             errors=self._diagnostic_handler.get_errors(),

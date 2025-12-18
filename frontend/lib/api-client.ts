@@ -1869,10 +1869,18 @@ export const apiClient = {
       connected_clients: number;
       last_event_delivery: {
         camera_id: string;
+        camera_name?: string | null;  // Story P7-1.4
         sensor_type: string;
         timestamp: string;
         delivered: boolean;
       } | null;
+      sensor_deliveries: Array<{  // Story P7-1.4 AC3
+        camera_id: string;
+        camera_name?: string | null;
+        sensor_type: string;
+        timestamp: string;
+        delivered: boolean;
+      }>;
       recent_logs: Array<{
         timestamp: string;
         level: string;

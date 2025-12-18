@@ -1,0 +1,165 @@
+<story-context id="p7-1-4-add-homekit-connection-status-monitoring" v="1.0">
+  <metadata>
+    <epicId>P7-1</epicId>
+    <storyId>P7-1.4</storyId>
+    <title>Add HomeKit Connection Status Monitoring</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-18</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p7-1-4-add-homekit-connection-status-monitoring.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>homeowner using ArgusAI with HomeKit</asA>
+    <iWant>to see real-time HomeKit connection health status in the UI</iWant>
+    <soThat>I can quickly verify my HomeKit integration is working correctly and diagnose issues without using terminal commands</soThat>
+    <tasks>
+      <task id="1" ac="1-4">Enhance Diagnostics API Response for Status Monitoring
+        <subtask>1.1 Verify HomeKitDiagnosticsResponse includes mdns_advertising field</subtask>
+        <subtask>1.2 Verify connected_clients count is populated from HAP driver</subtask>
+        <subtask>1.3 Enhance last_event_delivery to support per-sensor timestamps</subtask>
+        <subtask>1.4 Ensure warnings and errors lists are properly populated</subtask>
+        <subtask>1.5 Add sensor-level delivery tracking (camera_id, sensor_type, timestamp, delivered status)</subtask>
+      </task>
+      <task id="2" ac="1-4">Build Status Monitoring Panel UI Component
+        <subtask>2.1 Create ConnectionStatusPanel component in HomeKitDiagnostics.tsx</subtask>
+        <subtask>2.2 Display mDNS advertisement status with green/red indicator</subtask>
+        <subtask>2.3 Display connected clients count with numeric badge</subtask>
+        <subtask>2.4 Create per-sensor delivery status table/list with timestamps</subtask>
+        <subtask>2.5 Display warnings with amber styling and errors with red styling</subtask>
+        <subtask>2.6 Add collapsible sections for detailed sensor delivery history</subtask>
+      </task>
+      <task id="3" ac="5">Implement Auto-Refresh Polling
+        <subtask>3.1 Configure React Query to poll diagnostics endpoint every 5 seconds</subtask>
+        <subtask>3.2 Only poll when diagnostics panel is visible (use enabled option)</subtask>
+        <subtask>3.3 Add loading indicator during refresh</subtask>
+        <subtask>3.4 Handle poll errors gracefully without disrupting UI</subtask>
+        <subtask>3.5 Add "Pause Auto-Refresh" toggle for debugging</subtask>
+      </task>
+      <task id="4" ac="3">Add Last Event Delivery per Sensor Tracking
+        <subtask>4.1 Update HomekitService to track per-sensor delivery timestamps</subtask>
+        <subtask>4.2 Store last delivery info in diagnostics handler</subtask>
+        <subtask>4.3 Return per-sensor delivery list in API response</subtask>
+        <subtask>4.4 Include camera name and sensor type in delivery records</subtask>
+        <subtask>4.5 Show relative timestamps (e.g., "2 minutes ago")</subtask>
+      </task>
+      <task id="5" ac="1-5">Write Unit and Integration Tests
+        <subtask>5.1 Test diagnostics API includes all required status fields</subtask>
+        <subtask>5.2 Test per-sensor delivery tracking updates correctly</subtask>
+        <subtask>5.3 Test React component renders all status indicators</subtask>
+        <subtask>5.4 Test auto-refresh polling behavior with mock timers</subtask>
+        <subtask>5.5 Test error/warning display styling</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">mDNS advertisement status shown (advertising/not advertising)</criterion>
+    <criterion id="2">Connected clients count displayed</criterion>
+    <criterion id="3">Last event delivery timestamp shown per sensor</criterion>
+    <criterion id="4">Errors and warnings are displayed</criterion>
+    <criterion id="5">Auto-refresh status every 5 seconds when panel open</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-P7-1.md" title="Epic P7-1 Tech Spec" section="APIs and Interfaces">
+        Defines HomeKitDiagnosticsResponse schema with bridge_running, mdns_advertising, network_binding, connected_clients, last_event_delivery, recent_logs, warnings, and errors fields.
+      </doc>
+      <doc path="docs/epics-phase7.md" title="Phase 7 Epics" section="Story P7-1.4">
+        Defines acceptance criteria: mDNS status, connected clients, last event delivery per sensor, errors/warnings, 5-second auto-refresh.
+      </doc>
+      <doc path="docs/sprint-artifacts/p7-1-3-fix-homekit-event-delivery.md" title="Previous Story" section="Dev Agent Record">
+        Previous story implemented test event trigger and delivery logging - patterns to follow for per-sensor tracking.
+      </doc>
+      <doc path="docs/sprint-artifacts/p7-1-1-add-homekit-diagnostic-logging.md" title="P7-1.1 Story" section="Completion Notes">
+        Diagnostic handler with circular buffer, thread-safe logging, and last_event_delivery field already implemented.
+      </doc>
+    </docs>
+
+    <code>
+      <file path="backend/app/services/homekit_service.py" kind="service" symbol="HomekitService.get_diagnostics" reason="Returns HomeKitDiagnosticsResponse - need to enhance for per-sensor delivery tracking">
+        <lines>343-359</lines>
+      </file>
+      <file path="backend/app/services/homekit_service.py" kind="service" symbol="HomekitService._get_connected_client_count" reason="Already returns connected clients from HAP state file">
+        <lines>493-508</lines>
+      </file>
+      <file path="backend/app/services/homekit_diagnostics.py" kind="service" symbol="HomekitDiagnosticHandler" reason="Thread-safe circular buffer for diagnostic logs, need to enhance for per-sensor tracking">
+        <lines>25-198</lines>
+      </file>
+      <file path="backend/app/schemas/homekit_diagnostics.py" kind="schema" symbol="HomeKitDiagnosticsResponse" reason="Main response schema - may need enhancement for per-sensor delivery list">
+        <lines>89-155</lines>
+      </file>
+      <file path="backend/app/schemas/homekit_diagnostics.py" kind="schema" symbol="LastEventDeliveryInfo" reason="Single delivery info - need list for per-sensor">
+        <lines>70-86</lines>
+      </file>
+      <file path="backend/app/api/v1/homekit.py" kind="router" symbol="get_diagnostics" reason="GET /api/v1/homekit/diagnostics endpoint - returns diagnostics response">
+        <lines>720-755</lines>
+      </file>
+      <file path="frontend/hooks/useHomekitStatus.ts" kind="hook" symbol="useHomekitDiagnostics" reason="Already polls every 5 seconds - verify and enhance types">
+        <lines>258-270</lines>
+      </file>
+      <file path="frontend/components/settings/HomeKitDiagnostics.tsx" kind="component" symbol="HomeKitDiagnostics" reason="Main diagnostics UI - need to add ConnectionStatusPanel with status indicators">
+        <lines>411-682</lines>
+      </file>
+      <file path="frontend/components/settings/HomeKitDiagnostics.tsx" kind="component" symbol="Status Grid" reason="Existing grid showing bridge status, mDNS, network, clients - enhance with per-sensor delivery">
+        <lines>529-574</lines>
+      </file>
+    </code>
+
+    <dependencies>
+      <node>
+        <package name="@tanstack/react-query" version="^5.62.7">Server state management with polling</package>
+        <package name="date-fns" version="^4.1.0">Relative timestamp formatting</package>
+        <package name="lucide-react" version="^0.469.0">Icons for status indicators</package>
+      </node>
+      <python>
+        <package name="pydantic" version=">=2.0">Schema validation</package>
+        <package name="fastapi" version=">=0.115">API framework</package>
+        <package name="HAP-python" version=">=4.9">HomeKit protocol</package>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>HAP-python runs in a background thread separate from main asyncio loop</constraint>
+    <constraint>Diagnostics handler uses threading.Lock with collections.deque for thread safety</constraint>
+    <constraint>Frontend uses React Query for server state with refetchInterval for polling</constraint>
+    <constraint>HomeKit diagnostics endpoint already exists at GET /api/v1/homekit/diagnostics</constraint>
+    <constraint>Must maintain backward compatibility with existing LastEventDeliveryInfo single-sensor response</constraint>
+    <constraint>Polling should only occur when diagnostics panel is visible to avoid unnecessary API calls</constraint>
+    <constraint>Use existing shadcn/ui components: Badge for status, Alert for warnings/errors, Table or list for per-sensor display</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="GET /api/v1/homekit/diagnostics" kind="REST endpoint" path="backend/app/api/v1/homekit.py:720">
+      Returns HomeKitDiagnosticsResponse with bridge status, mDNS, network binding, connected clients, last event delivery, recent logs, warnings, errors
+    </interface>
+    <interface name="HomeKitDiagnosticsResponse" kind="Pydantic schema" path="backend/app/schemas/homekit_diagnostics.py:89">
+      bridge_running: bool, mdns_advertising: bool, network_binding: Optional[NetworkBindingInfo], connected_clients: int, last_event_delivery: Optional[LastEventDeliveryInfo], recent_logs: List[HomeKitDiagnosticEntry], warnings: List[str], errors: List[str]
+    </interface>
+    <interface name="useHomekitDiagnostics" kind="React Query hook" path="frontend/hooks/useHomekitStatus.ts:258">
+      useQuery hook with queryKey=['homekit','diagnostics'], refetchInterval=5000, returns HomekitDiagnosticsResponse
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend uses pytest with fixtures for HomeKit service mocking. Frontend uses Vitest + React Testing Library. Follow existing patterns in backend/tests/test_api/test_homekit*.py and frontend component tests. Use vi.useFakeTimers() for testing polling behavior.
+    </standards>
+    <locations>
+      <location>backend/tests/test_api/test_homekit*.py</location>
+      <location>backend/tests/test_services/test_homekit*.py</location>
+      <location>frontend/components/**/*.test.tsx</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Test diagnostics API returns mdns_advertising boolean field correctly</idea>
+      <idea ac="2">Test connected_clients count is populated from HAP state file</idea>
+      <idea ac="3">Test per-sensor delivery tracking stores and returns timestamps for each sensor type</idea>
+      <idea ac="4">Test warnings and errors arrays are populated from diagnostic handler</idea>
+      <idea ac="5">Test React Query polling with refetchInterval=5000, verify only polls when enabled=true</idea>
+      <idea ac="1-4">Test ConnectionStatusPanel renders all status indicators (mDNS, clients, delivery, warnings, errors)</idea>
+      <idea ac="3">Test relative timestamp display ("2 minutes ago") using date-fns formatDistanceToNow</idea>
+    </ideas>
+  </tests>
+</story-context>

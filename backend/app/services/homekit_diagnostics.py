@@ -58,6 +58,8 @@ class HomekitDiagnosticHandler(logging.Handler):
         self._warnings: List[str] = []
         self._errors: List[str] = []
         self._last_event_delivery: Optional[LastEventDeliveryInfo] = None
+        # Story P7-1.4: Per-sensor delivery tracking - keyed by (camera_id, sensor_type)
+        self._sensor_deliveries: dict[tuple[str, str], LastEventDeliveryInfo] = {}
 
     def emit(self, record: logging.LogRecord) -> None:
         """
@@ -110,14 +112,21 @@ class HomekitDiagnosticHandler(logging.Handler):
                     if len(self._errors) > 10:
                         self._errors.pop(0)
 
-                # Track last event delivery
+                # Track last event delivery and per-sensor deliveries (Story P7-1.4 AC3)
                 if category == "event" and "camera_id" in details:
-                    self._last_event_delivery = LastEventDeliveryInfo(
-                        camera_id=details.get("camera_id", "unknown"),
-                        sensor_type=details.get("sensor_type", "motion"),
+                    camera_id = details.get("camera_id", "unknown")
+                    sensor_type = details.get("sensor_type", "motion")
+                    camera_name = details.get("camera_name")  # May be None
+                    delivery_info = LastEventDeliveryInfo(
+                        camera_id=camera_id,
+                        camera_name=camera_name,
+                        sensor_type=sensor_type,
                         timestamp=datetime.fromtimestamp(record.created),
                         delivered=details.get("delivered", True),
                     )
+                    self._last_event_delivery = delivery_info
+                    # Store per-sensor delivery (keyed by camera_id + sensor_type)
+                    self._sensor_deliveries[(camera_id, sensor_type)] = delivery_info
 
         except Exception:
             # Don't let diagnostic logging crash the application
@@ -188,6 +197,19 @@ class HomekitDiagnosticHandler(logging.Handler):
         with self._lock:
             return self._last_event_delivery
 
+    def get_sensor_deliveries(self) -> List[LastEventDeliveryInfo]:
+        """
+        Get per-sensor delivery history (Story P7-1.4 AC3).
+
+        Returns list of most recent delivery info for each unique camera+sensor combination,
+        sorted by timestamp (newest first).
+        """
+        with self._lock:
+            deliveries = list(self._sensor_deliveries.values())
+        # Sort by timestamp descending (newest first)
+        deliveries.sort(key=lambda d: d.timestamp, reverse=True)
+        return deliveries
+
     def clear(self) -> None:
         """Clear all diagnostic data."""
         with self._lock:
@@ -195,6 +217,7 @@ class HomekitDiagnosticHandler(logging.Handler):
             self._warnings.clear()
             self._errors.clear()
             self._last_event_delivery = None
+            self._sensor_deliveries.clear()  # Story P7-1.4
 
 
 # Global diagnostic handler instance
