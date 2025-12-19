@@ -1,0 +1,147 @@
+<story-context id="p7-4-1-design-entities-data-model" v="1.0">
+  <metadata>
+    <epicId>P7-4</epicId>
+    <storyId>P7-4.1</storyId>
+    <title>Design Entities Data Model</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-19</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p7-4-1-design-entities-data-model.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>system administrator setting up entity-based alerts</asA>
+    <iWant>a database schema for tracking recognized entities (people and vehicles) with their sighting history</iWant>
+    <soThat>future face/vehicle recognition can identify known individuals and trigger personalized alerts</soThat>
+    <tasks>
+      <task id="1" name="Extend RecognizedEntity Model">
+        <subtask>1.1 Add thumbnail_path field to RecognizedEntity model</subtask>
+        <subtask>1.2 Add notes field to RecognizedEntity model</subtask>
+        <subtask>1.3 Verify EntityEvent has all needed fields (camera_id exists via event FK)</subtask>
+        <subtask>1.4 Ensure RecognizedEntity is already registered in models/__init__.py</subtask>
+      </task>
+      <task id="2" name="Create Database Migration">
+        <subtask>2.1 Run alembic revision for new columns</subtask>
+        <subtask>2.2 Test upgrade/downgrade</subtask>
+      </task>
+      <task id="3" name="Create Pydantic Schemas">
+        <subtask>3.1 Create backend/app/schemas/entity.py with EntityCreate, EntityUpdate, EntityResponse, EntityListResponse</subtask>
+        <subtask>3.2 Add EntitySightingResponse for sighting history</subtask>
+        <subtask>3.3 Add EntityDetailResponse with recent_sightings</subtask>
+      </task>
+      <task id="4" name="Create Entity API Endpoints">
+        <subtask>4.1 Create backend/app/api/v1/entities.py router</subtask>
+        <subtask>4.2 GET /api/v1/entities - List with filters</subtask>
+        <subtask>4.3 GET /api/v1/entities/{id} - Detail with sightings</subtask>
+        <subtask>4.4 POST /api/v1/entities - Create entity</subtask>
+        <subtask>4.5 PUT /api/v1/entities/{id} - Update entity</subtask>
+        <subtask>4.6 DELETE /api/v1/entities/{id} - Delete entity</subtask>
+        <subtask>4.7 GET /api/v1/entities/{id}/thumbnail - Serve thumbnail</subtask>
+        <subtask>4.8 Register router in main.py</subtask>
+      </task>
+      <task id="5" name="Create Entity Service">
+        <subtask>5.1 Create backend/app/services/entity_service.py</subtask>
+        <subtask>5.2 Implement CRUD methods</subtask>
+        <subtask>5.3 Implement get_recent_sightings</subtask>
+        <subtask>5.4 Add search/filter logic</subtask>
+      </task>
+      <task id="6" name="Unit and Integration Tests">
+        <subtask>6.1 Test model with new fields</subtask>
+        <subtask>6.2 Test all API endpoints</subtask>
+        <subtask>6.3 Test cascade delete</subtask>
+        <subtask>6.4 Test search/filter</subtask>
+        <subtask>6.5 Test pagination</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <ac id="1">Entity model has: id, type, name, thumbnail_path, first_seen, last_seen, occurrence_count, notes - USING RecognizedEntity with extensions</ac>
+    <ac id="2">EntitySighting model has: entity_id, event_id, confidence, timestamp - USING EntityEvent which already exists</ac>
+    <ac id="3">Database migration created and tested (alembic upgrade/downgrade)</ac>
+    <ac id="4">API endpoints structure defined with Entity CRUD operations</ac>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc path="docs/sprint-artifacts/tech-spec-epic-P7-4.md" title="Epic P7-4 Technical Specification" section="Data Models and Contracts" snippet="Defines Entity and EntitySighting model schemas, API endpoints, and acceptance criteria for entities page foundation."/>
+      <doc path="docs/epics-phase7.md" title="Phase 7 Epics" section="Epic P7-4: Entities Page &amp; Alert Stub" snippet="Story P7-4.1 acceptance criteria: Create Entity model with type/name/thumbnail/etc, EntitySighting with entity_id/event_id/confidence."/>
+      <doc path="docs/architecture/06-data-architecture.md" title="Data Architecture" section="Database Schema" snippet="Shows existing table patterns for cameras, events, alert_rules. Use similar patterns for entities."/>
+    </docs>
+    <code>
+      <file path="backend/app/models/recognized_entity.py" kind="model" symbol="RecognizedEntity, EntityEvent" reason="EXISTING entity models - extend these rather than creating new Entity/EntitySighting. RecognizedEntity already has: id, entity_type, name, reference_embedding, first_seen_at, last_seen_at, occurrence_count, is_vip, is_blocked. MISSING: thumbnail_path, notes. EntityEvent already has entity_id, event_id, similarity_score, created_at."/>
+      <file path="backend/app/models/__init__.py" kind="module" symbol="RecognizedEntity, EntityEvent" reason="Model registration - RecognizedEntity and EntityEvent already registered"/>
+      <file path="backend/app/models/event.py" kind="model" symbol="Event" lines="1-131" reason="Reference for relationship patterns and column definitions"/>
+      <file path="backend/app/schemas/camera.py" kind="schema" symbol="CameraCreate, CameraUpdate, CameraResponse" reason="Pattern for Pydantic schemas with Create/Update/Response pattern"/>
+      <file path="backend/app/api/v1/cameras.py" kind="router" symbol="router" reason="Pattern for CRUD API endpoints"/>
+      <file path="backend/main.py" kind="app" symbol="app" reason="Router registration location"/>
+    </code>
+    <dependencies>
+      <python>
+        <package name="fastapi" version="0.115.0"/>
+        <package name="sqlalchemy" version="2.0.36+"/>
+        <package name="alembic" version="1.14.0+"/>
+        <package name="pydantic" version="2.10.0+"/>
+        <package name="pillow" version="10.0.0+" note="For thumbnail processing"/>
+      </python>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="architecture">Use existing RecognizedEntity model - DO NOT create duplicate Entity model</constraint>
+    <constraint type="architecture">Use existing EntityEvent model as the sighting junction table</constraint>
+    <constraint type="architecture">Entity recognition NOT implemented - CRUD only, no automatic population</constraint>
+    <constraint type="architecture">Embedding column prepared but not used until future recognition phase</constraint>
+    <constraint type="security">Thumbnail paths validated to prevent directory traversal</constraint>
+    <constraint type="naming">API endpoints at /api/v1/entities (not /api/v1/recognized_entities)</constraint>
+    <constraint type="performance">Entity list query under 200ms for 1000 entities</constraint>
+    <constraint type="testing">Follow existing pytest patterns in backend/tests/</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface name="GET /api/v1/entities" kind="REST" signature="GET /api/v1/entities?type=person&amp;search=John&amp;page=1&amp;page_size=20" path="backend/app/api/v1/entities.py">
+      Returns paginated list of entities with optional filters
+    </interface>
+    <interface name="GET /api/v1/entities/{entity_id}" kind="REST" signature="GET /api/v1/entities/{entity_id}" path="backend/app/api/v1/entities.py">
+      Returns single entity with recent sightings
+    </interface>
+    <interface name="POST /api/v1/entities" kind="REST" signature="POST /api/v1/entities" path="backend/app/api/v1/entities.py">
+      Creates new entity manually
+    </interface>
+    <interface name="PUT /api/v1/entities/{entity_id}" kind="REST" signature="PUT /api/v1/entities/{entity_id}" path="backend/app/api/v1/entities.py">
+      Updates entity name, notes, is_vip, is_blocked
+    </interface>
+    <interface name="DELETE /api/v1/entities/{entity_id}" kind="REST" signature="DELETE /api/v1/entities/{entity_id}" path="backend/app/api/v1/entities.py">
+      Deletes entity and all sightings
+    </interface>
+    <interface name="GET /api/v1/entities/{entity_id}/thumbnail" kind="REST" signature="GET /api/v1/entities/{entity_id}/thumbnail" path="backend/app/api/v1/entities.py">
+      Returns entity thumbnail as JPEG
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Use pytest for backend tests. Follow existing patterns in backend/tests/test_api/ and backend/tests/test_services/.
+      Use pytest-asyncio for async tests. Use httpx TestClient for API endpoint testing.
+      Mock database with SQLite in-memory for isolation.
+    </standards>
+    <locations>
+      <loc>backend/tests/test_api/test_entities.py</loc>
+      <loc>backend/tests/test_services/test_entity_service.py</loc>
+      <loc>backend/tests/test_models/test_entity.py</loc>
+    </locations>
+    <ideas>
+      <idea ac="1">Test RecognizedEntity model has thumbnail_path and notes columns after migration</idea>
+      <idea ac="2">Verify EntityEvent relationship to RecognizedEntity works correctly</idea>
+      <idea ac="3">Test alembic upgrade adds columns, downgrade removes them</idea>
+      <idea ac="4">Test POST /api/v1/entities creates entity with all fields</idea>
+      <idea ac="4">Test GET /api/v1/entities returns paginated list</idea>
+      <idea ac="4">Test GET /api/v1/entities?type=person filters correctly</idea>
+      <idea ac="4">Test GET /api/v1/entities?search=John matches name</idea>
+      <idea ac="4">Test GET /api/v1/entities/{id} returns entity with recent sightings</idea>
+      <idea ac="4">Test PUT /api/v1/entities/{id} updates name, notes</idea>
+      <idea ac="4">Test DELETE /api/v1/entities/{id} cascades to EntityEvent records</idea>
+      <idea ac="4">Test GET /api/v1/entities/{id}/thumbnail returns image or 404</idea>
+    </ideas>
+  </tests>
+</story-context>

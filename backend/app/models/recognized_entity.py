@@ -106,6 +106,17 @@ class RecognizedEntity(Base):
         nullable=True,
         doc="JSON object for additional entity data (color, make, vehicle type, etc.)"
     )
+    # Story P7-4.1: Additional fields for entities page
+    thumbnail_path = Column(
+        String(512),
+        nullable=True,
+        doc="Path to thumbnail image for this entity"
+    )
+    notes = Column(
+        Text,
+        nullable=True,
+        doc="User notes about this entity"
+    )
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,

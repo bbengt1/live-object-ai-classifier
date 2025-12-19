@@ -433,9 +433,13 @@ class EntityResponse(BaseModel):
     id: str = Field(description="Entity UUID")
     entity_type: str = Field(description="Entity type: person, vehicle, or unknown")
     name: Optional[str] = Field(default=None, description="User-assigned name")
+    notes: Optional[str] = Field(default=None, description="User notes about this entity")
+    thumbnail_path: Optional[str] = Field(default=None, description="Path to entity thumbnail")
     first_seen_at: datetime = Field(description="First occurrence timestamp")
     last_seen_at: datetime = Field(description="Most recent occurrence timestamp")
     occurrence_count: int = Field(description="Number of times this entity has been seen")
+    is_vip: bool = Field(default=False, description="VIP status for priority notifications")
+    is_blocked: bool = Field(default=False, description="Blocked status to suppress notifications")
 
 
 class EventSummaryForEntity(BaseModel):
@@ -448,8 +452,18 @@ class EventSummaryForEntity(BaseModel):
     similarity_score: float = Field(description="Similarity score when matched")
 
 
-class EntityDetailResponse(EntityResponse):
+class EntityDetailResponse(BaseModel):
     """Detailed entity response with recent events."""
+    id: str = Field(description="Entity UUID")
+    entity_type: str = Field(description="Entity type: person, vehicle, or unknown")
+    name: Optional[str] = Field(default=None, description="User-assigned name")
+    notes: Optional[str] = Field(default=None, description="User notes about this entity")
+    thumbnail_path: Optional[str] = Field(default=None, description="Path to entity thumbnail")
+    first_seen_at: datetime = Field(description="First occurrence timestamp")
+    last_seen_at: datetime = Field(description="Most recent occurrence timestamp")
+    occurrence_count: int = Field(description="Number of times this entity has been seen")
+    is_vip: bool = Field(default=False, description="VIP status for priority notifications")
+    is_blocked: bool = Field(default=False, description="Blocked status to suppress notifications")
     created_at: datetime = Field(description="Record creation timestamp")
     updated_at: datetime = Field(description="Record update timestamp")
     recent_events: list[EventSummaryForEntity] = Field(
@@ -464,12 +478,48 @@ class EntityListResponse(BaseModel):
     total: int = Field(description="Total entity count")
 
 
+class EntityCreateRequest(BaseModel):
+    """Request model for creating an entity (Story P7-4.1)."""
+    entity_type: str = Field(
+        description="Entity type: person, vehicle, or unknown"
+    )
+    name: Optional[str] = Field(
+        default=None,
+        max_length=255,
+        description="Name for the entity"
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Notes about this entity"
+    )
+    is_vip: bool = Field(
+        default=False,
+        description="VIP status for priority notifications"
+    )
+    is_blocked: bool = Field(
+        default=False,
+        description="Blocked status to suppress notifications"
+    )
+
+
 class EntityUpdateRequest(BaseModel):
     """Request model for updating an entity."""
     name: Optional[str] = Field(
         default=None,
         max_length=255,
         description="New name for the entity"
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Notes about this entity"
+    )
+    is_vip: Optional[bool] = Field(
+        default=None,
+        description="VIP status for priority notifications"
+    )
+    is_blocked: Optional[bool] = Field(
+        default=None,
+        description="Blocked status to suppress notifications"
     )
 
 
@@ -527,6 +577,55 @@ async def list_entities(
     return EntityListResponse(
         entities=[EntityResponse(**e) for e in entities],
         total=total,
+    )
+
+
+@router.post("/entities", response_model=EntityDetailResponse, status_code=201)
+async def create_entity(
+    request: EntityCreateRequest,
+    db: Session = Depends(get_db),
+    entity_service: EntityService = Depends(get_entity_service),
+):
+    """
+    Create a new entity manually.
+
+    Story P7-4.1: Design Entities Data Model (AC4)
+
+    Allows manual creation of entities (person, vehicle) before automatic
+    recognition assigns them. Useful for pre-registering known individuals
+    or vehicles.
+
+    Args:
+        request: Entity creation parameters
+        db: Database session
+        entity_service: Entity service instance
+
+    Returns:
+        EntityDetailResponse with created entity details
+    """
+    entity = await entity_service.create_entity(
+        db=db,
+        entity_type=request.entity_type,
+        name=request.name,
+        notes=request.notes,
+        is_vip=request.is_vip,
+        is_blocked=request.is_blocked,
+    )
+
+    return EntityDetailResponse(
+        id=entity["id"],
+        entity_type=entity["entity_type"],
+        name=entity["name"],
+        notes=entity["notes"],
+        thumbnail_path=entity["thumbnail_path"],
+        first_seen_at=entity["first_seen_at"],
+        last_seen_at=entity["last_seen_at"],
+        occurrence_count=entity["occurrence_count"],
+        is_vip=entity["is_vip"],
+        is_blocked=entity["is_blocked"],
+        created_at=entity["created_at"],
+        updated_at=entity["updated_at"],
+        recent_events=[],
     )
 
 
@@ -701,9 +800,13 @@ async def get_entity(
         id=entity["id"],
         entity_type=entity["entity_type"],
         name=entity["name"],
+        notes=entity.get("notes"),
+        thumbnail_path=entity.get("thumbnail_path"),
         first_seen_at=entity["first_seen_at"],
         last_seen_at=entity["last_seen_at"],
         occurrence_count=entity["occurrence_count"],
+        is_vip=entity.get("is_vip", False),
+        is_blocked=entity.get("is_blocked", False),
         created_at=entity["created_at"],
         updated_at=entity["updated_at"],
         recent_events=[
@@ -720,6 +823,62 @@ async def get_entity(
     )
 
 
+@router.get("/entities/{entity_id}/thumbnail")
+async def get_entity_thumbnail(
+    entity_id: str,
+    db: Session = Depends(get_db),
+    entity_service: EntityService = Depends(get_entity_service),
+):
+    """
+    Get thumbnail image for an entity.
+
+    Story P7-4.1: Design Entities Data Model (AC4)
+
+    Returns the entity's thumbnail image as JPEG. If no thumbnail exists,
+    returns 404.
+
+    Args:
+        entity_id: UUID of the entity
+        db: Database session
+        entity_service: Entity service instance
+
+    Returns:
+        JPEG image response
+
+    Raises:
+        404: If entity not found or has no thumbnail
+    """
+    from fastapi.responses import FileResponse
+
+    thumbnail_path = await entity_service.get_entity_thumbnail_path(db, entity_id)
+
+    if not thumbnail_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Entity not found or has no thumbnail"
+        )
+
+    # Validate path to prevent directory traversal
+    if ".." in thumbnail_path:
+        raise HTTPException(status_code=400, detail="Invalid thumbnail path")
+
+    # Resolve to full path if needed
+    import os
+    if not os.path.isabs(thumbnail_path):
+        # Assume relative to data directory
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        thumbnail_path = os.path.join(base_path, "data", thumbnail_path)
+
+    if not os.path.exists(thumbnail_path):
+        raise HTTPException(status_code=404, detail="Thumbnail file not found")
+
+    return FileResponse(
+        thumbnail_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "max-age=3600"}
+    )
+
+
 @router.put("/entities/{entity_id}", response_model=EntityResponse)
 async def update_entity(
     entity_id: str,
@@ -728,16 +887,17 @@ async def update_entity(
     entity_service: EntityService = Depends(get_entity_service),
 ):
     """
-    Update an entity's name.
+    Update an entity's name, notes, or status.
 
     Story P4-3.3: Recurring Visitor Detection (AC9)
+    Story P7-4.1: Design Entities Data Model (AC4)
 
-    Allows users to assign a name to an entity, e.g., "Mail Carrier",
-    "Neighbor Bob", "Amazon Van".
+    Allows users to update entity properties including name, notes,
+    VIP status, and blocked status.
 
     Args:
         entity_id: UUID of the entity
-        request: Update request with new name
+        request: Update request with new values
         db: Database session
         entity_service: Entity service instance
 
@@ -751,6 +911,9 @@ async def update_entity(
         db=db,
         entity_id=entity_id,
         name=request.name,
+        notes=request.notes,
+        is_vip=request.is_vip,
+        is_blocked=request.is_blocked,
     )
 
     if not entity:
