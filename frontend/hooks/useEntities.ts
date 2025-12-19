@@ -37,10 +37,10 @@ export function useEntities(params: UseEntitiesParams = {}) {
  * @param eventLimit Maximum number of recent events to include
  * @returns Query result with entity detail
  */
-export function useEntity(entityId: string | null, eventLimit?: number) {
+export function useEntity(entityId: string | null, _eventLimit?: number) {
   return useQuery({
-    queryKey: ['entities', entityId, eventLimit],
-    queryFn: () => entityId ? apiClient.entities.getById(entityId, eventLimit) : null,
+    queryKey: ['entities', entityId],
+    queryFn: () => entityId ? apiClient.entities.get(entityId) : null,
     enabled: !!entityId,
     staleTime: 30000,
   });

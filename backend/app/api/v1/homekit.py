@@ -1,5 +1,5 @@
 """
-HomeKit API endpoints (Story P5-1.1, P5-1.8, P7-1.1)
+HomeKit API endpoints (Story P5-1.1, P5-1.8, P7-1.1, P7-1.2)
 
 Endpoints for HomeKit bridge configuration and management:
 - GET /api/v1/homekit/status - Get HomeKit bridge status
@@ -10,6 +10,7 @@ Endpoints for HomeKit bridge configuration and management:
 - GET /api/v1/homekit/pairings - List paired devices (Story P5-1.8)
 - DELETE /api/v1/homekit/pairings/{id} - Remove specific pairing (Story P5-1.8)
 - GET /api/v1/homekit/diagnostics - Get diagnostic info (Story P7-1.1)
+- POST /api/v1/homekit/test-connectivity - Test mDNS and port accessibility (Story P7-1.2)
 """
 import logging
 from typing import Optional, List
@@ -24,9 +25,7 @@ from app.models.homekit import HomeKitConfig, HomeKitAccessory
 from app.models.camera import Camera
 from app.services.homekit_service import get_homekit_service, HomekitStatus
 from app.config.homekit import generate_pincode
-from app.schemas.homekit_diagnostics import HomeKitDiagnosticsResponse
-from app.schemas.homekit_connectivity import HomeKitConnectivityResponse
-from app.schemas.homekit_test_event import HomeKitTestEventRequest, HomeKitTestEventResponse
+from app.schemas.homekit_diagnostics import HomeKitDiagnosticsResponse, HomeKitConnectivityTestResponse
 
 logger = logging.getLogger(__name__)
 
@@ -667,52 +666,6 @@ async def remove_pairing(pairing_id: str):
 
 
 # ============================================================================
-# Connectivity Test Endpoint (Story P7-1.2)
-# ============================================================================
-
-
-@router.post("/test-connectivity", response_model=HomeKitConnectivityResponse)
-async def test_connectivity():
-    """
-    Test HomeKit bridge connectivity (Story P7-1.2 AC1, AC2, AC6).
-
-    Performs connectivity checks to help troubleshoot HomeKit discovery issues:
-    - mDNS service visibility (Bonjour/Avahi)
-    - HAP port accessibility
-    - Firewall or network configuration issues
-
-    Returns diagnostic data including:
-    - Whether the HomeKit service is visible via mDNS
-    - Whether the HAP port is accessible
-    - List of detected issues and troubleshooting hints
-
-    Note: This test may take 2-3 seconds as it performs network checks.
-    """
-    try:
-        service = get_homekit_service()
-        result = await service.test_connectivity()
-
-        logger.info(
-            "HomeKit connectivity test completed",
-            extra={
-                "event_type": "homekit_connectivity_test",
-                "mdns_visible": result.mdns_visible,
-                "port_accessible": result.port_accessible,
-                "issues_count": len(result.firewall_issues)
-            }
-        )
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Failed to run connectivity test: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to run connectivity test: {str(e)}"
-        )
-
-
-# ============================================================================
 # Diagnostics Endpoint (Story P7-1.1)
 # ============================================================================
 
@@ -756,89 +709,47 @@ async def get_diagnostics():
 
 
 # ============================================================================
-# Test Event Endpoint (Story P7-1.3)
+# Connectivity Test Endpoint (Story P7-1.2)
 # ============================================================================
 
 
-@router.post("/test-event", response_model=HomeKitTestEventResponse)
-async def trigger_test_event(
-    request: HomeKitTestEventRequest,
-    db: Session = Depends(get_db)
-):
+@router.post("/test-connectivity", response_model=HomeKitConnectivityTestResponse)
+async def test_connectivity():
     """
-    Trigger a test HomeKit event for debugging (Story P7-1.3 AC5).
+    Test HomeKit bridge connectivity for troubleshooting (Story P7-1.2 AC1, AC2, AC6).
 
-    Manually triggers a motion, occupancy, vehicle, animal, package, or doorbell
-    event for the specified camera. This helps verify that HomeKit event delivery
-    is working correctly on all paired iOS devices.
+    Performs the following tests:
+    - mDNS visibility: Checks if the _hap._tcp service is discoverable via Bonjour/mDNS
+    - Port accessibility: Tests if the HAP port (default 51826) is reachable
 
-    Args:
-        request: Contains camera_id and event_type to trigger
+    Returns diagnostic information including:
+    - mdns_visible: Whether the service was discovered
+    - discovered_as: The service name as discovered (e.g., 'ArgusAI._hap._tcp.local')
+    - port_accessible: Whether TCP connection to HAP port succeeded
+    - firewall_issues: List of detected network/firewall problems
+    - recommendations: Troubleshooting suggestions
 
-    Returns:
-        HomeKitTestEventResponse with success status and delivery confirmation
-
-    Raises:
-        404: Camera not found
-        400: HomeKit not enabled for camera or bridge not running
-        422: Invalid event_type
+    Note: This test takes approximately 3-5 seconds due to mDNS discovery timeout.
     """
     try:
-        # Validate camera exists
-        camera = db.query(Camera).filter(Camera.id == request.camera_id).first()
-        if not camera:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Camera not found: {request.camera_id}"
-            )
-
-        # Get HomeKit service
         service = get_homekit_service()
-
-        # Check if bridge is running
-        if not service.is_running:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="HomeKit bridge is not running. Enable HomeKit first."
-            )
-
-        # Trigger the appropriate event type
-        result = service.trigger_test_event(
-            camera_id=request.camera_id,
-            event_type=request.event_type
-        )
-
-        if not result["success"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=result["message"]
-            )
+        result = await service.test_connectivity()
 
         logger.info(
-            f"Test event triggered: {request.event_type} for camera {camera.name}",
+            "HomeKit connectivity test completed",
             extra={
-                "event_type": "homekit_test_event",
-                "camera_id": request.camera_id,
-                "test_event_type": request.event_type,
-                "sensor_name": result.get("sensor_name"),
-                "delivered_to_clients": result.get("delivered_to_clients", 0)
+                "event_type": "homekit_connectivity_test",
+                "mdns_visible": result.mdns_visible,
+                "port_accessible": result.port_accessible,
+                "test_duration_ms": result.test_duration_ms
             }
         )
 
-        return HomeKitTestEventResponse(
-            success=True,
-            message=result["message"],
-            camera_id=request.camera_id,
-            event_type=request.event_type,
-            sensor_name=result.get("sensor_name"),
-            delivered_to_clients=result.get("delivered_to_clients", 0)
-        )
+        return result
 
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Failed to trigger test event: {e}", exc_info=True)
+        logger.error(f"Failed to test HomeKit connectivity: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to trigger test event: {str(e)}"
+            detail=f"Failed to test connectivity: {str(e)}"
         )

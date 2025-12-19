@@ -55,12 +55,12 @@ export function useCameras(
     setError(null);
 
     try {
-      const filters = options.is_enabled !== undefined
-        ? { is_enabled: options.is_enabled }
-        : undefined;
-
-      const data = await apiClient.cameras.list(filters);
-      setCameras(data);
+      const data = await apiClient.cameras.list();
+      // Client-side filtering if is_enabled option is specified
+      const filteredData = options.is_enabled !== undefined
+        ? data.filter(cam => cam.is_enabled === options.is_enabled)
+        : data;
+      setCameras(filteredData);
     } catch (err) {
       const errorMessage =
         err instanceof ApiError

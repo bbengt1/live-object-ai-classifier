@@ -1,236 +1,351 @@
 # HomeKit Troubleshooting Guide
 
-This guide helps resolve common HomeKit discovery and pairing issues with ArgusAI.
+This guide covers common issues and solutions when integrating ArgusAI with Apple HomeKit (Story P7-1.2).
 
-## Quick Diagnostics
+## Table of Contents
 
-ArgusAI includes a built-in connectivity test accessible from **Settings > HomeKit > Diagnostics > Test Discovery**. This test checks:
+- [Discovery Issues](#discovery-issues)
+- [Pairing Problems](#pairing-problems)
+- [Event Delivery Issues](#event-delivery-issues)
+- [Network Configuration](#network-configuration)
+- [Firewall Requirements](#firewall-requirements)
+- [Diagnostic Tools](#diagnostic-tools)
 
-- **mDNS Visibility**: Whether the HomeKit bridge is discoverable via Bonjour/Avahi
-- **Port Accessibility**: Whether the HAP server port (default 51826) is reachable
-- **Firewall Issues**: Detects common network configuration problems
-- **Troubleshooting Hints**: Provides specific recommendations based on test results
+---
 
-## Common Issues
+## Discovery Issues
 
-### 1. Bridge Not Appearing in Apple Home App
-
-**Symptoms:**
-- HomeKit shows as "Running" in ArgusAI but doesn't appear in Home app
-- "Add Accessory" scan finds nothing
-
-**Causes & Solutions:**
-
-#### mDNS/Bonjour Not Working
-
-The Home app uses mDNS (Bonjour on macOS/iOS, Avahi on Linux) to discover accessories.
-
-**Linux (Ubuntu/Debian):**
-```bash
-# Install Avahi
-sudo apt install avahi-daemon
-
-# Check if Avahi is running
-systemctl status avahi-daemon
-
-# Start if not running
-sudo systemctl enable --now avahi-daemon
-```
-
-**Docker:**
-If running ArgusAI in Docker, mDNS requires host network mode:
-```yaml
-services:
-  argusai:
-    network_mode: host
-```
-
-Or explicitly expose mDNS multicast:
-```yaml
-services:
-  argusai:
-    ports:
-      - "51826:51826"
-    # mDNS multicast must be allowed through host
-```
-
-#### Firewall Blocking mDNS
-
-mDNS uses UDP multicast on port 5353 (address 224.0.0.251).
-
-**Linux (UFW):**
-```bash
-# Allow mDNS
-sudo ufw allow 5353/udp
-```
-
-**Linux (firewalld):**
-```bash
-# Allow mDNS
-sudo firewall-cmd --permanent --add-service=mdns
-sudo firewall-cmd --reload
-```
-
-**macOS:**
-mDNS (Bonjour) is typically allowed by default. Check System Preferences > Security & Privacy > Firewall if issues persist.
-
-### 2. "Unable to Add Accessory" After Scanning Code
+### Home App Can't Find ArgusAI Bridge
 
 **Symptoms:**
-- Bridge appears in Home app
-- Pairing code is entered or QR scanned
-- Pairing fails with "Unable to Add Accessory"
+- Apple Home app shows "No accessories found"
+- QR code scan times out
+- Manual code entry fails
 
-**Causes & Solutions:**
+**Solutions:**
 
-#### HAP Port Blocked
+1. **Check mDNS/Bonjour service**
+   - HomeKit uses mDNS (Bonjour) for device discovery
+   - Verify mDNS is working on your network
 
-The HAP server port (default 51826) must be accessible.
+   ```bash
+   # macOS - Check for HAP services
+   dns-sd -B _hap._tcp
 
-```bash
-# Check if port is open and listening
-netstat -tlnp | grep 51826
-# or
-ss -tlnp | grep 51826
-```
+   # Linux - Check for HAP services
+   avahi-browse -a | grep hap
+   ```
 
-**Open the port:**
-```bash
-# UFW
-sudo ufw allow 51826/tcp
+2. **Verify HomeKit bridge is running**
+   - Check Settings > HomeKit in ArgusAI web UI
+   - Bridge status should show "Running"
+   - Use the "Test Connectivity" button
 
-# firewalld
-sudo firewall-cmd --permanent --add-port=51826/tcp
-sudo firewall-cmd --reload
-```
+3. **Check network isolation**
+   - iOS device must be on the same network subnet as ArgusAI
+   - Some routers isolate devices - check "AP isolation" or "Client isolation" settings
+   - Guest networks often block mDNS
 
-#### Bind Address Set to Localhost
+4. **Restart the HomeKit bridge**
+   - Toggle HomeKit off, wait 5 seconds, toggle back on
+   - This restarts mDNS advertisement
 
-If `bind_address` is set to `127.0.0.1`, the server only accepts local connections.
-
-**Check in ArgusAI:**
-1. Go to Settings > HomeKit > Diagnostics
-2. Look at "Network Binding" - should show `0.0.0.0:51826`
-
-**Fix:** The connectivity test will flag this. Update your HomeKit configuration to use `0.0.0.0` as the bind address.
-
-#### Previous Pairing Data Conflicts
-
-If you've previously paired and reset, stale pairing data may cause issues.
-
-**Solution:**
-1. Go to Settings > HomeKit
-2. Click "Reset Pairing"
-3. Remove ArgusAI from Apple Home app (if present)
-4. Re-pair with the new code
-
-### 3. Accessories Show "No Response"
+### Bridge Discovered But Pairing Fails
 
 **Symptoms:**
-- Bridge paired successfully
+- Home app finds the bridge
+- Pairing code rejected or times out
+
+**Solutions:**
+
+1. **Verify pairing code**
+   - Double-check the 8-digit code matches exactly
+   - Use the QR code if available for reliable scanning
+
+2. **Reset pairing state**
+   - Click "Reset Pairing" in HomeKit settings
+   - This generates a new pairing code
+   - Re-pair with the new code
+
+3. **Check for duplicate bridge names**
+   - If you have another HomeKit bridge with the same name, conflicts can occur
+   - Change the bridge name in settings
+
+---
+
+## Pairing Problems
+
+### "Accessory Already Paired" Error
+
+**Symptoms:**
+- Home app says accessory is already paired
+- But no pairing exists in current Home
+
+**Solutions:**
+
+1. **Reset HomeKit pairing**
+   - Go to Settings > HomeKit in ArgusAI
+   - Click "Reset Pairing"
+   - This clears the accessory state file
+
+2. **Remove from another Home**
+   - If previously paired to a different Apple Home
+   - You must remove it from that Home first
+   - Or reset pairing on ArgusAI side
+
+### Pairing Keeps Disconnecting
+
+**Symptoms:**
+- Pairing succeeds but disconnects after a while
 - Sensors show "No Response" in Home app
 
-**Causes & Solutions:**
+**Solutions:**
 
-#### HomeKit Bridge Stopped
+1. **Check network stability**
+   - Ensure ArgusAI server has stable network
+   - Check for IP address changes (use static IP)
 
-Check if the bridge is still running:
-1. Go to Settings > HomeKit
-2. Verify status shows "Running" (green badge)
+2. **Verify port accessibility**
+   - TCP port 51826 must be accessible continuously
+   - See [Firewall Requirements](#firewall-requirements)
 
-If stopped, toggle "Enable HomeKit" off and back on.
+3. **Check server resources**
+   - HomeKit bridge runs in a background thread
+   - Ensure server has adequate CPU/memory
 
-#### Network Change
+---
 
-If the server's IP changed, Home app may lose connection.
+## Event Delivery Issues
 
-**Solution:**
-Reset the HomeKit pairing and re-add to Home app.
-
-#### Docker Container Network Mode
-
-If using bridge network mode in Docker, the container IP may not be reachable from iOS devices.
-
-**Solution:** Use `network_mode: host` or ensure proper port forwarding.
-
-### 4. Events Not Triggering in Home App
+### Motion Events Not Triggering
 
 **Symptoms:**
-- Bridge running and paired
-- Motion detected in ArgusAI
-- Home app automations don't trigger
+- Motion detected in ArgusAI events
+- HomeKit automations don't trigger
+- Sensors show stale state
 
-**Causes & Solutions:**
+**Solutions:**
 
-#### Check Last Event Delivery
+1. **Check camera-sensor mapping**
+   - Verify cameras are enabled for HomeKit
+   - Each camera creates a motion sensor
 
-1. Go to Settings > HomeKit > Diagnostics
-2. Look at "Last Event Delivery" section
-3. Verify events show "Delivered" status
+2. **Verify event processing**
+   - Check HomeKit diagnostics panel
+   - Look for "Last Event Delivery" timestamp
+   - Ensure events are reaching the HomeKit service
 
-#### Home App Automation Settings
+3. **Check automation configuration**
+   - In Home app, verify automation is enabled
+   - Test by manually triggering (if possible)
 
-Ensure automations are properly configured in Apple Home app:
-1. Open Home app > Automations
-2. Verify triggers are set for ArgusAI sensors
-3. Check if automations are enabled
+### Events Delayed
 
-#### Connected Clients
+**Symptoms:**
+- Motion events arrive late in HomeKit
+- Automations trigger seconds after actual motion
 
-Check "Connected Clients" in diagnostics. If 0 when Home app should be connected:
-1. Force-quit Home app on iOS
-2. Re-open and wait for connection
-3. Check diagnostics again
+**Solutions:**
 
-## Network Configuration Reference
+1. **Normal latency**
+   - Some delay is normal (1-3 seconds typical)
+   - AI description takes ~1-2 seconds
+   - Event propagation adds small overhead
+
+2. **Reduce processing time**
+   - Use faster AI provider
+   - Consider disabling AI descriptions for HomeKit-only events
+
+---
+
+## Network Configuration
+
+### Binding to Specific IP Address
+
+For multi-homed servers or Docker deployments, you may need to bind to a specific IP:
+
+**Environment Variable:**
+```bash
+HOMEKIT_BIND_ADDRESS=192.168.1.100
+```
+
+**Use Cases:**
+- Docker containers with multiple networks
+- Servers with multiple NICs
+- VPN setups where default route isn't optimal
+
+### mDNS Interface Configuration
+
+If mDNS advertisement isn't working on the correct interface:
+
+**Environment Variable:**
+```bash
+HOMEKIT_MDNS_INTERFACE=eth0
+```
+
+**Note:** This is rarely needed. Only use if auto-detection fails.
+
+---
+
+## Firewall Requirements
+
+HomeKit requires specific ports to be open:
 
 ### Required Ports
 
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 51826 | TCP | HAP server (configurable) |
-| 5353 | UDP | mDNS discovery (Bonjour/Avahi) |
+| Port | Protocol | Purpose | Notes |
+|------|----------|---------|-------|
+| 5353 | UDP | mDNS/Bonjour | Multicast discovery |
+| 51826 | TCP | HAP protocol | Default HomeKit port |
 
-### mDNS Multicast
+### Firewall Configuration Commands
 
-mDNS uses multicast address `224.0.0.251` on port 5353. This must be allowed through any firewalls between ArgusAI and iOS devices.
+#### Linux (ufw)
+```bash
+# Allow mDNS multicast
+sudo ufw allow 5353/udp comment 'mDNS for HomeKit'
 
-### Recommended Bind Address
+# Allow HomeKit HAP port
+sudo ufw allow 51826/tcp comment 'HomeKit HAP'
 
-Use `0.0.0.0` to bind to all interfaces, or specify a specific network interface IP if you want to restrict access.
+# Verify rules
+sudo ufw status numbered
+```
 
-## Getting Additional Help
+#### Linux (iptables)
+```bash
+# Allow mDNS multicast
+sudo iptables -A INPUT -p udp --dport 5353 -j ACCEPT
 
-### Diagnostic Logs
+# Allow HomeKit HAP port
+sudo iptables -A INPUT -p tcp --dport 51826 -j ACCEPT
 
-1. Go to Settings > HomeKit > Diagnostics
-2. Review recent logs for errors
-3. Filter by category: lifecycle, pairing, event, network, mdns
+# Save rules (Debian/Ubuntu)
+sudo iptables-save > /etc/iptables/rules.v4
+```
 
-### Log Levels
+#### Linux (firewalld)
+```bash
+# Allow mDNS
+sudo firewall-cmd --permanent --add-service=mdns
 
-- **Debug**: Detailed operational info
-- **Info**: Normal operations
-- **Warning**: Potential issues (yellow)
-- **Error**: Failures (red)
+# Allow HomeKit HAP port
+sudo firewall-cmd --permanent --add-port=51826/tcp
 
-### Collecting Debug Information
+# Reload
+sudo firewall-cmd --reload
+```
 
-When reporting issues, include:
-1. Connectivity test results
-2. Recent diagnostic logs (filtered by errors/warnings)
-3. Your deployment method (native, Docker, etc.)
-4. Operating system and version
-5. Network configuration (VM, Docker network mode, etc.)
+#### macOS
+```bash
+# macOS firewall is typically configured through System Settings
+# If using app-level firewall, ensure ArgusAI is allowed
 
-## Quick Checklist
+# Check if mDNSResponder is running
+launchctl list | grep mDNSResponder
+```
 
-Before seeking help, verify:
+#### Docker
+```yaml
+# docker-compose.yml
+services:
+  argusai:
+    ports:
+      - "51826:51826"       # HomeKit HAP
+      - "5353:5353/udp"     # mDNS (optional - host network may be needed)
 
-- [ ] HomeKit is enabled and running (green "Running" badge)
-- [ ] Avahi/Bonjour daemon is running
-- [ ] Port 51826 (TCP) is open in firewall
-- [ ] Port 5353 (UDP/mDNS) is allowed
-- [ ] Bind address is `0.0.0.0` (not `127.0.0.1`)
-- [ ] iOS device is on same network as ArgusAI
-- [ ] "Test Discovery" shows all green checks
+    # For mDNS, host network is often more reliable:
+    # network_mode: host
+```
+
+### Router/Network Level
+
+- **AP Isolation**: Must be disabled for HomeKit discovery
+- **mDNS Reflector**: Enable if running VLANs
+- **IGMP Snooping**: Can affect multicast; test if issues persist
+
+---
+
+## Diagnostic Tools
+
+### Built-in Diagnostics
+
+1. **HomeKit Diagnostics Panel**
+   - Settings > HomeKit > Diagnostics (collapsible)
+   - Shows bridge status, mDNS advertising, connected clients
+   - Recent logs with timestamp and category
+
+2. **Connectivity Test Button**
+   - Click "Test Connectivity" in HomeKit settings
+   - Tests mDNS visibility and port accessibility
+   - Shows specific firewall issues and recommendations
+
+### Command-Line Tools
+
+#### macOS
+```bash
+# Discover all HAP services
+dns-sd -B _hap._tcp
+
+# Get detailed service info
+dns-sd -L "ArgusAI" _hap._tcp
+
+# Browse all Bonjour services
+dns-sd -B _services._dns-sd._udp
+```
+
+#### Linux
+```bash
+# Discover HAP services (requires avahi-utils)
+avahi-browse -r _hap._tcp
+
+# Check avahi daemon status
+systemctl status avahi-daemon
+
+# View all mDNS advertisements
+avahi-browse -a
+```
+
+### Python Debug Script
+
+```python
+# test_homekit_discovery.py
+from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
+
+class MyListener(ServiceListener):
+    def add_service(self, zc, type_, name):
+        print(f"Found: {name}")
+        info = zc.get_service_info(type_, name)
+        if info:
+            print(f"  Address: {info.parsed_addresses()}")
+            print(f"  Port: {info.port}")
+
+zc = Zeroconf()
+browser = ServiceBrowser(zc, "_hap._tcp.local.", MyListener())
+input("Press Enter to exit...\n")
+zc.close()
+```
+
+---
+
+## Common Error Messages
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| "mDNS service not visible" | UDP 5353 blocked or avahi not running | Open firewall, start mDNS daemon |
+| "TCP port not accessible" | Port 51826 blocked | Open firewall, check bind address |
+| "HAP-python not installed" | Missing dependency | `pip install HAP-python` |
+| "zeroconf library not installed" | Missing test dependency | `pip install zeroconf` |
+| "No Response" in Home app | Bridge offline or network issue | Check server status, restart bridge |
+
+---
+
+## Getting Help
+
+If issues persist after following this guide:
+
+1. Check HomeKit diagnostics panel for recent errors
+2. Review backend logs for HomeKit-related entries
+3. Run connectivity test and note all issues
+4. Verify all firewall ports are open
+5. File an issue with diagnostic information

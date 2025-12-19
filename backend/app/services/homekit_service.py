@@ -1,5 +1,5 @@
 """
-HomeKit service for Apple Home integration (Story P4-6.1, P4-6.2, P5-1.2, P5-1.3, P5-1.5, P5-1.6, P5-1.7, P7-1.1)
+HomeKit service for Apple Home integration (Story P4-6.1, P4-6.2, P5-1.2, P5-1.3, P5-1.5, P5-1.6, P5-1.7, P7-1.1, P7-1.2)
 
 Manages the HAP-python accessory server and exposes cameras as motion sensors.
 Story P4-6.2 adds motion event triggering with auto-reset timers.
@@ -9,6 +9,7 @@ Story P5-1.5 adds occupancy sensors for person-only detection with 5-minute time
 Story P5-1.6 adds vehicle/animal/package sensors for detection-type-specific automations.
 Story P5-1.7 adds doorbell sensors for Protect doorbell ring events.
 Story P7-1.1 adds comprehensive diagnostic logging for troubleshooting.
+Story P7-1.2 adds network binding configuration and connectivity testing.
 """
 import asyncio
 import logging
@@ -68,9 +69,6 @@ from app.services.homekit_diagnostics import (
 from app.schemas.homekit_diagnostics import (
     HomeKitDiagnosticsResponse,
     NetworkBindingInfo,
-)
-from app.schemas.homekit_connectivity import (
-    HomeKitConnectivityResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -360,136 +358,130 @@ class HomekitService:
             errors=self._diagnostic_handler.get_errors(),
         )
 
-    async def test_connectivity(self) -> HomeKitConnectivityResponse:
+    async def test_connectivity(self) -> "HomeKitConnectivityTestResponse":
         """
         Test HomeKit bridge connectivity (Story P7-1.2 AC1, AC2, AC6).
 
-        Checks:
-        - mDNS service visibility using zeroconf
-        - HAP port accessibility
-        - Firewall or network configuration issues
+        Performs:
+        1. mDNS visibility check using zeroconf ServiceBrowser
+        2. Port accessibility test (TCP connection to HAP port)
+        3. Generates troubleshooting recommendations
 
         Returns:
-            HomeKitConnectivityResponse with test results and troubleshooting hints
+            HomeKitConnectivityTestResponse with test results
         """
-        from datetime import datetime
+        import time
         import socket
+        from app.schemas.homekit_diagnostics import HomeKitConnectivityTestResponse
 
+        start_time = time.time()
         mdns_visible = False
-        discovered_as = None
+        discovered_as: Optional[str] = None
         port_accessible = False
-        firewall_issues = []
-        troubleshooting_hints = []
+        firewall_issues: List[str] = []
+        recommendations: List[str] = []
 
-        bind_address = self.config.bind_address
-        port = self.config.port
-        bridge_name = self.config.bridge_name
-
-        # Check if service is running first
-        if not self.is_running:
-            firewall_issues.append("HomeKit bridge is not running")
-            troubleshooting_hints.append("Enable HomeKit in Settings and ensure the bridge starts successfully")
-
-        # Test mDNS visibility using zeroconf
+        # Test 1: mDNS visibility check
         try:
-            from zeroconf import Zeroconf, ServiceBrowser
+            from zeroconf import Zeroconf, ServiceBrowser, ServiceListener
 
-            # Create a short-lived service browser to check for _hap._tcp services
-            discovered_services = []
+            class HapServiceListener(ServiceListener):
+                def __init__(self):
+                    self.services: List[str] = []
 
-            class ServiceListener:
-                def add_service(self, zc, type_, name):
-                    discovered_services.append(name)
+                def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+                    self.services.append(name)
 
-                def remove_service(self, zc, type_, name):
+                def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
                     pass
 
-                def update_service(self, zc, type_, name):
+                def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
                     pass
 
             zc = Zeroconf()
-            try:
-                listener = ServiceListener()
-                browser = ServiceBrowser(zc, "_hap._tcp.local.", listener)
+            listener = HapServiceListener()
+            browser = ServiceBrowser(zc, "_hap._tcp.local.", listener)
 
-                # Wait briefly for service discovery
-                await asyncio.sleep(2.0)
+            # Wait up to 3 seconds for service discovery
+            await asyncio.sleep(3)
 
-                # Check if our bridge was discovered
-                expected_name = f"{bridge_name}._hap._tcp.local."
-                for service in discovered_services:
-                    if bridge_name.lower() in service.lower():
-                        mdns_visible = True
-                        discovered_as = service
-                        break
+            # Check if our bridge name appears in discovered services
+            bridge_name = self.config.bridge_name
+            for service_name in listener.services:
+                if bridge_name.lower() in service_name.lower():
+                    mdns_visible = True
+                    discovered_as = service_name
+                    break
 
-                if not mdns_visible and self.is_running:
-                    firewall_issues.append("mDNS service not visible - check UDP port 5353")
-                    troubleshooting_hints.append(
-                        "Ensure UDP port 5353 is open for mDNS/Bonjour. "
-                        "On Linux: sudo ufw allow 5353/udp. "
-                        "On macOS: Check System Preferences > Security > Firewall"
-                    )
-            finally:
-                zc.close()
+            browser.cancel()
+            zc.close()
+
+            if not mdns_visible:
+                firewall_issues.append("mDNS service not visible - check UDP port 5353")
+                recommendations.append("Ensure UDP port 5353 is open for mDNS multicast")
+                recommendations.append("Check that avahi-daemon (Linux) or mDNSResponder (macOS) is running")
 
         except ImportError:
-            firewall_issues.append("zeroconf library not available for mDNS check")
-            troubleshooting_hints.append("mDNS check requires zeroconf library (bundled with HAP-python)")
+            firewall_issues.append("zeroconf library not installed")
+            recommendations.append("Install zeroconf: pip install zeroconf")
         except Exception as e:
-            logger.warning(f"mDNS check failed: {e}", extra={"diagnostic_category": "mdns"})
-            firewall_issues.append(f"mDNS check error: {str(e)}")
+            logger.warning(f"mDNS test failed: {e}", extra={"diagnostic_category": "mdns"})
+            firewall_issues.append(f"mDNS test error: {str(e)}")
 
-        # Test TCP port accessibility
+        # Test 2: Port accessibility check
         try:
-            # Determine which address to test
-            test_address = "127.0.0.1" if bind_address == "0.0.0.0" else bind_address
+            bind_address = self.config.bind_address
+            test_host = "127.0.0.1" if bind_address == "0.0.0.0" else bind_address
+            test_port = self.config.port
 
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2.0)
-            result = sock.connect_ex((test_address, port))
+            sock.settimeout(2)
+            result = sock.connect_ex((test_host, test_port))
             sock.close()
 
             if result == 0:
                 port_accessible = True
             else:
-                firewall_issues.append(f"TCP port {port} not accessible on {test_address}")
-                troubleshooting_hints.append(
-                    f"Ensure TCP port {port} is open. "
-                    f"On Linux: sudo ufw allow {port}/tcp. "
-                    f"Verify no other service is using port {port}"
-                )
-        except socket.error as e:
-            firewall_issues.append(f"Port check failed: {str(e)}")
-            troubleshooting_hints.append(f"Network error checking port {port}: {str(e)}")
+                port_accessible = False
+                firewall_issues.append(f"TCP port {test_port} not accessible")
+                recommendations.append(f"Ensure TCP port {test_port} is open in your firewall")
+                if bind_address != "0.0.0.0":
+                    recommendations.append(f"Verify bind address {bind_address} is correct for your network")
 
-        # Add general troubleshooting hints if issues found
-        if firewall_issues and not troubleshooting_hints:
-            troubleshooting_hints.append(
-                "Check firewall settings: UDP 5353 for mDNS, TCP 51826 (or configured port) for HAP"
-            )
+        except Exception as e:
+            logger.warning(f"Port accessibility test failed: {e}", extra={"diagnostic_category": "network"})
+            firewall_issues.append(f"Port test error: {str(e)}")
 
-        # Log the connectivity test
+        # Add general recommendations if issues detected
+        if not self.is_running:
+            recommendations.insert(0, "HomeKit bridge is not running - enable it first")
+
+        if not mdns_visible and self.is_running:
+            recommendations.append("Try restarting the HomeKit bridge")
+            if self.config.mdns_interface:
+                recommendations.append(f"Verify mDNS interface '{self.config.mdns_interface}' is correct")
+
+        end_time = time.time()
+        test_duration_ms = int((end_time - start_time) * 1000)
+
         logger.info(
-            f"HomeKit connectivity test: mDNS={mdns_visible}, port={port_accessible}",
+            f"HomeKit connectivity test completed: mDNS={mdns_visible}, port={port_accessible}",
             extra={
-                "diagnostic_category": "mdns",
+                "diagnostic_category": "network",
                 "mdns_visible": mdns_visible,
                 "port_accessible": port_accessible,
-                "issues": len(firewall_issues)
+                "test_duration_ms": test_duration_ms
             }
         )
 
-        return HomeKitConnectivityResponse(
+        return HomeKitConnectivityTestResponse(
             mdns_visible=mdns_visible,
             discovered_as=discovered_as,
             port_accessible=port_accessible,
+            network_binding=self._network_binding,
             firewall_issues=firewall_issues,
-            bind_address=bind_address,
-            port=port,
-            bridge_name=bridge_name,
-            test_timestamp=datetime.utcnow(),
-            troubleshooting_hints=troubleshooting_hints,
+            recommendations=recommendations,
+            test_duration_ms=test_duration_ms,
         )
 
     def _get_connected_client_count(self) -> int:
@@ -565,41 +557,37 @@ class HomekitService:
                     extra={"diagnostic_category": "lifecycle"}
                 )
 
-            # Story P7-1.2: Create accessory driver with configurable bind address
-            # Only pass address if it's not the default 0.0.0.0 (HAP-python default behavior)
+            # Create accessory driver with network binding configuration (Story P7-1.2)
+            # HAP-python AccessoryDriver accepts address parameter for binding
             driver_kwargs = {
                 "port": self.config.port,
                 "persist_file": self.config.persist_file,
                 "pincode": self.pincode.encode('utf-8'),
             }
 
-            # Story P7-1.2 AC3/AC4: Support binding to specific IP address
+            # Story P7-1.2 AC3, AC4: Configure bind address if not default
             bind_address = self.config.bind_address
             if bind_address and bind_address != "0.0.0.0":
                 driver_kwargs["address"] = bind_address
                 logger.info(
                     f"HomeKit HAP server binding to specific address: {bind_address}",
-                    extra={
-                        "diagnostic_category": "network",
-                        "bind_address": bind_address
-                    }
+                    extra={"diagnostic_category": "network", "bind_address": bind_address}
                 )
 
             self._driver = AccessoryDriver(**driver_kwargs)
 
             # Story P7-1.1 AC4: Log network binding information
-            # Story P7-1.2: Include configured bind address and interface
             self._network_binding = NetworkBindingInfo(
-                ip=bind_address,
+                ip=self.config.bind_address,
                 port=self.config.port,
                 interface=self.config.mdns_interface
             )
             logger.info(
-                f"HomeKit HAP server binding to {bind_address}:{self.config.port}",
+                f"HomeKit HAP server binding to {self.config.bind_address}:{self.config.port}",
                 extra={
                     "diagnostic_category": "network",
                     "port": self.config.port,
-                    "ip": bind_address,
+                    "ip": self.config.bind_address,
                     "interface": self.config.mdns_interface
                 }
             )
@@ -1525,97 +1513,6 @@ class HomekitService:
             sensor.clear_motion()
 
         logger.debug("Cleared all HomeKit detection sensor states")
-
-    # =========================================================================
-    # Story P7-1.3: Test Event Trigger Method
-    # =========================================================================
-
-    def trigger_test_event(
-        self,
-        camera_id: str,
-        event_type: str
-    ) -> Dict[str, Any]:
-        """
-        Trigger a test event for debugging HomeKit delivery (Story P7-1.3 AC5).
-
-        Allows manual triggering of any event type from the diagnostics UI
-        to verify that events are properly delivered to all paired HomeKit clients.
-
-        Args:
-            camera_id: Camera identifier (UUID)
-            event_type: One of "motion", "occupancy", "vehicle", "animal", "package", "doorbell"
-
-        Returns:
-            Dict with success status, message, sensor_name, and delivered_to_clients count
-        """
-        # Map event types to their trigger methods and sensor dicts
-        event_handlers = {
-            "motion": (self.trigger_motion, self._sensors, "motion"),
-            "occupancy": (self.trigger_occupancy, self._occupancy_sensors, "occupancy"),
-            "vehicle": (self.trigger_vehicle, self._vehicle_sensors, "vehicle"),
-            "animal": (self.trigger_animal, self._animal_sensors, "animal"),
-            "package": (self.trigger_package, self._package_sensors, "package"),
-            "doorbell": (self.trigger_doorbell, self._doorbell_sensors, "doorbell"),
-        }
-
-        if event_type not in event_handlers:
-            return {
-                "success": False,
-                "message": f"Invalid event type: {event_type}. Must be one of: {', '.join(event_handlers.keys())}",
-                "sensor_name": None,
-                "delivered_to_clients": 0
-            }
-
-        trigger_func, sensor_dict, sensor_type = event_handlers[event_type]
-
-        # Resolve camera_id and check if sensor exists
-        resolved_id = self._resolve_camera_id(camera_id)
-        sensor = sensor_dict.get(resolved_id)
-
-        if not sensor:
-            return {
-                "success": False,
-                "message": f"No {event_type} sensor found for camera: {camera_id}",
-                "sensor_name": None,
-                "delivered_to_clients": 0
-            }
-
-        # Get sensor name
-        sensor_name = getattr(sensor, 'name', f"Camera {camera_id[:8]}")
-
-        # Trigger the event
-        success = trigger_func(camera_id, event_id=None)
-
-        if not success:
-            return {
-                "success": False,
-                "message": f"Failed to trigger {event_type} event for {sensor_name}",
-                "sensor_name": sensor_name,
-                "delivered_to_clients": 0
-            }
-
-        # Get connected client count for delivery confirmation
-        delivered_to_clients = self._get_connected_client_count()
-
-        # Log delivery confirmation (Story P7-1.3 AC2)
-        logger.info(
-            f"Test event delivered: {event_type} for {sensor_name}",
-            extra={
-                "diagnostic_category": "delivery",
-                "camera_id": camera_id,
-                "sensor_type": sensor_type,
-                "sensor_name": sensor_name,
-                "delivered": True,
-                "client_count": delivered_to_clients
-            }
-        )
-
-        return {
-            "success": True,
-            "message": f"{event_type.capitalize()} event triggered for {sensor_name}",
-            "sensor_name": sensor_name,
-            "delivered_to_clients": delivered_to_clients
-        }
 
     # =========================================================================
     # Story P5-1.7: Doorbell Sensor Methods (Protect Doorbell Ring Events)

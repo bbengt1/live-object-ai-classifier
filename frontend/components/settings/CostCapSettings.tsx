@@ -86,7 +86,7 @@ export function CostCapSettings() {
   // Mutation for updating caps
   const updateCapsMutation = useMutation({
     mutationFn: async () => {
-      return apiClient.settings.updateCostCaps({
+      return apiClient.settings.update({
         ai_daily_cost_cap: dailyCapEnabled ? parseFloat(dailyCapValue) || null : null,
         ai_monthly_cost_cap: monthlyCapEnabled ? parseFloat(monthlyCapValue) || null : null,
       });

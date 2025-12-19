@@ -350,7 +350,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
           p256dh: subscriptionJson.keys.p256dh!,
           auth: subscriptionJson.keys.auth!,
         },
-        user_agent: navigator.userAgent,
+        device_name: navigator.userAgent,
       });
 
       // Update state
@@ -433,9 +433,9 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     setError(null);
 
     try {
-      const result = await apiClient.push.sendTest();
+      const result = await apiClient.push.testNotification();
 
-      if (!result.success && result.results?.length === 0) {
+      if (!result.success && result.subscriptions_notified === 0) {
         setError('No subscriptions found. Enable notifications first.');
         return false;
       }

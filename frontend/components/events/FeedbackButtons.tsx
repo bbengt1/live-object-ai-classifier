@@ -58,8 +58,11 @@ export const FeedbackButtons = memo(function FeedbackButtons({
       },
       {
         onSuccess: (data) => {
-          setLocalFeedback(data);
-          onFeedbackChange?.(data);
+          // Extract feedback from the returned event
+          if (data.feedback) {
+            setLocalFeedback(data.feedback);
+            onFeedbackChange?.(data.feedback);
+          }
           setShowCorrection(false);
           setCorrection('');
           toast.success('Feedback submitted', {

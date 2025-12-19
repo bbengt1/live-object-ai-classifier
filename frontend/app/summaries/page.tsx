@@ -29,7 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GenerateSummaryDialog } from '@/components/summaries/GenerateSummaryDialog';
 import { useRecentSummaries, useSummaryList, RecentSummaryItem } from '@/hooks/useSummaries';
-import { SummaryGenerateResponse } from '@/lib/api-client';
+import type { SummaryGenerateResponse } from '@/hooks/useSummaries';
 
 /**
  * StatBadge - Small stat badge for summary cards
@@ -204,7 +204,7 @@ export default function SummariesPage() {
             <EmptyState type="recent" />
           ) : (
             <div className="space-y-4">
-              {recentSummaries.map((summary) => (
+              {recentSummaries.map((summary: RecentSummaryItem | SummaryGenerateResponse) => (
                 <SummaryListItem key={summary.id} summary={summary} />
               ))}
             </div>
@@ -219,7 +219,7 @@ export default function SummariesPage() {
             <EmptyState type="history" />
           ) : (
             <div className="space-y-4">
-              {historySummaries.map((summary) => (
+              {historySummaries.map((summary: RecentSummaryItem | SummaryGenerateResponse) => (
                 <SummaryListItem key={summary.id} summary={summary} />
               ))}
               {historyData && historyData.total > historySummaries.length && (

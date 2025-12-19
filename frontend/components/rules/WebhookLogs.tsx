@@ -72,7 +72,7 @@ export function WebhookLogs({ ruleId, compact = false }: WebhookLogsProps) {
     isFetching,
   } = useQuery({
     queryKey: ['webhookLogs', filters],
-    queryFn: () => apiClient.webhooks.getLogs(filters),
+    queryFn: () => apiClient.alertRules.getWebhookLogs(filters),
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
@@ -108,7 +108,7 @@ export function WebhookLogs({ ruleId, compact = false }: WebhookLogsProps) {
 
   const handleExport = async () => {
     try {
-      const blob = await apiClient.webhooks.exportLogs({
+      const blob = await apiClient.alertRules.exportWebhookLogs({
         rule_id: filters.rule_id,
         success: filters.success,
         start_date: filters.start_date,

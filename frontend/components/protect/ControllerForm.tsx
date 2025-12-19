@@ -121,7 +121,7 @@ export function ControllerForm({ controller, onSaveSuccess, onCancel }: Controll
     mutationFn: async (data: ControllerFormData) => {
       // In edit mode with no password change, test using existing controller
       if (isEditMode && !passwordChanged && !data.password) {
-        return apiClient.protect.testExistingController(controller.id);
+        return apiClient.protect.testExistingController(Number(controller.id));
       }
       // Otherwise test with provided credentials
       return apiClient.protect.testConnection({
@@ -197,7 +197,7 @@ export function ControllerForm({ controller, onSaveSuccess, onCancel }: Controll
           updateData.password = data.password;
         }
 
-        return apiClient.protect.updateController(controller.id, updateData);
+        return apiClient.protect.updateController(Number(controller.id), updateData);
       } else {
         // Create new controller
         return apiClient.protect.createController({
@@ -215,7 +215,7 @@ export function ControllerForm({ controller, onSaveSuccess, onCancel }: Controll
       queryClient.invalidateQueries({ queryKey: ['protectControllers'] });
 
       toast.success(isEditMode ? 'Controller updated successfully' : 'Controller saved successfully');
-      onSaveSuccess?.({ id: response.data.id, name: response.data.name });
+      onSaveSuccess?.({ id: String(response.id), name: response.name });
     },
     onError: (error: Error) => {
       let errorMessage = isEditMode ? 'Failed to update controller' : 'Failed to save controller';

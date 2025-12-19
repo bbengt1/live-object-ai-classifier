@@ -136,7 +136,7 @@ export function LogViewer() {
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['logs', queryParams],
-    queryFn: () => apiClient.monitoring.getLogs(queryParams),
+    queryFn: () => apiClient.monitoring.logs(queryParams),
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   });
 

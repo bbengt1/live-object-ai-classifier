@@ -17,10 +17,10 @@ import React, { useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   useHomekitDiagnostics,
-  useHomekitConnectivity,
+  useHomekitTestConnectivity,
   useHomekitTestEvent,
   type HomekitDiagnosticEntry,
-  type HomekitConnectivityResult,
+  type HomekitConnectivityTestResponse,
   type HomekitTestEventType,
   type HomekitTestEventResult,
   type HomekitLastEventDelivery,
@@ -139,8 +139,8 @@ function DiagnosticLogEntry({ entry }: DiagnosticLogEntryProps) {
  * including mDNS visibility, port accessibility, and troubleshooting hints.
  */
 function ConnectivityTestPanel() {
-  const [testResult, setTestResult] = useState<HomekitConnectivityResult | null>(null);
-  const connectivityMutation = useHomekitConnectivity();
+  const [testResult, setTestResult] = useState<HomekitConnectivityTestResponse | null>(null);
+  const connectivityMutation = useHomekitTestConnectivity();
 
   const runConnectivityTest = async () => {
     try {
@@ -211,7 +211,7 @@ function ConnectivityTestPanel() {
               ) : (
                 <X className="h-4 w-4 text-red-500" />
               )}
-              <span>Port {testResult.port} Accessible</span>
+              <span>Port {testResult.network_binding?.port ?? 51826} Accessible</span>
             </div>
 
             {/* Discovered As */}
@@ -222,12 +222,19 @@ function ConnectivityTestPanel() {
               </div>
             )}
 
-            {/* Bind Address */}
-            <div className="col-span-2 flex items-center gap-2">
-              <Network className="h-4 w-4 text-muted-foreground" />
-              <span className="font-mono text-xs">
-                {testResult.bind_address}:{testResult.port}
-              </span>
+            {/* Network Binding */}
+            {testResult.network_binding && (
+              <div className="col-span-2 flex items-center gap-2">
+                <Network className="h-4 w-4 text-muted-foreground" />
+                <span className="font-mono text-xs">
+                  {testResult.network_binding.ip}:{testResult.network_binding.port}
+                </span>
+              </div>
+            )}
+
+            {/* Test Duration */}
+            <div className="col-span-2 text-xs text-muted-foreground">
+              Test completed in {testResult.test_duration_ms}ms
             </div>
           </div>
 
@@ -246,16 +253,16 @@ function ConnectivityTestPanel() {
             </Alert>
           )}
 
-          {/* Troubleshooting Hints */}
-          {testResult.troubleshooting_hints.length > 0 && (
+          {/* Recommendations */}
+          {testResult.recommendations.length > 0 && (
             <div className="border rounded-lg p-3 bg-blue-500/10 border-blue-500/30">
               <div className="flex items-center gap-2 mb-2">
                 <Lightbulb className="h-4 w-4 text-blue-500" />
-                <span className="text-sm font-medium text-blue-500">Troubleshooting Tips</span>
+                <span className="text-sm font-medium text-blue-500">Recommendations</span>
               </div>
               <ul className="list-disc list-inside space-y-1">
-                {testResult.troubleshooting_hints.map((hint, i) => (
-                  <li key={i} className="text-sm text-muted-foreground">{hint}</li>
+                {testResult.recommendations.map((rec, i) => (
+                  <li key={i} className="text-sm text-muted-foreground">{rec}</li>
                 ))}
               </ul>
             </div>
@@ -267,7 +274,7 @@ function ConnectivityTestPanel() {
               <Check className="h-4 w-4 text-green-500" />
               <AlertTitle className="text-green-500">All Checks Passed</AlertTitle>
               <AlertDescription>
-                HomeKit bridge &quot;{testResult.bridge_name}&quot; is discoverable and accessible.
+                HomeKit bridge is discoverable and accessible.
                 It should appear in the Apple Home app.
               </AlertDescription>
             </Alert>

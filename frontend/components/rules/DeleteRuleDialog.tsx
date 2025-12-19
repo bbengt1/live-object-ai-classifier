@@ -26,7 +26,7 @@ export function DeleteRuleDialog({ rule, onClose }: DeleteRuleDialogProps) {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiClient.alertRules.delete(id);
+      await apiClient.alertRules.delete(Number(id));
       return id;
     },
     onMutate: async (id) => {

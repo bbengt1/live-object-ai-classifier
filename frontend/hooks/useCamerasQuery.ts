@@ -45,7 +45,13 @@ export const cameraKeys = {
 export function useCamerasQuery(params: UseCamerasQueryParams = {}) {
   return useQuery({
     queryKey: cameraKeys.list(params),
-    queryFn: () => apiClient.cameras.list(params),
+    queryFn: async () => {
+      const data = await apiClient.cameras.list();
+      // Client-side filtering if is_enabled option is specified
+      return params.is_enabled !== undefined
+        ? data.filter(cam => cam.is_enabled === params.is_enabled)
+        : data;
+    },
     staleTime: 30000, // 30 seconds - data stays fresh for 30s
     refetchOnWindowFocus: true, // Refetch when user returns to tab
     // Note: These are query-level options that override global defaults
@@ -60,7 +66,7 @@ export function useCamerasQuery(params: UseCamerasQueryParams = {}) {
 export function useCameraQuery(cameraId: string | null) {
   return useQuery({
     queryKey: cameraKeys.detail(cameraId ?? ''),
-    queryFn: () => cameraId ? apiClient.cameras.getById(cameraId) : null,
+    queryFn: () => cameraId ? apiClient.cameras.get(Number(cameraId)) : null,
     enabled: !!cameraId,
     staleTime: 30000,
     refetchOnWindowFocus: true,
@@ -94,12 +100,12 @@ export function useCameraUpdate() {
 
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: ICameraUpdate }) =>
-      apiClient.cameras.update(id, data),
+      apiClient.cameras.update(Number(id), data),
     onSuccess: (updatedCamera) => {
       // Invalidate camera lists
       queryClient.invalidateQueries({ queryKey: cameraKeys.lists() });
       // Update the specific camera in cache
-      queryClient.setQueryData(cameraKeys.detail(updatedCamera.id), updatedCamera);
+      queryClient.setQueryData(cameraKeys.detail(String(updatedCamera.id)), updatedCamera);
     },
   });
 }
@@ -113,7 +119,7 @@ export function useCameraDelete() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (cameraId: string) => apiClient.cameras.delete(cameraId),
+    mutationFn: (cameraId: string) => apiClient.cameras.delete(Number(cameraId)),
     onSuccess: (_data, cameraId) => {
       // Invalidate camera lists
       queryClient.invalidateQueries({ queryKey: cameraKeys.lists() });

@@ -1,8 +1,11 @@
 /**
- * useHomekitStatus hook (Story P4-6.1, P5-1.8, P7-1.1)
+ * useHomekitStatus hook (Story P4-6.1, P5-1.8, P7-1.1, P7-1.2, P7-1.3, P7-1.4)
  *
  * TanStack Query hook for fetching and managing HomeKit integration status.
  * Story P7-1.1 adds useHomekitDiagnostics hook for diagnostic data.
+ * Story P7-1.2 adds useHomekitTestConnectivity hook for connectivity testing.
+ * Story P7-1.3 adds useHomekitTestEvent hook for triggering test events.
+ * Story P7-1.4 adds sensor_deliveries and camera_name to diagnostics.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
@@ -56,7 +59,7 @@ const HOMEKIT_DIAGNOSTICS_KEY = ['homekit', 'diagnostics'];
 const HOMEKIT_CONNECTIVITY_KEY = ['homekit', 'connectivity'];
 
 // ============================================================================
-// Diagnostics Types (Story P7-1.1)
+// Diagnostics Types (Story P7-1.1, P7-1.4)
 // ============================================================================
 
 /**
@@ -232,7 +235,7 @@ export function useHomekitRemovePairing() {
 }
 
 // ============================================================================
-// Diagnostics Hooks (Story P7-1.1)
+// Diagnostics Hooks (Story P7-1.1, P7-1.4)
 // ============================================================================
 
 /**
@@ -277,43 +280,34 @@ export function useHomekitDiagnostics(options?: {
 // ============================================================================
 
 /**
- * Connectivity test result (Story P7-1.2)
+ * Connectivity test response (Story P7-1.2)
  */
-export interface HomekitConnectivityResult {
+export interface HomekitConnectivityTestResponse {
   mdns_visible: boolean;
   discovered_as: string | null;
   port_accessible: boolean;
+  network_binding: HomekitNetworkBinding | null;
   firewall_issues: string[];
-  bind_address: string;
-  port: number;
-  bridge_name: string;
-  test_timestamp: string;
-  troubleshooting_hints: string[];
+  recommendations: string[];
+  test_duration_ms: number;
 }
 
 /**
- * Test HomeKit bridge connectivity (Story P7-1.2)
+ * Test HomeKit connectivity via the API (Story P7-1.2)
  */
-async function testHomekitConnectivity(): Promise<HomekitConnectivityResult> {
+async function testHomekitConnectivity(): Promise<HomekitConnectivityTestResponse> {
   return apiClient.homekit.testConnectivity();
 }
 
 /**
  * Hook for testing HomeKit connectivity (Story P7-1.2 AC6)
  *
- * Uses a mutation pattern since connectivity tests are user-initiated
- * and can take several seconds to complete.
+ * This is a mutation hook since connectivity test is an action that takes time
+ * and should only run when explicitly triggered (not on component mount).
  */
-export function useHomekitConnectivity() {
-  const queryClient = useQueryClient();
-
+export function useHomekitTestConnectivity() {
   return useMutation({
     mutationFn: testHomekitConnectivity,
-    mutationKey: HOMEKIT_CONNECTIVITY_KEY,
-    onSuccess: () => {
-      // Optionally refresh diagnostics after a connectivity test
-      queryClient.invalidateQueries({ queryKey: HOMEKIT_DIAGNOSTICS_KEY });
-    },
   });
 }
 

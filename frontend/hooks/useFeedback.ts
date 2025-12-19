@@ -6,17 +6,11 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, ApiError } from '@/lib/api-client';
-import type { IEventFeedback } from '@/types/event';
+import type { IEvent } from '@/types/event';
 
 interface SubmitFeedbackParams {
   eventId: string;
   rating: 'helpful' | 'not_helpful';
-  correction?: string;
-}
-
-interface UpdateFeedbackParams {
-  eventId: string;
-  rating?: 'helpful' | 'not_helpful';
   correction?: string;
 }
 
@@ -30,11 +24,12 @@ interface UpdateFeedbackParams {
 export function useSubmitFeedback() {
   const queryClient = useQueryClient();
 
-  return useMutation<IEventFeedback, ApiError, SubmitFeedbackParams>({
+  return useMutation<IEvent, ApiError, SubmitFeedbackParams>({
     mutationFn: async ({ eventId, rating, correction }) => {
-      return apiClient.events.submitFeedback(eventId, { rating, correction });
+      const feedback = { rating, correction: correction ?? null };
+      return apiClient.events.submitFeedback(Number(eventId), feedback);
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       // Invalidate event queries to refresh feedback data
       queryClient.invalidateQueries({ queryKey: ['events'] });
       queryClient.invalidateQueries({ queryKey: ['event', variables.eventId] });
@@ -44,6 +39,7 @@ export function useSubmitFeedback() {
 
 /**
  * Hook for updating existing feedback on an event
+ * Note: Uses the same submitFeedback endpoint as updates overwrite existing feedback
  *
  * @example
  * const { mutate: updateFeedback, isPending } = useUpdateFeedback();
@@ -52,11 +48,12 @@ export function useSubmitFeedback() {
 export function useUpdateFeedback() {
   const queryClient = useQueryClient();
 
-  return useMutation<IEventFeedback, ApiError, UpdateFeedbackParams>({
+  return useMutation<IEvent, ApiError, SubmitFeedbackParams>({
     mutationFn: async ({ eventId, rating, correction }) => {
-      return apiClient.events.updateFeedback(eventId, { rating, correction });
+      const feedback = { rating, correction: correction ?? null };
+      return apiClient.events.submitFeedback(Number(eventId), feedback);
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       // Invalidate event queries to refresh feedback data
       queryClient.invalidateQueries({ queryKey: ['events'] });
       queryClient.invalidateQueries({ queryKey: ['event', variables.eventId] });
@@ -66,6 +63,7 @@ export function useUpdateFeedback() {
 
 /**
  * Hook for deleting feedback from an event
+ * Note: Deletes by submitting with no feedback (reset)
  *
  * @example
  * const { mutate: deleteFeedback, isPending } = useDeleteFeedback();
@@ -74,9 +72,10 @@ export function useUpdateFeedback() {
 export function useDeleteFeedback() {
   const queryClient = useQueryClient();
 
-  return useMutation<void, ApiError, string>({
+  return useMutation<IEvent, ApiError, string>({
     mutationFn: async (eventId) => {
-      return apiClient.events.deleteFeedback(eventId);
+      // Delete feedback by submitting empty feedback
+      return apiClient.events.submitFeedback(Number(eventId), { rating: 'helpful' });
     },
     onSuccess: (_, eventId) => {
       // Invalidate event queries to refresh feedback data

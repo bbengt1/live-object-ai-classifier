@@ -54,25 +54,29 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // Mark single as read mutation
   const markAsReadMutation = useMutation({
-    mutationFn: (id: string) => apiClient.notifications.markAsRead(id),
-    onSuccess: (updatedNotification) => {
+    mutationFn: (id: string) => apiClient.notifications.markRead(Number(id)),
+    onMutate: async (id) => {
       // Optimistically update the cache
       queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: typeof notificationData) => {
         if (!old) return old;
         return {
           ...old,
           data: old.data.map((n) =>
-            n.id === updatedNotification.id ? updatedNotification : n
+            n.id === id ? { ...n, read: true } : n
           ),
           unread_count: Math.max(0, old.unread_count - 1),
         };
       });
     },
+    onSettled: () => {
+      // Refetch to ensure consistency
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_QUERY_KEY });
+    },
   });
 
   // Mark all as read mutation
   const markAllAsReadMutation = useMutation({
-    mutationFn: () => apiClient.notifications.markAllAsRead(),
+    mutationFn: () => apiClient.notifications.markAllRead(),
     onSuccess: () => {
       // Optimistically update the cache
       queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: typeof notificationData) => {
@@ -88,7 +92,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // Delete notification mutation
   const deleteNotificationMutation = useMutation({
-    mutationFn: (id: string) => apiClient.notifications.delete(id),
+    mutationFn: (id: string) => apiClient.notifications.delete(Number(id)),
     onSuccess: (_, deletedId) => {
       // Remove from cache
       queryClient.setQueryData(NOTIFICATIONS_QUERY_KEY, (old: typeof notificationData) => {

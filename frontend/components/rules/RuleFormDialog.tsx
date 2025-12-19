@@ -163,7 +163,7 @@ export function RuleFormDialog({ open, onOpenChange, rule, onClose }: RuleFormDi
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: IAlertRuleCreate }) =>
-      apiClient.alertRules.update(id, data),
+      apiClient.alertRules.update(Number(id), data),
     onSuccess: (updatedRule) => {
       queryClient.invalidateQueries({ queryKey: ['alertRules'] });
       toast.success(`Rule "${updatedRule.name}" updated successfully`);

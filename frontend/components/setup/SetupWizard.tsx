@@ -222,7 +222,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
     setTestingProvider(provider);
     try {
-      const response = await apiClient.settings.testApiKey({
+      const response = await apiClient.settings.testAIKey({
         provider,
         api_key: key,
       });
