@@ -510,6 +510,8 @@ def list_events(
                 "vague_reason": event.vague_reason,
                 "reanalyzed_at": event.reanalyzed_at,
                 "reanalysis_count": event.reanalysis_count or 0,
+                # Story P7-2.1: Delivery carrier detection
+                "delivery_carrier": getattr(event, 'delivery_carrier', None),
             }
             # BUG-004: Include feedback if exists so UI can show persisted state
             if event.feedback:
@@ -1191,6 +1193,8 @@ async def get_event(
             "vague_reason": event.vague_reason,
             "reanalyzed_at": event.reanalyzed_at,
             "reanalysis_count": event.reanalysis_count or 0,
+            # Story P7-2.1: Delivery carrier detection
+            "delivery_carrier": getattr(event, 'delivery_carrier', None),
         }
 
         # Story P4-3.3: Add matched entity if available (AC12)

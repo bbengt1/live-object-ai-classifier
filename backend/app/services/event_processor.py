@@ -45,6 +45,7 @@ from app.services.camera_service import CameraService
 from app.services.motion_detection_service import MotionDetectionService
 from app.services.cost_cap_service import get_cost_cap_service
 from app.services.cost_alert_service import get_cost_alert_service
+from app.services.carrier_extractor import extract_carrier
 from app.core.database import SessionLocal
 
 if TYPE_CHECKING:
@@ -779,6 +780,26 @@ class EventProcessor:
                 }
             )
 
+            # Story P7-2.1: Extract delivery carrier from AI description
+            # Best-effort extraction - failures don't block event processing
+            delivery_carrier = None
+            try:
+                delivery_carrier = extract_carrier(ai_result.description)
+                if delivery_carrier:
+                    logger.info(
+                        f"Delivery carrier detected for camera {event.camera_name}: {delivery_carrier}",
+                        extra={
+                            "camera_id": event.camera_id,
+                            "carrier": delivery_carrier,
+                        }
+                    )
+            except Exception as carrier_error:
+                # Carrier extraction failures should NOT block event processing
+                logger.warning(
+                    f"Carrier extraction failed for camera {event.camera_name}: {carrier_error}",
+                    extra={"camera_id": event.camera_id, "error": str(carrier_error)}
+                )
+
             # Step 3: Store event in database
             event_data = {
                 "camera_id": event.camera_id,
@@ -790,7 +811,8 @@ class EventProcessor:
                 "alert_triggered": False,  # Will be set by alert evaluation (Epic 5)
                 "provider_used": ai_result.provider,  # Story P2-5.3: Track AI provider
                 "description_retry_needed": False,  # Successfully processed
-                "ai_cost": ai_result.cost_estimate  # Story P3-7.1: Track AI cost
+                "ai_cost": ai_result.cost_estimate,  # Story P3-7.1: Track AI cost
+                "delivery_carrier": delivery_carrier,  # Story P7-2.1: Carrier detection
             }
 
             logger.info(f"Storing event for camera {event.camera_name}: {ai_result.description[:50]}...")
@@ -1406,6 +1428,7 @@ class EventProcessor:
                     provider_used=event_data.get("provider_used"),  # Story P2-5.3: AI provider tracking
                     description_retry_needed=event_data.get("description_retry_needed", False),  # Story P2-6.3 AC13
                     ai_cost=event_data.get("ai_cost"),  # Story P3-7.1: AI cost tracking
+                    delivery_carrier=event_data.get("delivery_carrier"),  # Story P7-2.1: Carrier detection
                 )
 
                 db.add(event)
