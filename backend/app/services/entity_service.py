@@ -460,6 +460,7 @@ class EntityService:
         offset: int = 0,
         entity_type: Optional[str] = None,
         named_only: bool = False,
+        search: Optional[str] = None,
     ) -> tuple[list[dict], int]:
         """
         Get all recognized entities with pagination.
@@ -470,6 +471,7 @@ class EntityService:
             offset: Pagination offset
             entity_type: Filter by entity type (person, vehicle, etc.)
             named_only: If True, only return named entities
+            search: Search string to filter by name (case-insensitive partial match)
 
         Returns:
             Tuple of (list of entity dicts, total count)
@@ -484,6 +486,10 @@ class EntityService:
         if named_only:
             query = query.filter(RecognizedEntity.name.isnot(None))
 
+        if search:
+            # Case-insensitive search on name field
+            query = query.filter(RecognizedEntity.name.ilike(f"%{search}%"))
+
         total = query.count()
 
         entities = query.order_by(
@@ -495,9 +501,13 @@ class EntityService:
                 "id": e.id,
                 "entity_type": e.entity_type,
                 "name": e.name,
+                "notes": e.notes,
+                "thumbnail_path": e.thumbnail_path,
                 "first_seen_at": e.first_seen_at,
                 "last_seen_at": e.last_seen_at,
                 "occurrence_count": e.occurrence_count,
+                "is_vip": e.is_vip,
+                "is_blocked": e.is_blocked,
             }
             for e in entities
         ], total
@@ -535,9 +545,13 @@ class EntityService:
             "id": entity.id,
             "entity_type": entity.entity_type,
             "name": entity.name,
+            "notes": entity.notes,
+            "thumbnail_path": entity.thumbnail_path,
             "first_seen_at": entity.first_seen_at,
             "last_seen_at": entity.last_seen_at,
             "occurrence_count": entity.occurrence_count,
+            "is_vip": entity.is_vip,
+            "is_blocked": entity.is_blocked,
             "created_at": entity.created_at,
             "updated_at": entity.updated_at,
         }
@@ -573,19 +587,100 @@ class EntityService:
 
         return result
 
+    async def create_entity(
+        self,
+        db: Session,
+        entity_type: str,
+        name: Optional[str] = None,
+        notes: Optional[str] = None,
+        thumbnail_path: Optional[str] = None,
+        is_vip: bool = False,
+        is_blocked: bool = False,
+    ) -> dict:
+        """
+        Create a new entity manually (Story P7-4.1).
+
+        Args:
+            db: SQLAlchemy database session
+            entity_type: Type of entity (person, vehicle, unknown)
+            name: User-assigned name (optional)
+            notes: User notes about the entity (optional)
+            thumbnail_path: Path to thumbnail image (optional)
+            is_vip: Whether entity is VIP (default False)
+            is_blocked: Whether entity is blocked (default False)
+
+        Returns:
+            Created entity dict
+        """
+        from app.models.recognized_entity import RecognizedEntity
+
+        now = datetime.now(timezone.utc)
+        entity_id = str(uuid.uuid4())
+
+        # Create entity with placeholder embedding (empty JSON array)
+        new_entity = RecognizedEntity(
+            id=entity_id,
+            entity_type=entity_type,
+            name=name,
+            notes=notes,
+            thumbnail_path=thumbnail_path,
+            reference_embedding="[]",  # Placeholder until recognition assigns real embedding
+            first_seen_at=now,
+            last_seen_at=now,
+            occurrence_count=0,  # 0 until matched via recognition
+            is_vip=is_vip,
+            is_blocked=is_blocked,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(new_entity)
+        db.commit()
+        db.refresh(new_entity)
+
+        logger.info(
+            f"Entity created manually: {entity_id}",
+            extra={
+                "event_type": "entity_created_manual",
+                "entity_id": entity_id,
+                "entity_type": entity_type,
+                "name": name,
+            }
+        )
+
+        return {
+            "id": new_entity.id,
+            "entity_type": new_entity.entity_type,
+            "name": new_entity.name,
+            "notes": new_entity.notes,
+            "thumbnail_path": new_entity.thumbnail_path,
+            "first_seen_at": new_entity.first_seen_at,
+            "last_seen_at": new_entity.last_seen_at,
+            "occurrence_count": new_entity.occurrence_count,
+            "is_vip": new_entity.is_vip,
+            "is_blocked": new_entity.is_blocked,
+            "created_at": new_entity.created_at,
+            "updated_at": new_entity.updated_at,
+        }
+
     async def update_entity(
         self,
         db: Session,
         entity_id: str,
         name: Optional[str] = None,
+        notes: Optional[str] = None,
+        is_vip: Optional[bool] = None,
+        is_blocked: Optional[bool] = None,
     ) -> Optional[dict]:
         """
-        Update an entity's name.
+        Update an entity's name, notes, VIP status, or blocked status.
 
         Args:
             db: SQLAlchemy database session
             entity_id: UUID of the entity
-            name: New name for the entity
+            name: New name for the entity (None to clear)
+            notes: New notes for the entity (None to clear)
+            is_vip: VIP status (None to keep unchanged)
+            is_blocked: Blocked status (None to keep unchanged)
 
         Returns:
             Updated entity dict, or None if not found
@@ -599,7 +694,16 @@ class EntityService:
         if not entity:
             return None
 
-        entity.name = name
+        # Update provided fields
+        if name is not None:
+            entity.name = name
+        if notes is not None:
+            entity.notes = notes
+        if is_vip is not None:
+            entity.is_vip = is_vip
+        if is_blocked is not None:
+            entity.is_blocked = is_blocked
+
         entity.updated_at = datetime.now(timezone.utc)
 
         db.commit()
@@ -609,9 +713,13 @@ class EntityService:
             "id": entity.id,
             "entity_type": entity.entity_type,
             "name": entity.name,
+            "notes": entity.notes,
+            "thumbnail_path": entity.thumbnail_path,
             "first_seen_at": entity.first_seen_at,
             "last_seen_at": entity.last_seen_at,
             "occurrence_count": entity.occurrence_count,
+            "is_vip": entity.is_vip,
+            "is_blocked": entity.is_blocked,
         }
 
     async def delete_entity(self, db: Session, entity_id: str) -> bool:
@@ -708,6 +816,32 @@ class EntityService:
             }
             for e in events
         ], total
+
+    async def get_entity_thumbnail_path(
+        self,
+        db: Session,
+        entity_id: str,
+    ) -> Optional[str]:
+        """
+        Get the thumbnail path for an entity (Story P7-4.1).
+
+        Args:
+            db: SQLAlchemy database session
+            entity_id: UUID of the entity
+
+        Returns:
+            Thumbnail file path, or None if entity not found or has no thumbnail
+        """
+        from app.models.recognized_entity import RecognizedEntity
+
+        entity = db.query(RecognizedEntity.thumbnail_path).filter(
+            RecognizedEntity.id == entity_id
+        ).first()
+
+        if not entity or not entity.thumbnail_path:
+            return None
+
+        return entity.thumbnail_path
 
     async def get_entity_for_event(
         self,

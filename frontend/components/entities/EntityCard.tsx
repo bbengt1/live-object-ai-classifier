@@ -1,16 +1,20 @@
 /**
  * EntityCard component - displays individual entity in the entities list (Story P4-3.6)
  * Shows thumbnail, name, type badge, occurrence count, and timestamps
+ * Story P7-4.2: Add "Add Alert" button (AC3, AC4)
+ * Story P7-4.3: Open EntityAlertModal when "Add Alert" clicked (AC1)
  */
 
 'use client';
 
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { User, Car, HelpCircle } from 'lucide-react';
+import { User, Car, HelpCircle, Bell } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { EntityAlertModal } from './EntityAlertModal';
 import type { IEntity } from '@/types/entity';
 
 interface EntityCardProps {
@@ -62,6 +66,15 @@ export const EntityCard = memo(function EntityCard({
   onClick,
 }: EntityCardProps) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // Story P7-4.3: Modal state for EntityAlertModal (AC1)
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+
+  // Story P7-4.3 AC1: "Add Alert" button opens modal
+  const handleAddAlert = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click from triggering
+    setIsAlertModalOpen(true);
+  };
 
   // Build full thumbnail URL if path is relative
   const fullThumbnailUrl = thumbnailUrl
@@ -140,7 +153,28 @@ export const EntityCard = memo(function EntityCard({
           <p>Last seen: {lastSeenRelative}</p>
           <p>First seen: {firstSeenDate.toLocaleDateString()}</p>
         </div>
+
+        {/* Story P7-4.3 AC1: Add Alert button opens modal */}
+        <div className="pt-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2"
+            onClick={handleAddAlert}
+            aria-label={`Add alert for ${displayName}`}
+          >
+            <Bell className="h-4 w-4" />
+            Add Alert
+          </Button>
+        </div>
       </div>
+
+      {/* Story P7-4.3: Entity Alert Modal */}
+      <EntityAlertModal
+        isOpen={isAlertModalOpen}
+        onClose={() => setIsAlertModalOpen(false)}
+        entity={entity}
+      />
     </Card>
   );
 });
