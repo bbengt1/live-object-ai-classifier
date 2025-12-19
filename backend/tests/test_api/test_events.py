@@ -800,6 +800,122 @@ def test_get_event_stats_time_range(test_camera):
     assert data["alerts_triggered"] == 1
 
 
+# ==================== Package Delivery Tests (Story P7-2.4) ====================
+
+def test_get_package_deliveries_today_empty(test_camera):
+    """Test getting package deliveries when none exist"""
+    response = client.get("/api/v1/events/packages/today")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_count"] == 0
+    assert data["by_carrier"] == {}
+    assert data["recent_events"] == []
+
+
+def test_get_package_deliveries_today_with_data(test_camera):
+    """Test getting package deliveries with carrier breakdown"""
+    db = TestingSessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+
+        # Create package events with carriers
+        event1 = Event(
+            id="pkg-event-1",
+            camera_id=test_camera.id,
+            timestamp=now - timedelta(hours=1),
+            description="FedEx delivery",
+            confidence=85,
+            objects_detected=json.dumps(["package"]),
+            smart_detection_type="package",
+            delivery_carrier="fedex",
+            alert_triggered=False
+        )
+        event2 = Event(
+            id="pkg-event-2",
+            camera_id=test_camera.id,
+            timestamp=now - timedelta(hours=2),
+            description="Amazon delivery",
+            confidence=80,
+            objects_detected=json.dumps(["package", "person"]),
+            smart_detection_type="package",
+            delivery_carrier="amazon",
+            alert_triggered=False
+        )
+        event3 = Event(
+            id="pkg-event-3",
+            camera_id=test_camera.id,
+            timestamp=now - timedelta(hours=3),
+            description="Unknown carrier package",
+            confidence=75,
+            objects_detected=json.dumps(["package"]),
+            smart_detection_type="package",
+            delivery_carrier=None,  # Unknown carrier
+            alert_triggered=False
+        )
+        db.add_all([event1, event2, event3])
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/events/packages/today")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_count"] == 3
+    assert data["by_carrier"]["fedex"] == 1
+    assert data["by_carrier"]["amazon"] == 1
+    assert data["by_carrier"]["unknown"] == 1
+    assert len(data["recent_events"]) == 3
+    # Most recent first
+    assert data["recent_events"][0]["id"] == "pkg-event-1"
+    assert data["recent_events"][0]["delivery_carrier_display"] == "FedEx"
+
+
+def test_get_package_deliveries_today_excludes_yesterday(test_camera):
+    """Test that only today's deliveries are included"""
+    db = TestingSessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+
+        # Today's package
+        event_today = Event(
+            id="pkg-today",
+            camera_id=test_camera.id,
+            timestamp=now - timedelta(hours=1),
+            description="Today's package",
+            confidence=85,
+            objects_detected=json.dumps(["package"]),
+            smart_detection_type="package",
+            delivery_carrier="ups",
+            alert_triggered=False
+        )
+        # Yesterday's package
+        event_yesterday = Event(
+            id="pkg-yesterday",
+            camera_id=test_camera.id,
+            timestamp=now - timedelta(days=1, hours=5),
+            description="Yesterday's package",
+            confidence=85,
+            objects_detected=json.dumps(["package"]),
+            smart_detection_type="package",
+            delivery_carrier="fedex",
+            alert_triggered=False
+        )
+        db.add_all([event_today, event_yesterday])
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/v1/events/packages/today")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_count"] == 1
+    assert data["by_carrier"]["ups"] == 1
+    assert "fedex" not in data["by_carrier"]
+
+
 # ==================== Performance Tests ====================
 
 def test_list_events_performance_large_dataset(test_camera):

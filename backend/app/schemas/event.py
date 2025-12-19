@@ -356,3 +356,57 @@ class ReanalyzeRequest(BaseModel):
             ]
         }
     }
+
+
+# Story P7-2.4: Package Delivery Dashboard Widget Schemas
+class PackageEventSummary(BaseModel):
+    """Summary of a package delivery event for dashboard widget"""
+    id: str = Field(..., description="Event UUID")
+    timestamp: datetime = Field(..., description="Event timestamp (UTC)")
+    delivery_carrier: Optional[str] = Field(None, description="Detected carrier code (fedex/ups/usps/amazon/dhl)")
+    delivery_carrier_display: str = Field(..., description="Human-readable carrier name")
+    camera_name: str = Field(..., description="Camera name for display")
+    thumbnail_path: Optional[str] = Field(None, description="Relative path to thumbnail")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "id": "123e4567-e89b-12d3-a456-426614174000",
+                    "timestamp": "2025-12-19T14:30:00Z",
+                    "delivery_carrier": "fedex",
+                    "delivery_carrier_display": "FedEx",
+                    "camera_name": "Front Door",
+                    "thumbnail_path": "thumbnails/2025-12-19/event_123.jpg"
+                }
+            ]
+        }
+    }
+
+
+class PackageDeliveriesTodayResponse(BaseModel):
+    """Response schema for GET /api/v1/events/packages/today (Story P7-2.4)"""
+    total_count: int = Field(..., ge=0, description="Total package deliveries today")
+    by_carrier: dict[str, int] = Field(..., description="Package count by carrier code")
+    recent_events: List[PackageEventSummary] = Field(..., description="Recent 5 package delivery events")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "total_count": 5,
+                    "by_carrier": {"fedex": 2, "ups": 1, "amazon": 1, "unknown": 1},
+                    "recent_events": [
+                        {
+                            "id": "123e4567-e89b-12d3-a456-426614174000",
+                            "timestamp": "2025-12-19T14:30:00Z",
+                            "delivery_carrier": "fedex",
+                            "delivery_carrier_display": "FedEx",
+                            "camera_name": "Front Door",
+                            "thumbnail_path": "thumbnails/2025-12-19/event_123.jpg"
+                        }
+                    ]
+                }
+            ]
+        }
+    }
