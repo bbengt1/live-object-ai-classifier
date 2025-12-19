@@ -11,12 +11,13 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class HomeKitDiagnosticEntry(BaseModel):
     """
-    A single diagnostic log entry for HomeKit operations (Story P7-1.1 AC1-4).
+    A single diagnostic log entry for HomeKit operations (Story P7-1.1 AC1-4, P7-1.3 AC2).
 
     Categories:
     - lifecycle: Bridge start/stop, driver events
     - pairing: Pairing attempts, success/failure
     - event: Characteristic updates (motion, occupancy, etc.)
+    - delivery: Event delivery confirmation logs (Story P7-1.3)
     - network: IP binding, port info
     - mdns: mDNS/Bonjour advertisement status
     """
@@ -28,8 +29,8 @@ class HomeKitDiagnosticEntry(BaseModel):
     )
     category: str = Field(
         ...,
-        description="Event category: lifecycle, pairing, event, network, mdns",
-        pattern="^(lifecycle|pairing|event|network|mdns)$"
+        description="Event category: lifecycle, pairing, event, delivery, network, mdns",
+        pattern="^(lifecycle|pairing|event|delivery|network|mdns)$"
     )
     message: str = Field(..., description="Human-readable log message")
     details: Optional[dict] = Field(
@@ -70,6 +71,7 @@ class NetworkBindingInfo(BaseModel):
 class LastEventDeliveryInfo(BaseModel):
     """Information about the most recent event delivery."""
     camera_id: str = Field(..., description="Camera that triggered the event")
+    camera_name: Optional[str] = Field(None, description="Human-readable camera name (Story P7-1.4)")
     sensor_type: str = Field(..., description="Type of sensor (motion, occupancy, vehicle, etc.)")
     timestamp: datetime = Field(..., description="When the event was delivered")
     delivered: bool = Field(..., description="Whether delivery was successful")
@@ -78,6 +80,7 @@ class LastEventDeliveryInfo(BaseModel):
         json_schema_extra={
             "example": {
                 "camera_id": "abc-123",
+                "camera_name": "Front Door",
                 "sensor_type": "motion",
                 "timestamp": "2025-12-17T10:30:00Z",
                 "delivered": True
@@ -109,6 +112,10 @@ class HomeKitDiagnosticsResponse(BaseModel):
         None,
         description="Information about the most recent event delivery"
     )
+    sensor_deliveries: List[LastEventDeliveryInfo] = Field(
+        default_factory=list,
+        description="Per-sensor delivery history (Story P7-1.4 AC3)"
+    )
     recent_logs: List[HomeKitDiagnosticEntry] = Field(
         default_factory=list,
         description="Recent diagnostic log entries (newest first)"
@@ -135,10 +142,27 @@ class HomeKitDiagnosticsResponse(BaseModel):
                 "connected_clients": 2,
                 "last_event_delivery": {
                     "camera_id": "abc-123",
+                    "camera_name": "Front Door",
                     "sensor_type": "motion",
                     "timestamp": "2025-12-17T10:30:00Z",
                     "delivered": True
                 },
+                "sensor_deliveries": [
+                    {
+                        "camera_id": "abc-123",
+                        "camera_name": "Front Door",
+                        "sensor_type": "motion",
+                        "timestamp": "2025-12-17T10:30:00Z",
+                        "delivered": True
+                    },
+                    {
+                        "camera_id": "def-456",
+                        "camera_name": "Backyard",
+                        "sensor_type": "occupancy",
+                        "timestamp": "2025-12-17T10:25:00Z",
+                        "delivered": True
+                    }
+                ],
                 "recent_logs": [
                     {
                         "timestamp": "2025-12-17T10:30:00Z",

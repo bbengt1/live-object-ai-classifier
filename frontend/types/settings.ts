@@ -39,6 +39,10 @@ export interface SystemSettings {
   anomaly_enabled?: boolean;  // Enable anomaly scoring (default: true)
   anomaly_low_threshold?: number;  // Low/medium threshold (default: 0.3)
   anomaly_high_threshold?: number;  // Medium/high threshold (default: 0.6)
+
+  // Story P3-7.3: Cost Cap Settings
+  ai_daily_cost_cap?: number | null;  // Daily AI cost cap in dollars
+  ai_monthly_cost_cap?: number | null;  // Monthly AI cost cap in dollars
 }
 
 export interface StorageStats {
@@ -134,6 +138,9 @@ export interface IAIUsageResponse {
 export interface IAIUsageQueryParams {
   start_date?: string;
   end_date?: string;
+  days?: number;
+  provider?: string;
+  camera_id?: number;
 }
 
 /**

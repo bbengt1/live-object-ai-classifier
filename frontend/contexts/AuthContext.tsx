@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check authentication status on mount
   const checkAuth = useCallback(async () => {
     try {
-      const currentUser = await apiClient.auth.getCurrentUser();
+      const currentUser = await apiClient.auth.me();
       setUser(currentUser);
     } catch (error) {
       // Not authenticated - clear user

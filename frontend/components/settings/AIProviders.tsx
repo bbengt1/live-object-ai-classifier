@@ -288,7 +288,7 @@ export function AIProviders({
     setTestResult(null);
 
     try {
-      const result = await apiClient.settings.testApiKey({
+      const result = await apiClient.settings.testAIKey({
         provider: selectedProvider,
         api_key: apiKey,
       });

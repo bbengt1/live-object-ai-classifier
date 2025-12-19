@@ -74,7 +74,7 @@ export default function StatusPage() {
 
   const loadHealth = async () => {
     try {
-      const data = await apiClient.monitoring.getHealth();
+      const data = await apiClient.monitoring.health();
       setHealth(data);
     } catch (error) {
       console.error('Failed to load health:', error);
@@ -88,7 +88,7 @@ export default function StatusPage() {
         limit: 50,
         ...(logLevel !== 'all' && { level: logLevel }),
       };
-      const data: LogsResponse = await apiClient.monitoring.getLogs(params);
+      const data: LogsResponse = await apiClient.monitoring.logs(params);
       setLogs(data.entries);
     } catch (error) {
       console.error('Failed to load logs:', error);
@@ -97,19 +97,8 @@ export default function StatusPage() {
   };
 
   const handleDownloadLogs = async () => {
-    try {
-      const blob = await apiClient.monitoring.downloadLogs();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `logs-${new Date().toISOString().split('T')[0]}.log`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error('Failed to download logs:', error);
-    }
+    // TODO: Implement log download API endpoint
+    console.log('Log download not yet implemented');
   };
 
   const getStatusIcon = (status: string) => {

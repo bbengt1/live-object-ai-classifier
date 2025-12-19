@@ -100,8 +100,8 @@ export default function SettingsPage() {
     queryFn: () => apiClient.protect.listControllers(),
   });
 
-  const hasController = (controllersQuery.data?.data?.length ?? 0) > 0;
-  const controller = controllersQuery.data?.data?.[0];
+  const hasController = (controllersQuery.data?.length ?? 0) > 0;
+  const controller = controllersQuery.data?.[0];
 
   const form = useForm<SystemSettings>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,7 +156,7 @@ export default function SettingsPage() {
 
   const loadStorageStats = async () => {
     try {
-      const stats = await apiClient.settings.getStorageStats();
+      const stats = await apiClient.settings.storage();
       setStorageStats(stats);
     } catch (error) {
       console.error('Failed to load storage stats:', error);
@@ -164,20 +164,11 @@ export default function SettingsPage() {
   };
 
   const loadAIProvidersStatus = async () => {
+    // TODO: Implement AI providers status API endpoint
+    // For now, start with default empty state - providers will be configured manually
     try {
-      const response = await apiClient.settings.getAIProvidersStatus();
-      const configured = new Set<AIProvider>();
-      response.providers.forEach((p) => {
-        if (p.configured) {
-          configured.add(p.provider as AIProvider);
-        }
-      });
-      setConfiguredProviders(configured);
-
-      // Load provider order if available
-      if (response.order && response.order.length > 0) {
-        setProviderOrder(response.order as AIProvider[]);
-      }
+      // Stub - this endpoint doesn't exist in api-client yet
+      console.log('AI providers status loading not yet implemented');
     } catch (error) {
       console.error('Failed to load AI providers status:', error);
     }
@@ -215,21 +206,9 @@ export default function SettingsPage() {
   };
 
   const handleExportData = async (format: 'json' | 'csv') => {
-    try {
-      const blob = await apiClient.settings.exportData(format);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `events-export-${new Date().toISOString().split('T')[0]}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      toast.success(`Data exported as ${format.toUpperCase()}`);
-    } catch (error) {
-      console.error('Export failed:', error);
-      toast.error('Failed to export data');
-    }
+    // TODO: Implement data export API endpoint
+    toast.error(`Data export not yet implemented`);
+    console.log('Export format requested:', format);
   };
 
   const handleDeleteAllData = () => {
@@ -870,7 +849,7 @@ export default function SettingsPage() {
                           errorMessage={controller.last_error ?? 'Controller is not connected'}
                           onRetry={() => controllersQuery.refetch()}
                           onEditCredentials={() => {
-                            setEditingController(controller as ControllerData);
+                            setEditingController(controller as unknown as ControllerData);
                             setShowControllerForm(true);
                           }}
                           className="mt-3"
@@ -881,7 +860,7 @@ export default function SettingsPage() {
                         <Button
                           variant="outline"
                           onClick={() => {
-                            setEditingController(controller as ControllerData);
+                            setEditingController(controller as unknown as ControllerData);
                             setShowControllerForm(true);
                           }}
                         >
@@ -900,7 +879,7 @@ export default function SettingsPage() {
                       {controller && (
                         <ErrorBoundary context="Discovered Cameras">
                           <DiscoveredCameraList
-                            controllerId={controller.id}
+                            controllerId={String(controller.id)}
                             isControllerConnected={controller.is_connected}
                           />
                         </ErrorBoundary>
@@ -1015,7 +994,7 @@ export default function SettingsPage() {
           <DeleteControllerDialog
             open={deleteDialogOpen}
             onOpenChange={setDeleteDialogOpen}
-            controllerId={controller.id}
+            controllerId={String(controller.id)}
             controllerName={controller.name}
             onDeleteSuccess={() => {
               controllersQuery.refetch();

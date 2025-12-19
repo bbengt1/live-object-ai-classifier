@@ -16,7 +16,7 @@ const EVENTS_PER_PAGE = 20;
 export function useRecentEvents(limit: number = 5) {
   return useQuery({
     queryKey: ['events', 'recent', limit],
-    queryFn: () => apiClient.events.list({}, { skip: 0, limit }),
+    queryFn: () => apiClient.events.list({ skip: 0, limit }),
     staleTime: 10 * 1000, // 10 seconds
     refetchInterval: 10 * 1000, // Poll every 10 seconds for new events
   });
@@ -37,7 +37,8 @@ export function useEvents(filters: IEventFilters = {}) {
   return useInfiniteQuery({
     queryKey: ['events', filters],
     queryFn: async ({ pageParam = 0 }) => {
-      return apiClient.events.list(filters, {
+      return apiClient.events.list({
+        ...filters,
         skip: pageParam,
         limit: EVENTS_PER_PAGE,
       });
@@ -58,7 +59,7 @@ export function useDeleteEvent() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (eventId: string) => apiClient.events.delete(eventId),
+    mutationFn: (eventId: string) => apiClient.events.delete(Number(eventId)),
     onMutate: async (eventId) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['events'] });

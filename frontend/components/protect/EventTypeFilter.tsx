@@ -85,9 +85,7 @@ export function EventTypeFilter({
   // Mutation for updating filters
   const filterMutation = useMutation({
     mutationFn: (filters: string[]) =>
-      apiClient.protect.updateCameraFilters(controllerId, camera.protect_camera_id, {
-        smart_detection_types: filters,
-      }),
+      apiClient.protect.updateEventFilters(Number(controllerId), camera.protect_camera_id, filters),
     onSuccess: () => {
       toast.success('Filters updated');
       // Invalidate camera list to refresh with new filters

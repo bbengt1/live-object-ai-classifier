@@ -1,9 +1,11 @@
 /**
- * useHomekitStatus hook (Story P4-6.1, P5-1.8, P7-1.1, P7-1.2)
+ * useHomekitStatus hook (Story P4-6.1, P5-1.8, P7-1.1, P7-1.2, P7-1.3, P7-1.4)
  *
  * TanStack Query hook for fetching and managing HomeKit integration status.
  * Story P7-1.1 adds useHomekitDiagnostics hook for diagnostic data.
  * Story P7-1.2 adds useHomekitTestConnectivity hook for connectivity testing.
+ * Story P7-1.3 adds useHomekitTestEvent hook for triggering test events.
+ * Story P7-1.4 adds sensor_deliveries and camera_name to diagnostics.
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
@@ -54,18 +56,19 @@ export interface HomekitRemovePairingResponse {
 const HOMEKIT_QUERY_KEY = ['homekit', 'status'];
 const HOMEKIT_PAIRINGS_KEY = ['homekit', 'pairings'];
 const HOMEKIT_DIAGNOSTICS_KEY = ['homekit', 'diagnostics'];
+const HOMEKIT_CONNECTIVITY_KEY = ['homekit', 'connectivity'];
 
 // ============================================================================
-// Diagnostics Types (Story P7-1.1)
+// Diagnostics Types (Story P7-1.1, P7-1.4)
 // ============================================================================
 
 /**
- * Diagnostic log entry (Story P7-1.1)
+ * Diagnostic log entry (Story P7-1.1, P7-1.3)
  */
 export interface HomekitDiagnosticEntry {
   timestamp: string;
   level: 'debug' | 'info' | 'warning' | 'error';
-  category: 'lifecycle' | 'pairing' | 'event' | 'network' | 'mdns';
+  category: 'lifecycle' | 'pairing' | 'event' | 'delivery' | 'network' | 'mdns';
   message: string;
   details?: Record<string, unknown>;
 }
@@ -80,17 +83,18 @@ export interface HomekitNetworkBinding {
 }
 
 /**
- * Last event delivery info (Story P7-1.1)
+ * Last event delivery info (Story P7-1.1, P7-1.4)
  */
 export interface HomekitLastEventDelivery {
   camera_id: string;
+  camera_name?: string | null;  // Story P7-1.4 (optional for backward compat)
   sensor_type: string;
   timestamp: string;
   delivered: boolean;
 }
 
 /**
- * Diagnostics response (Story P7-1.1)
+ * Diagnostics response (Story P7-1.1, P7-1.4)
  */
 export interface HomekitDiagnosticsResponse {
   bridge_running: boolean;
@@ -98,6 +102,7 @@ export interface HomekitDiagnosticsResponse {
   network_binding: HomekitNetworkBinding | null;
   connected_clients: number;
   last_event_delivery: HomekitLastEventDelivery | null;
+  sensor_deliveries: HomekitLastEventDelivery[];  // Story P7-1.4 AC3
   recent_logs: HomekitDiagnosticEntry[];
   warnings: string[];
   errors: string[];
@@ -230,17 +235,18 @@ export function useHomekitRemovePairing() {
 }
 
 // ============================================================================
-// Diagnostics Hooks (Story P7-1.1)
+// Diagnostics Hooks (Story P7-1.1, P7-1.4)
 // ============================================================================
 
 /**
- * Fetch HomeKit diagnostics from the API (Story P7-1.1)
+ * Fetch HomeKit diagnostics from the API (Story P7-1.1, P7-1.4)
  */
 async function fetchHomekitDiagnostics(): Promise<HomekitDiagnosticsResponse> {
   const data = await apiClient.homekit.getDiagnostics();
   // Cast the API response to our typed interface (API returns generic strings, we type them)
   return {
     ...data,
+    sensor_deliveries: data.sensor_deliveries || [],  // Story P7-1.4 AC3
     recent_logs: data.recent_logs.map((log) => ({
       ...log,
       level: log.level as HomekitDiagnosticEntry['level'],
@@ -302,5 +308,63 @@ async function testHomekitConnectivity(): Promise<HomekitConnectivityTestRespons
 export function useHomekitTestConnectivity() {
   return useMutation({
     mutationFn: testHomekitConnectivity,
+  });
+}
+
+// ============================================================================
+// Test Event Types and Hooks (Story P7-1.3)
+// ============================================================================
+
+const HOMEKIT_TEST_EVENT_KEY = ['homekit', 'test-event'];
+
+/**
+ * Event types that can be triggered (Story P7-1.3)
+ */
+export type HomekitTestEventType = 'motion' | 'occupancy' | 'vehicle' | 'animal' | 'package' | 'doorbell';
+
+/**
+ * Test event request parameters (Story P7-1.3)
+ */
+export interface HomekitTestEventRequest {
+  camera_id: string;
+  event_type: HomekitTestEventType;
+}
+
+/**
+ * Test event result (Story P7-1.3)
+ */
+export interface HomekitTestEventResult {
+  success: boolean;
+  message: string;
+  camera_id: string;
+  event_type: string;
+  sensor_name: string | null;
+  delivered_to_clients: number;
+  timestamp: string;
+}
+
+/**
+ * Trigger a test HomeKit event (Story P7-1.3)
+ */
+async function triggerHomekitTestEvent(request: HomekitTestEventRequest): Promise<HomekitTestEventResult> {
+  return apiClient.homekit.testEvent(request);
+}
+
+/**
+ * Hook for triggering a test HomeKit event (Story P7-1.3 AC5)
+ *
+ * Uses a mutation pattern since test events are user-initiated
+ * and modify sensor state.
+ */
+export function useHomekitTestEvent() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: triggerHomekitTestEvent,
+    mutationKey: HOMEKIT_TEST_EVENT_KEY,
+    onSuccess: () => {
+      // Refresh diagnostics after a test event to show delivery confirmation
+      queryClient.invalidateQueries({ queryKey: HOMEKIT_DIAGNOSTICS_KEY });
+    },
   });
 }

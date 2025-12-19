@@ -64,13 +64,13 @@ export function CameraDiscovery({
   // Check if discovery is available (WSDiscovery installed)
   const { data: discoveryStatus } = useQuery({
     queryKey: ['discovery', 'status'],
-    queryFn: () => apiClient.discovery.getStatus(),
+    queryFn: () => apiClient.discovery.status(),
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   // Discovery scan mutation
   const discoverMutation = useMutation({
-    mutationFn: (timeout?: number) => apiClient.discovery.startScan(timeout),
+    mutationFn: () => apiClient.discovery.start(),
     onSuccess: async (data) => {
       setDiscoveryState((prev) => ({
         ...prev,
@@ -151,7 +151,7 @@ export function CameraDiscovery({
   // Handle discover button click
   const handleDiscover = () => {
     setIsExpanded(true);
-    discoverMutation.mutate(10); // 10 second timeout
+    discoverMutation.mutate();
   };
 
   // Handle retry button click
@@ -163,7 +163,7 @@ export function CameraDiscovery({
       loadingDetails: new Set(),
       duration: undefined,
     });
-    discoverMutation.mutate(10);
+    discoverMutation.mutate();
   };
 
   const isScanning = discoverMutation.isPending;

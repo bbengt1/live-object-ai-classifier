@@ -30,7 +30,10 @@ interface FeedbackStatsParams {
 export function useFeedbackStats(params?: FeedbackStatsParams) {
   return useQuery<IFeedbackStats>({
     queryKey: ['feedback-stats', params?.camera_id, params?.start_date, params?.end_date],
-    queryFn: () => apiClient.feedback.getStats(params),
+    queryFn: () => apiClient.events.getFeedbackStats({
+      camera_id: params?.camera_id ? Number(params.camera_id) : undefined,
+      days: undefined, // Could compute from start_date/end_date if needed
+    }),
     staleTime: 60 * 1000, // Consider data fresh for 1 minute
     refetchOnWindowFocus: false,
   });

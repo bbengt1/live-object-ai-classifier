@@ -23,7 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useEntity } from '@/hooks/useEntities';
 import { EntityNameEdit } from './EntityNameEdit';
 import { cn } from '@/lib/utils';
-import type { IEntity } from '@/types/entity';
+import type { IEntity, IEventSummaryForEntity } from '@/types/entity';
 
 interface EntityDetailProps {
   /** The entity to display (basic info from list) */
@@ -198,7 +198,7 @@ export function EntityDetail({
               ) : (
                 <ScrollArea className="h-[300px]">
                   <div className="space-y-3 pr-4">
-                    {entityDetail.recent_events.map((event) => {
+                    {entityDetail.recent_events.map((event: IEventSummaryForEntity) => {
                       const eventThumbnail = event.thumbnail_url
                         ? event.thumbnail_url.startsWith('http')
                           ? event.thumbnail_url

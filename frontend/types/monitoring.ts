@@ -72,9 +72,12 @@ export interface LogsResponse {
 export interface LogsQueryParams {
   level?: string;
   module?: string;
+  source?: string;
   search?: string;
   start_date?: string;
   end_date?: string;
+  start_time?: string;
+  end_time?: string;
   limit?: number;
   offset?: number;
 }

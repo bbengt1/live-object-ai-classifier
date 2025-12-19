@@ -139,7 +139,7 @@ describe('AccuracyDashboard', () => {
 
   describe('Loading State (AC10)', () => {
     it('renders loading skeletons while data is being fetched', () => {
-      vi.mocked(apiClient.feedback.getStats).mockImplementation(
+      vi.mocked(apiClient.events.getFeedbackStats).mockImplementation(
         () => new Promise(() => {}) // Never resolves - keeps loading
       );
 
@@ -153,7 +153,7 @@ describe('AccuracyDashboard', () => {
 
   describe('Empty State (AC11)', () => {
     it('shows empty state message when no feedback exists', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsEmpty);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsEmpty);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -167,7 +167,7 @@ describe('AccuracyDashboard', () => {
 
   describe('Data Display (AC2, AC3)', () => {
     it('displays overall accuracy rate with percentage', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -177,7 +177,7 @@ describe('AccuracyDashboard', () => {
     });
 
     it('shows green indicator for high accuracy (>80%)', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -187,7 +187,7 @@ describe('AccuracyDashboard', () => {
     });
 
     it('shows red indicator for low accuracy (<60%)', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsLowAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsLowAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -197,7 +197,7 @@ describe('AccuracyDashboard', () => {
     });
 
     it('displays total feedback count', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -207,7 +207,7 @@ describe('AccuracyDashboard', () => {
     });
 
     it('displays helpful count', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -217,7 +217,7 @@ describe('AccuracyDashboard', () => {
     });
 
     it('displays not helpful count', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -229,7 +229,7 @@ describe('AccuracyDashboard', () => {
 
   describe('Per-Camera Table (AC4)', () => {
     it('displays camera accuracy breakdown table', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -243,7 +243,7 @@ describe('AccuracyDashboard', () => {
 
     it('table headers are clickable for sorting', async () => {
       const user = userEvent.setup();
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -260,7 +260,7 @@ describe('AccuracyDashboard', () => {
 
   describe('Trend Chart (AC5)', () => {
     it('displays daily trend chart', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -272,7 +272,7 @@ describe('AccuracyDashboard', () => {
 
   describe('Top Corrections (AC6)', () => {
     it('displays top corrections list', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -285,7 +285,7 @@ describe('AccuracyDashboard', () => {
     });
 
     it('shows empty message when no corrections', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsLowAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsLowAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -297,7 +297,7 @@ describe('AccuracyDashboard', () => {
 
   describe('Filtering (AC7, AC8)', () => {
     it('renders period filter dropdown', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -310,7 +310,7 @@ describe('AccuracyDashboard', () => {
     });
 
     it('renders camera filter dropdown', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -323,7 +323,7 @@ describe('AccuracyDashboard', () => {
     });
 
     it('calls API with updated params when filter changes', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -332,13 +332,13 @@ describe('AccuracyDashboard', () => {
       });
 
       // Initial load should have called the API
-      expect(apiClient.feedback.getStats).toHaveBeenCalled();
+      expect(apiClient.events.getFeedbackStats).toHaveBeenCalled();
     });
   });
 
   describe('CSV Export (AC9)', () => {
     it('renders export CSV button', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       renderWithProviders(<AccuracyDashboard />);
 
@@ -349,7 +349,7 @@ describe('AccuracyDashboard', () => {
 
     it('export button triggers download when clicked', async () => {
       const user = userEvent.setup();
-      vi.mocked(apiClient.feedback.getStats).mockResolvedValue(mockStatsHighAccuracy);
+      vi.mocked(apiClient.events.getFeedbackStats).mockResolvedValue(mockStatsHighAccuracy);
 
       // Mock URL.createObjectURL
       const mockCreateObjectURL = vi.fn().mockReturnValue('blob:test');
@@ -374,7 +374,7 @@ describe('AccuracyDashboard', () => {
 
   describe('Error Handling', () => {
     it('displays error message when API fails', async () => {
-      vi.mocked(apiClient.feedback.getStats).mockRejectedValue(new Error('Network error'));
+      vi.mocked(apiClient.events.getFeedbackStats).mockRejectedValue(new Error('Network error'));
 
       renderWithProviders(<AccuracyDashboard />);
 

@@ -194,12 +194,8 @@ export default function EventsPage() {
 
     setIsDeleting(true);
     try {
-      const result = await apiClient.events.bulkDelete(Array.from(selectedIds));
-      toast.success(`Deleted ${result.deleted_count} events`, {
-        description: result.space_freed_mb > 0
-          ? `Freed ${result.space_freed_mb} MB of storage`
-          : undefined,
-      });
+      const result = await apiClient.events.deleteMany(Array.from(selectedIds).map(Number));
+      toast.success(`Deleted ${result.deleted_count} events`);
       setSelectedIds(new Set());
       setSelectionMode(false);
       invalidateEvents();
@@ -225,7 +221,7 @@ export default function EventsPage() {
   useEffect(() => {
     const fetchCameras = async () => {
       try {
-        const cameraList = await apiClient.cameras.list({ is_enabled: true });
+        const cameraList = await apiClient.cameras.list();
         setCameras(cameraList);
       } catch (error) {
         console.error('Failed to fetch cameras:', error);

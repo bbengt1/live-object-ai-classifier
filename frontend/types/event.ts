@@ -134,18 +134,30 @@ export interface IEvent {
  * Event filters for querying events API
  */
 export interface IEventFilters {
+  // Pagination
+  skip?: number;                  // Number of records to skip
+  limit?: number;                 // Max records to return
+  // Text search
   search?: string;                // Full-text search on description
+  // Camera filtering
   camera_id?: string;             // Filter by camera UUID
-  start_date?: string;            // ISO 8601 datetime
-  end_date?: string;              // ISO 8601 datetime
+  // Time filtering
+  start_date?: string;            // ISO 8601 datetime (alias for start_time)
+  end_date?: string;              // ISO 8601 datetime (alias for end_time)
+  start_time?: string;            // ISO 8601 datetime
+  end_time?: string;              // ISO 8601 datetime
+  time_range?: string;            // Predefined time range (e.g., '1h', '24h', '7d')
+  // Object filtering
   objects?: string[];             // Filter by detected objects
   min_confidence?: number;        // Minimum confidence score (0-100)
+  // Source filtering
   source_type?: SourceType;       // Filter by event source (Phase 2)
   smart_detection_type?: SmartDetectionType; // Filter by smart detection type (Phase 2)
   // Story P3-7.6: Analysis mode filtering
   analysis_mode?: AnalysisMode;   // Filter by analysis mode
   has_fallback?: boolean;         // Filter events with fallback_reason (True = has fallback)
   low_confidence?: boolean;       // Filter by low confidence flag (True = uncertain descriptions)
+  has_thumbnail?: boolean;        // Filter by thumbnail presence
   // Story P4-7.3: Anomaly filtering
   anomaly_severity?: 'low' | 'medium' | 'high';  // Filter by anomaly severity
 }

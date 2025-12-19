@@ -40,10 +40,10 @@ interface PromptHistoryParams {
  *   camera_id: 'abc123'
  * });
  */
-export function usePromptInsights(params?: PromptInsightsParams) {
+export function usePromptInsights(_params?: PromptInsightsParams) {
   return useQuery<IPromptInsightsResponse>({
-    queryKey: ['prompt-insights', params?.camera_id],
-    queryFn: () => apiClient.feedback.getPromptInsights(params),
+    queryKey: ['prompt-insights'],
+    queryFn: () => apiClient.events.getPromptInsights(),
     staleTime: 60 * 1000, // Consider data fresh for 1 minute
     refetchOnWindowFocus: false,
   });
@@ -62,7 +62,7 @@ export function useApplySuggestion() {
   const queryClient = useQueryClient();
 
   return useMutation<IApplySuggestionResponse, Error, IApplySuggestionRequest>({
-    mutationFn: (data) => apiClient.feedback.applySuggestion(data),
+    mutationFn: (data) => apiClient.events.applyPromptSuggestion(data),
     onSuccess: () => {
       // Invalidate related queries to refetch with updated data
       queryClient.invalidateQueries({ queryKey: ['prompt-insights'] });
@@ -84,10 +84,10 @@ export function useApplySuggestion() {
  *   end_date: '2025-12-12'
  * });
  */
-export function useABTestResults(params?: ABTestResultsParams) {
+export function useABTestResults(_params?: ABTestResultsParams) {
   return useQuery<IABTestResultsResponse>({
-    queryKey: ['ab-test-results', params?.start_date, params?.end_date],
-    queryFn: () => apiClient.feedback.getABTestResults(params),
+    queryKey: ['ab-test-results'],
+    queryFn: () => apiClient.events.getABTestResults(),
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -104,8 +104,11 @@ export function useABTestResults(params?: ABTestResultsParams) {
  */
 export function usePromptHistory(params?: PromptHistoryParams) {
   return useQuery<IPromptHistoryResponse>({
-    queryKey: ['prompt-history', params?.camera_id, params?.limit],
-    queryFn: () => apiClient.feedback.getPromptHistory(params),
+    queryKey: ['prompt-history', params?.limit],
+    queryFn: () => apiClient.events.getPromptHistory({
+      limit: params?.limit,
+      offset: undefined,
+    }),
     staleTime: 60 * 1000,
     refetchOnWindowFocus: false,
   });

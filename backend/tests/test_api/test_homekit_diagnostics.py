@@ -499,6 +499,7 @@ class TestHomeKitDiagnosticsAPI:
             "network_binding": None,
             "connected_clients": 0,
             "last_event_delivery": None,
+            "sensor_deliveries": [],  # Story P7-1.4
             "recent_logs": [],
             "warnings": [],
             "errors": ["HAP-python not installed"]
@@ -507,6 +508,197 @@ class TestHomeKitDiagnosticsAPI:
         response = HomeKitDiagnosticsResponse(**diagnostics)
         assert response.bridge_running is False
         assert len(response.errors) == 1
+
+
+# ============================================================================
+# Story P7-1.4 Tests: Per-Sensor Delivery Tracking
+# ============================================================================
+
+
+class TestPerSensorDeliveryTracking:
+    """Tests for per-sensor delivery tracking (Story P7-1.4 AC3)."""
+
+    def test_sensor_deliveries_schema_with_camera_name(self):
+        """P7-1.4 AC3: LastEventDeliveryInfo includes camera_name."""
+        delivery = LastEventDeliveryInfo(
+            camera_id="abc-123",
+            camera_name="Front Door",
+            sensor_type="motion",
+            timestamp=datetime.now(),
+            delivered=True
+        )
+
+        assert delivery.camera_name == "Front Door"
+        assert delivery.camera_id == "abc-123"
+        assert delivery.sensor_type == "motion"
+        assert delivery.delivered is True
+
+    def test_sensor_deliveries_schema_without_camera_name(self):
+        """P7-1.4: LastEventDeliveryInfo works without camera_name (backward compat)."""
+        delivery = LastEventDeliveryInfo(
+            camera_id="abc-123",
+            sensor_type="occupancy",
+            timestamp=datetime.now(),
+            delivered=True
+        )
+
+        assert delivery.camera_name is None
+        assert delivery.camera_id == "abc-123"
+
+    def test_diagnostics_response_includes_sensor_deliveries(self):
+        """P7-1.4 AC3: HomeKitDiagnosticsResponse includes sensor_deliveries list."""
+        diagnostics = HomeKitDiagnosticsResponse(
+            bridge_running=True,
+            mdns_advertising=True,
+            network_binding=None,
+            connected_clients=2,
+            last_event_delivery=None,
+            sensor_deliveries=[
+                LastEventDeliveryInfo(
+                    camera_id="abc-123",
+                    camera_name="Front Door",
+                    sensor_type="motion",
+                    timestamp=datetime.now(),
+                    delivered=True
+                ),
+                LastEventDeliveryInfo(
+                    camera_id="def-456",
+                    camera_name="Backyard",
+                    sensor_type="occupancy",
+                    timestamp=datetime.now(),
+                    delivered=True
+                )
+            ],
+            recent_logs=[],
+            warnings=[],
+            errors=[]
+        )
+
+        assert len(diagnostics.sensor_deliveries) == 2
+        assert diagnostics.sensor_deliveries[0].camera_name == "Front Door"
+        assert diagnostics.sensor_deliveries[1].sensor_type == "occupancy"
+
+    def test_handler_tracks_per_sensor_deliveries(self):
+        """P7-1.4 AC3: Handler tracks per-sensor delivery history."""
+        handler = HomekitDiagnosticHandler(max_entries=100)
+
+        # Create event records for different camera+sensor combos
+        test_events = [
+            {"camera_id": "cam-1", "sensor_type": "motion", "camera_name": "Front"},
+            {"camera_id": "cam-1", "sensor_type": "occupancy", "camera_name": "Front"},
+            {"camera_id": "cam-2", "sensor_type": "motion", "camera_name": "Back"},
+        ]
+
+        for event in test_events:
+            record = logging.LogRecord(
+                name="app.services.homekit_service",
+                level=logging.INFO,
+                pathname="homekit_service.py",
+                lineno=100,
+                msg="Event triggered",
+                args=(),
+                exc_info=None
+            )
+            record.diagnostic_category = "event"
+            record.camera_id = event["camera_id"]
+            record.sensor_type = event["sensor_type"]
+            record.camera_name = event.get("camera_name")
+            record.delivered = True
+
+            handler.emit(record)
+
+        # Should have 3 unique sensor deliveries
+        deliveries = handler.get_sensor_deliveries()
+        assert len(deliveries) == 3
+
+        # Check that all combinations are tracked
+        delivery_keys = {(d.camera_id, d.sensor_type) for d in deliveries}
+        assert ("cam-1", "motion") in delivery_keys
+        assert ("cam-1", "occupancy") in delivery_keys
+        assert ("cam-2", "motion") in delivery_keys
+
+    def test_handler_updates_existing_sensor_delivery(self):
+        """P7-1.4 AC3: Handler updates existing sensor delivery rather than creating duplicates."""
+        handler = HomekitDiagnosticHandler(max_entries=100)
+
+        # Send two events for same camera+sensor
+        for i in range(2):
+            record = logging.LogRecord(
+                name="app.services.homekit_service",
+                level=logging.INFO,
+                pathname="homekit_service.py",
+                lineno=100,
+                msg=f"Motion event {i}",
+                args=(),
+                exc_info=None
+            )
+            record.diagnostic_category = "event"
+            record.camera_id = "cam-1"
+            record.sensor_type = "motion"
+            record.delivered = True
+
+            handler.emit(record)
+
+        # Should only have 1 entry (most recent)
+        deliveries = handler.get_sensor_deliveries()
+        assert len(deliveries) == 1
+        assert deliveries[0].camera_id == "cam-1"
+
+    def test_handler_sensor_deliveries_sorted_by_timestamp(self):
+        """P7-1.4 AC3: get_sensor_deliveries returns list sorted by timestamp (newest first)."""
+        import time
+        handler = HomekitDiagnosticHandler(max_entries=100)
+
+        # Create events with slight time gaps
+        for i, sensor_type in enumerate(["motion", "occupancy", "vehicle"]):
+            record = logging.LogRecord(
+                name="app.services.homekit_service",
+                level=logging.INFO,
+                pathname="homekit_service.py",
+                lineno=100,
+                msg="Event",
+                args=(),
+                exc_info=None
+            )
+            record.diagnostic_category = "event"
+            record.camera_id = f"cam-{i}"
+            record.sensor_type = sensor_type
+            record.delivered = True
+
+            handler.emit(record)
+            time.sleep(0.01)  # Small delay to ensure different timestamps
+
+        deliveries = handler.get_sensor_deliveries()
+
+        # Should be sorted newest first
+        for i in range(len(deliveries) - 1):
+            assert deliveries[i].timestamp >= deliveries[i + 1].timestamp
+
+    def test_handler_clear_resets_sensor_deliveries(self):
+        """P7-1.4: clear() also clears sensor_deliveries."""
+        handler = HomekitDiagnosticHandler(max_entries=100)
+
+        # Add a sensor delivery
+        record = logging.LogRecord(
+            name="app.services.homekit_service",
+            level=logging.INFO,
+            pathname="homekit_service.py",
+            lineno=100,
+            msg="Event",
+            args=(),
+            exc_info=None
+        )
+        record.diagnostic_category = "event"
+        record.camera_id = "cam-1"
+        record.sensor_type = "motion"
+        record.delivered = True
+        handler.emit(record)
+
+        assert len(handler.get_sensor_deliveries()) == 1
+
+        handler.clear()
+
+        assert len(handler.get_sensor_deliveries()) == 0
 
 
 # ============================================================================

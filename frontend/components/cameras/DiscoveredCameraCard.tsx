@@ -131,8 +131,7 @@ export function DiscoveredCameraCard({
     try {
       const result = await apiClient.discovery.testConnection(
         rtspUrl,
-        testUsername || null,
-        testPassword || null
+        testUsername || testPassword ? { username: testUsername || undefined, password: testPassword || undefined } : undefined
       );
 
       setTestState({ loading: false, result });

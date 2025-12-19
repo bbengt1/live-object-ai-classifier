@@ -147,7 +147,7 @@ export function CameraForm({
     try {
       if (initialData) {
         // Existing camera: use camera ID endpoint
-        const result = await apiClient.cameras.testConnection(initialData.id);
+        const result = await apiClient.cameras.test(Number(initialData.id));
         setTestState({ loading: false, result });
       } else {
         // New camera: use discovery test endpoint with form values
@@ -168,8 +168,7 @@ export function CameraForm({
 
         const result = await apiClient.discovery.testConnection(
           rtspUrl,
-          username,
-          password
+          username || password ? { username: username || undefined, password: password || undefined } : undefined
         );
 
         // Map discovery response to camera test response format

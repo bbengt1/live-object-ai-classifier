@@ -160,8 +160,8 @@ export function SummaryCard() {
     const yesterday = yesterdayDate.toISOString().split('T')[0];
 
     return {
-      today: data.summaries.find((s) => s.date === today) || null,
-      yesterday: data.summaries.find((s) => s.date === yesterday) || null,
+      today: data.summaries.find((s: RecentSummaryItem) => s.date === today) || null,
+      yesterday: data.summaries.find((s: RecentSummaryItem) => s.date === yesterday) || null,
     };
   }, [data]);
 

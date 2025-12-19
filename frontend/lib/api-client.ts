@@ -92,6 +92,27 @@ import type {
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const API_V1_PREFIX = '/api/v1';
 
+// Exported types for Protect cameras
+export interface ProtectDiscoveredCamera {
+  protect_id: string;
+  protect_camera_id: string;
+  name: string;
+  type: string;
+  model: string;
+  mac: string;
+  host: string | null;
+  is_connected: boolean;
+  is_online?: boolean;
+  is_doorbell: boolean;
+  has_package_camera: boolean;
+  smart_detect_types: string[];
+  is_enabled_for_ai: boolean;
+  event_filters: string[];
+  camera_id?: number; // Database camera ID if enabled
+  analysis_mode?: string;
+  is_new?: boolean;
+}
+
 // Token storage key
 const AUTH_TOKEN_KEY = 'auth_token';
 
@@ -117,6 +138,18 @@ export function setAuthToken(token: string): void {
 export function clearAuthToken(): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+/**
+ * Get headers including auth token for direct fetch calls
+ */
+function getAuthHeaders(): HeadersInit {
+  const headers: HeadersInit = {};
+  const token = getAuthToken();
+  if (token) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 /**
@@ -198,1130 +231,934 @@ export const apiClient = {
   cameras: {
     /**
      * Get all cameras
-     * @param filters Optional filters (is_enabled)
-     * @returns Array of cameras
      */
-    list: async (filters?: { is_enabled?: boolean }): Promise<ICamera[]> => {
-      const params = new URLSearchParams();
-      if (filters?.is_enabled !== undefined) {
-        params.append('is_enabled', String(filters.is_enabled));
-      }
-
-      const queryString = params.toString();
-      const endpoint = `/cameras${queryString ? `?${queryString}` : ''}`;
-
-      return apiFetch<ICamera[]>(endpoint);
+    list: async (): Promise<ICamera[]> => {
+      return apiFetch('/cameras');
     },
 
     /**
      * Get single camera by ID
-     * @param id Camera UUID
-     * @returns Camera object
-     * @throws ApiError with 404 if not found
      */
-    getById: async (id: string): Promise<ICamera> => {
-      return apiFetch<ICamera>(`/cameras/${id}`);
+    get: async (id: number): Promise<ICamera> => {
+      return apiFetch(`/cameras/${id}`);
     },
 
     /**
      * Create new camera
-     * @param data Camera creation payload
-     * @returns Created camera object
-     * @throws ApiError with 400 for validation errors, 409 for duplicate name
      */
-    create: async (data: ICameraCreate): Promise<ICamera> => {
-      return apiFetch<ICamera>('/cameras', {
+    create: async (camera: ICameraCreate): Promise<ICamera> => {
+      return apiFetch('/cameras', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify(camera),
       });
     },
 
     /**
-     * Update existing camera
-     * @param id Camera UUID
-     * @param data Partial camera update payload
-     * @returns Updated camera object
-     * @throws ApiError with 404 if not found, 400 for validation errors
+     * Update camera
      */
-    update: async (id: string, data: ICameraUpdate): Promise<ICamera> => {
-      return apiFetch<ICamera>(`/cameras/${id}`, {
+    update: async (id: number, camera: ICameraUpdate): Promise<ICamera> => {
+      return apiFetch(`/cameras/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: JSON.stringify(camera),
       });
     },
 
     /**
      * Delete camera
-     * @param id Camera UUID
-     * @returns Success confirmation
-     * @throws ApiError with 404 if not found
      */
-    delete: async (id: string): Promise<{ deleted: boolean }> => {
-      return apiFetch<{ deleted: boolean }>(`/cameras/${id}`, {
+    delete: async (id: number): Promise<void> => {
+      return apiFetch(`/cameras/${id}`, {
         method: 'DELETE',
       });
     },
 
     /**
      * Test camera connection
-     * @param id Camera UUID
-     * @returns Test result with optional thumbnail
-     * @throws ApiError with 404 if not found
      */
-    testConnection: async (id: string): Promise<ICameraTestResponse> => {
-      return apiFetch<ICameraTestResponse>(`/cameras/${id}/test`, {
+    test: async (id: number): Promise<ICameraTestResponse> => {
+      return apiFetch(`/cameras/${id}/test`, {
         method: 'POST',
       });
     },
 
     /**
-     * Get camera preview thumbnail
-     * @param id Camera UUID
-     * @returns Preview thumbnail as base64 or path
-     * @throws ApiError with 404 if not found
+     * Test camera connection with provided credentials (before creating)
      */
-    preview: async (id: string): Promise<{ thumbnail_base64?: string; thumbnail_path?: string }> => {
-      return apiFetch<{ thumbnail_base64?: string; thumbnail_path?: string }>(`/cameras/${id}/preview`);
+    testConnection: async (data: {
+      rtsp_url?: string;
+      usb_device_index?: number;
+      username?: string;
+      password?: string;
+    }): Promise<ICameraTestResponse> => {
+      return apiFetch('/cameras/test', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
     },
 
     /**
-     * Trigger manual camera analysis
-     * @param id Camera UUID
-     * @returns Success confirmation
-     * @throws ApiError with 404 if not found
+     * Start camera streaming
      */
-    analyze: async (id: string): Promise<{ success: boolean; message?: string }> => {
-      return apiFetch<{ success: boolean; message?: string }>(`/cameras/${id}/analyze`, {
+    start: async (id: number): Promise<{ status: string; camera_id: number }> => {
+      return apiFetch(`/cameras/${id}/start`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Stop camera streaming
+     */
+    stop: async (id: number): Promise<{ status: string; camera_id: number }> => {
+      return apiFetch(`/cameras/${id}/stop`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Get live preview frame for camera
+     */
+    getPreviewUrl: (id: number): string => {
+      return `${API_BASE_URL}${API_V1_PREFIX}/cameras/${id}/preview`;
+    },
+
+    /**
+     * Get camera preview with base64 thumbnail
+     */
+    preview: async (id: number | string): Promise<{ thumbnail_base64?: string; thumbnail_path?: string }> => {
+      return apiFetch(`/cameras/${id}/preview`);
+    },
+
+    /**
+     * Trigger manual analysis of camera frame
+     */
+    analyze: async (id: number | string): Promise<{ event_id?: number; message: string }> => {
+      return apiFetch(`/cameras/${id}/analyze`, {
         method: 'POST',
       });
     },
   },
 
-  /**
-   * Events API client
-   */
   events: {
     /**
-     * Get paginated events with optional filters
-     * @param filters Event filters (search, camera, date range, objects, confidence)
-     * @param pagination Pagination params (skip, limit)
-     * @returns Paginated events response
+     * Get events with filtering and pagination
      */
-    list: async (
-      filters?: IEventFilters,
-      pagination?: { skip?: number; limit?: number }
-    ): Promise<IEventsResponse> => {
+    list: async (filters?: IEventFilters): Promise<IEventsResponse> => {
       const params = new URLSearchParams();
-
-      // Pagination
-      if (pagination?.skip !== undefined) {
-        params.append('skip', String(pagination.skip));
+      if (filters) {
+        if (filters.skip !== undefined) params.set('skip', String(filters.skip));
+        if (filters.limit !== undefined) params.set('limit', String(filters.limit));
+        if (filters.camera_id !== undefined) params.set('camera_id', String(filters.camera_id));
+        if (filters.start_time) params.set('start_time', filters.start_time);
+        if (filters.end_time) params.set('end_time', filters.end_time);
+        if (filters.source_type) params.set('source_type', filters.source_type);
+        if (filters.smart_detection_type) params.set('smart_detection_type', filters.smart_detection_type);
+        if (filters.search) params.set('search', filters.search);
+        if (filters.time_range) params.set('time_range', filters.time_range);
+        if (filters.has_thumbnail !== undefined) params.set('has_thumbnail', String(filters.has_thumbnail));
       }
-      if (pagination?.limit !== undefined) {
-        params.append('limit', String(pagination.limit));
-      }
-
-      // Filters
-      if (filters?.search) {
-        params.append('search', filters.search);
-      }
-      if (filters?.camera_id) {
-        params.append('camera_id', filters.camera_id);
-      }
-      if (filters?.start_date) {
-        params.append('start_date', filters.start_date);
-      }
-      if (filters?.end_date) {
-        params.append('end_date', filters.end_date);
-      }
-      if (filters?.objects && filters.objects.length > 0) {
-        params.append('objects', filters.objects.join(','));
-      }
-      if (filters?.min_confidence !== undefined) {
-        params.append('min_confidence', String(filters.min_confidence));
-      }
-      if (filters?.source_type) {
-        params.append('source_type', filters.source_type);
-      }
-      if (filters?.smart_detection_type) {
-        params.append('smart_detection_type', filters.smart_detection_type);
-      }
-      // Story P3-7.6: Analysis mode filtering
-      if (filters?.analysis_mode) {
-        params.append('analysis_mode', filters.analysis_mode);
-      }
-      if (filters?.has_fallback !== undefined) {
-        params.append('has_fallback', String(filters.has_fallback));
-      }
-      if (filters?.low_confidence !== undefined) {
-        params.append('low_confidence', String(filters.low_confidence));
-      }
-
       const queryString = params.toString();
-      const endpoint = `/events${queryString ? `?${queryString}` : ''}`;
-
-      return apiFetch<IEventsResponse>(endpoint);
+      return apiFetch(`/events${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
      * Get single event by ID
-     * @param id Event UUID
-     * @returns Event object
-     * @throws ApiError with 404 if not found
      */
-    getById: async (id: string): Promise<IEvent> => {
-      return apiFetch<IEvent>(`/events/${id}`);
+    get: async (id: number): Promise<IEvent> => {
+      return apiFetch(`/events/${id}`);
     },
 
     /**
-     * Delete event by ID
-     * @param id Event UUID
-     * @returns void (204 No Content)
-     * @throws ApiError with 404 if not found
+     * Delete single event
      */
-    delete: async (id: string): Promise<void> => {
-      await apiFetch<void>(`/events/${id}`, {
+    delete: async (id: number): Promise<void> => {
+      return apiFetch(`/events/${id}`, {
         method: 'DELETE',
       });
     },
 
     /**
-     * Delete multiple events by ID (FF-010)
-     * @param ids Array of event UUIDs to delete
-     * @returns Deletion statistics
-     * @throws ApiError with 400 if no IDs provided or too many (>100)
-     * @throws ApiError with 404 if no events found
+     * Delete multiple events
      */
-    bulkDelete: async (ids: string[]): Promise<{
-      deleted_count: number;
-      thumbnails_deleted: number;
-      frames_deleted: number;
-      space_freed_mb: number;
-      not_found_count: number;
+    deleteMany: async (ids: number[]): Promise<{ deleted_count: number }> => {
+      return apiFetch('/events/bulk-delete', {
+        method: 'DELETE',
+        body: JSON.stringify({ event_ids: ids }),
+      });
+    },
+
+    /**
+     * Delete all events
+     */
+    deleteAll: async (): Promise<{ deleted_count: number }> => {
+      return apiFetch('/events/all', {
+        method: 'DELETE',
+      });
+    },
+
+    /**
+     * Get event thumbnail URL
+     */
+    getThumbnailUrl: (id: number): string => {
+      return `${API_BASE_URL}${API_V1_PREFIX}/events/${id}/thumbnail`;
+    },
+
+    /**
+     * Get event statistics
+     */
+    stats: async (params?: {
+      days?: number;
+      camera_id?: number;
+    }): Promise<{
+      total_events: number;
+      events_by_day: Array<{ date: string; count: number }>;
+      events_by_camera: Array<{ camera_id: number; camera_name: string; count: number }>;
+      events_by_hour: Array<{ hour: number; count: number }>;
     }> => {
-      const params = new URLSearchParams();
-      ids.forEach(id => params.append('event_ids', id));
-      return apiFetch(`/events/bulk?${params.toString()}`, {
-        method: 'DELETE',
-      });
+      const searchParams = new URLSearchParams();
+      if (params?.days) searchParams.set('days', String(params.days));
+      if (params?.camera_id) searchParams.set('camera_id', String(params.camera_id));
+      const queryString = searchParams.toString();
+      return apiFetch(`/events/stats${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
-     * Re-analyze an event with a different analysis mode (Story P3-6.4)
-     * @param id Event UUID
-     * @param analysisMode Analysis mode to use: 'single_frame', 'multi_frame', 'video_native'
-     * @returns Updated event with new description and confidence
-     * @throws ApiError with 404 if event not found
-     * @throws ApiError with 400 if analysis mode not available for camera type
-     * @throws ApiError with 429 if rate limit exceeded (max 3 per hour)
+     * Get correlated events for a specific event (Story P3-2.5)
+     * @param id Event ID
+     * @param params Optional parameters
+     * @returns List of correlated events sharing the same correlation_group_id
      */
-    reanalyze: async (id: string, analysisMode: 'single_frame' | 'multi_frame' | 'video_native'): Promise<IEvent> => {
-      return apiFetch<IEvent>(`/events/${id}/reanalyze`, {
+    getCorrelated: async (id: number, params?: {
+      limit?: number;
+    }): Promise<{
+      event_id: number;
+      correlation_group_id: string | null;
+      correlated_events: Array<{
+        id: number;
+        camera_id: number;
+        camera_name: string;
+        timestamp: string;
+        smart_detection_type: string | null;
+        description: string;
+        thumbnail_path: string | null;
+      }>;
+      total_correlated: number;
+    }> => {
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      const queryString = searchParams.toString();
+      return apiFetch(`/events/${id}/correlated${queryString ? `?${queryString}` : ''}`);
+    },
+
+    // ========================================================================
+    // Feedback endpoints (Story P4-5.1, P4-5.2)
+    // ========================================================================
+
+    /**
+     * Submit feedback for an event's AI description (Story P4-5.1)
+     * @param eventId Event ID
+     * @param feedback Feedback data (rating, optional correction)
+     * @returns Updated event with feedback
+     */
+    submitFeedback: async (eventId: number, feedback: { rating: 'helpful' | 'not_helpful'; correction?: string | null }): Promise<IEvent> => {
+      return apiFetch(`/events/${eventId}/feedback`, {
         method: 'POST',
-        body: JSON.stringify({ analysis_mode: analysisMode }),
+        body: JSON.stringify(feedback),
       });
     },
 
     /**
-     * Submit feedback for an event (Story P4-5.1)
-     * @param eventId Event UUID
-     * @param data Feedback data with rating and optional correction
-     * @returns Created feedback object
-     * @throws ApiError with 404 if event not found
-     * @throws ApiError with 409 if feedback already exists
+     * Get feedback statistics for analytics (Story P4-5.2)
+     * @param params Optional filter parameters
+     * @returns Aggregated feedback statistics
      */
-    submitFeedback: async (eventId: string, data: {
-      rating: 'helpful' | 'not_helpful';
-      correction?: string;
-    }): Promise<IEventFeedback> => {
-      return apiFetch<IEventFeedback>(`/events/${eventId}/feedback`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
-
-    /**
-     * Get feedback for an event (Story P4-5.1)
-     * @param eventId Event UUID
-     * @returns Feedback object if exists
-     * @throws ApiError with 404 if event or feedback not found
-     */
-    getFeedback: async (eventId: string): Promise<IEventFeedback> => {
-      return apiFetch<IEventFeedback>(`/events/${eventId}/feedback`);
-    },
-
-    /**
-     * Update feedback for an event (Story P4-5.1)
-     * @param eventId Event UUID
-     * @param data Updated feedback data
-     * @returns Updated feedback object
-     * @throws ApiError with 404 if event or feedback not found
-     */
-    updateFeedback: async (eventId: string, data: {
-      rating?: 'helpful' | 'not_helpful';
-      correction?: string;
-    }): Promise<IEventFeedback> => {
-      return apiFetch<IEventFeedback>(`/events/${eventId}/feedback`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-      });
-    },
-
-    /**
-     * Delete feedback for an event (Story P4-5.1)
-     * @param eventId Event UUID
-     * @throws ApiError with 404 if event or feedback not found
-     */
-    deleteFeedback: async (eventId: string): Promise<void> => {
-      await apiFetch<void>(`/events/${eventId}/feedback`, {
-        method: 'DELETE',
-      });
-    },
-  },
-
-  /**
-   * Feedback Statistics API client (Story P4-5.2)
-   */
-  feedback: {
-    /**
-     * Get aggregate feedback statistics for AI description accuracy monitoring
-     * @param params Optional filters: camera_id, start_date, end_date
-     * @returns Aggregate feedback statistics including accuracy rates, per-camera breakdown, daily trends, and top corrections
-     */
-    getStats: async (params?: {
-      camera_id?: string;
-      start_date?: string;
-      end_date?: string;
+    getFeedbackStats: async (params?: {
+      camera_id?: number;
+      days?: number;
     }): Promise<IFeedbackStats> => {
-      const queryParams = new URLSearchParams();
-      if (params?.camera_id) queryParams.append('camera_id', params.camera_id);
-      if (params?.start_date) queryParams.append('start_date', params.start_date);
-      if (params?.end_date) queryParams.append('end_date', params.end_date);
-
-      const queryString = queryParams.toString();
-      const endpoint = `/feedback/stats${queryString ? `?${queryString}` : ''}`;
-
-      return apiFetch<IFeedbackStats>(endpoint);
+      const searchParams = new URLSearchParams();
+      if (params?.camera_id) searchParams.set('camera_id', String(params.camera_id));
+      if (params?.days) searchParams.set('days', String(params.days));
+      const queryString = searchParams.toString();
+      return apiFetch(`/events/feedback/stats${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
-     * Get prompt improvement suggestions based on feedback analysis (Story P4-5.4)
-     * @param params Optional filter: camera_id
-     * @returns Prompt insights with suggestions and camera-specific analysis
+     * Get prompt insights (Story P4-5.4)
+     * @returns Prompt improvement suggestions
      */
-    getPromptInsights: async (params?: {
-      camera_id?: string;
-    }): Promise<IPromptInsightsResponse> => {
-      const queryParams = new URLSearchParams();
-      if (params?.camera_id) queryParams.append('camera_id', params.camera_id);
-
-      const queryString = queryParams.toString();
-      const endpoint = `/feedback/prompt-insights${queryString ? `?${queryString}` : ''}`;
-
-      return apiFetch<IPromptInsightsResponse>(endpoint);
+    getPromptInsights: async (): Promise<IPromptInsightsResponse> => {
+      return apiFetch('/events/feedback/prompt-insights');
     },
 
     /**
      * Apply a prompt suggestion (Story P4-5.4)
-     * @param data Suggestion ID and optional camera ID
-     * @returns Result with new prompt and version
+     * @param request The suggestion to apply
+     * @returns Result of applying the suggestion
      */
-    applySuggestion: async (data: IApplySuggestionRequest): Promise<IApplySuggestionResponse> => {
-      return apiFetch<IApplySuggestionResponse>('/feedback/prompt-insights/apply', {
+    applyPromptSuggestion: async (request: IApplySuggestionRequest): Promise<IApplySuggestionResponse> => {
+      return apiFetch('/events/feedback/apply-suggestion', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify(request),
       });
     },
 
     /**
      * Get A/B test results (Story P4-5.4)
-     * @param params Optional date range filters
-     * @returns A/B test statistics with winner determination
+     * @returns A/B test comparison data
      */
-    getABTestResults: async (params?: {
-      start_date?: string;
-      end_date?: string;
-    }): Promise<IABTestResultsResponse> => {
-      const queryParams = new URLSearchParams();
-      if (params?.start_date) queryParams.append('start_date', params.start_date);
-      if (params?.end_date) queryParams.append('end_date', params.end_date);
-
-      const queryString = queryParams.toString();
-      const endpoint = `/feedback/ab-test/results${queryString ? `?${queryString}` : ''}`;
-
-      return apiFetch<IABTestResultsResponse>(endpoint);
+    getABTestResults: async (): Promise<IABTestResultsResponse> => {
+      return apiFetch('/events/feedback/ab-test-results');
     },
 
     /**
      * Get prompt history (Story P4-5.4)
-     * @param params Optional filter: camera_id, limit
-     * @returns Prompt history entries
+     * @param params Optional pagination parameters
+     * @returns List of prompt versions and their performance
      */
     getPromptHistory: async (params?: {
-      camera_id?: string;
       limit?: number;
+      offset?: number;
     }): Promise<IPromptHistoryResponse> => {
-      const queryParams = new URLSearchParams();
-      if (params?.camera_id) queryParams.append('camera_id', params.camera_id);
-      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      const searchParams = new URLSearchParams();
+      if (params?.limit) searchParams.set('limit', String(params.limit));
+      if (params?.offset) searchParams.set('offset', String(params.offset));
+      const queryString = searchParams.toString();
+      return apiFetch(`/events/feedback/prompt-history${queryString ? `?${queryString}` : ''}`);
+    },
 
-      const queryString = queryParams.toString();
-      const endpoint = `/feedback/prompt-history${queryString ? `?${queryString}` : ''}`;
-
-      return apiFetch<IPromptHistoryResponse>(endpoint);
+    /**
+     * Re-analyze an event with a different analysis mode (Story P3-6.4)
+     * @param eventId Event ID (UUID string) to re-analyze
+     * @param analysisMode New analysis mode to use
+     * @returns Updated event with new analysis
+     */
+    reanalyze: async (eventId: string, analysisMode: string): Promise<IEvent> => {
+      return apiFetch(`/events/${eventId}/reanalyze`, {
+        method: 'POST',
+        body: JSON.stringify({ analysis_mode: analysisMode }),
+      });
     },
   },
 
-  /**
-   * Settings API client
-   */
   settings: {
     /**
-     * Get all system settings
-     * @returns System settings object
+     * Get system settings
      */
     get: async (): Promise<SystemSettings> => {
-      return apiFetch<SystemSettings>('/system/settings');
+      return apiFetch('/system/settings');
     },
 
     /**
-     * Update system settings (partial update)
-     * @param data Partial settings update payload
-     * @returns Updated settings object
+     * Update system settings
      */
-    update: async (data: Partial<SystemSettings>): Promise<SystemSettings> => {
-      return apiFetch<SystemSettings>('/system/settings', {
+    update: async (settings: Partial<SystemSettings>): Promise<SystemSettings> => {
+      return apiFetch('/system/settings', {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: JSON.stringify(settings),
       });
+    },
+
+    /**
+     * Get storage statistics
+     */
+    storage: async (): Promise<StorageStats> => {
+      return apiFetch('/system/storage');
     },
 
     /**
      * Test AI API key
-     * @param data Provider and API key to test
-     * @returns Test result with validation status
      */
-    testApiKey: async (data: AIKeyTestRequest): Promise<AIKeyTestResponse> => {
-      return apiFetch<AIKeyTestResponse>('/system/test-key', {
+    testAIKey: async (request: AIKeyTestRequest): Promise<AIKeyTestResponse> => {
+      return apiFetch('/ai/test-key', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify(request),
       });
     },
 
     /**
-     * Get AI providers status (Story P2-5.2)
-     * @returns List of providers with configuration status and order
+     * Delete all event data
+     */
+    deleteAllData: async (): Promise<DeleteDataResponse> => {
+      return apiFetch('/system/data', {
+        method: 'DELETE',
+      });
+    },
+
+    /**
+     * Get AI usage statistics (Story P3-3.2)
+     */
+    getAIUsage: async (params?: IAIUsageQueryParams): Promise<IAIUsageResponse> => {
+      const searchParams = new URLSearchParams();
+      if (params?.days) searchParams.set('days', String(params.days));
+      if (params?.provider) searchParams.set('provider', params.provider);
+      if (params?.camera_id) searchParams.set('camera_id', String(params.camera_id));
+      const queryString = searchParams.toString();
+      return apiFetch(`/ai/usage${queryString ? `?${queryString}` : ''}`);
+    },
+
+    /**
+     * Get cost cap status (Story P3-3.4)
+     */
+    getCostCapStatus: async (): Promise<ICostCapStatus> => {
+      return apiFetch('/ai/cost-cap/status');
+    },
+
+    /**
+     * Get AI providers configuration status (Story P2-5.2)
      */
     getAIProvidersStatus: async (): Promise<{
       providers: Array<{ provider: string; configured: boolean }>;
       order: string[];
     }> => {
-      return apiFetch<{
-        providers: Array<{ provider: string; configured: boolean }>;
-        order: string[];
-      }>('/system/ai-providers');
-    },
-
-    /**
-     * Get storage statistics
-     * @returns Storage usage information
-     */
-    getStorageStats: async (): Promise<StorageStats> => {
-      return apiFetch<StorageStats>('/system/storage');
-    },
-
-    /**
-     * Export all events
-     * @param format Export format (json or csv)
-     * @returns Blob for download
-     */
-    exportData: async (format: 'json' | 'csv' = 'json'): Promise<Blob> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/events/export?format=${format}`;
-      const headers: HeadersInit = {};
-      const token = getAuthToken();
-      if (token) {
-        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-      }
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        throw new ApiError(`Failed to export data`, response.status);
-      }
-      return response.blob();
-    },
-
-    /**
-     * Delete all event data
-     * @returns Deletion result
-     */
-    deleteAllData: async (): Promise<DeleteDataResponse> => {
-      return apiFetch<DeleteDataResponse>('/events', {
-        method: 'DELETE',
-      });
-    },
-
-    /**
-     * Get AI usage statistics (Story P3-7.2)
-     * @param params Optional start_date and end_date in YYYY-MM-DD format
-     * @returns AI usage aggregation with breakdown by date, camera, provider, and mode
-     */
-    getAIUsage: async (params?: IAIUsageQueryParams): Promise<IAIUsageResponse> => {
-      const searchParams = new URLSearchParams();
-      if (params?.start_date) {
-        searchParams.append('start_date', params.start_date);
-      }
-      if (params?.end_date) {
-        searchParams.append('end_date', params.end_date);
-      }
-      const queryString = searchParams.toString();
-      const endpoint = `/system/ai-usage${queryString ? `?${queryString}` : ''}`;
-      return apiFetch<IAIUsageResponse>(endpoint);
-    },
-
-    /**
-     * Get AI cost cap status (Story P3-7.3)
-     * @returns Current cost cap status including daily/monthly costs, caps, and pause state
-     */
-    getCostCapStatus: async (): Promise<ICostCapStatus> => {
-      return apiFetch<ICostCapStatus>('/system/ai-cost-status');
-    },
-
-    /**
-     * Update cost cap settings (Story P3-7.3)
-     * @param caps Object with daily_cap and/or monthly_cap (null for no limit)
-     * @returns Updated settings
-     */
-    updateCostCaps: async (caps: {
-      ai_daily_cost_cap?: number | null;
-      ai_monthly_cost_cap?: number | null;
-    }): Promise<SystemSettings> => {
-      return apiFetch<SystemSettings>('/system/settings', {
-        method: 'PUT',
-        body: JSON.stringify(caps),
-      });
+      return apiFetch('/system/ai-providers');
     },
   },
 
-  /**
-   * Alert Rules API client (Epic 5)
-   */
   alertRules: {
     /**
-     * Get all alert rules
-     * @param filters Optional filters (is_enabled)
-     * @returns Paginated list of alert rules
+     * List all alert rules
      */
-    list: async (filters?: { is_enabled?: boolean }): Promise<IAlertRuleListResponse> => {
-      const params = new URLSearchParams();
-      if (filters?.is_enabled !== undefined) {
-        params.append('is_enabled', String(filters.is_enabled));
-      }
-
-      const queryString = params.toString();
-      const endpoint = `/alert-rules${queryString ? `?${queryString}` : ''}`;
-
-      return apiFetch<IAlertRuleListResponse>(endpoint);
+    list: async (): Promise<IAlertRuleListResponse> => {
+      return apiFetch('/alert-rules');
     },
 
     /**
-     * Get single alert rule by ID
-     * @param id Alert rule UUID
-     * @returns Alert rule object
-     * @throws ApiError with 404 if not found
+     * Get single alert rule
      */
-    getById: async (id: string): Promise<IAlertRule> => {
-      return apiFetch<IAlertRule>(`/alert-rules/${id}`);
+    get: async (id: number): Promise<IAlertRule> => {
+      return apiFetch(`/alert-rules/${id}`);
     },
 
     /**
-     * Create new alert rule
-     * @param data Alert rule creation payload
-     * @returns Created alert rule object
-     * @throws ApiError with 422 for validation errors
+     * Create alert rule
      */
-    create: async (data: IAlertRuleCreate): Promise<IAlertRule> => {
-      return apiFetch<IAlertRule>('/alert-rules', {
+    create: async (rule: IAlertRuleCreate): Promise<IAlertRule> => {
+      return apiFetch('/alert-rules', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify(rule),
       });
     },
 
     /**
-     * Update existing alert rule
-     * @param id Alert rule UUID
-     * @param data Partial alert rule update payload
-     * @returns Updated alert rule object
-     * @throws ApiError with 404 if not found, 422 for validation errors
+     * Update alert rule
      */
-    update: async (id: string, data: IAlertRuleUpdate): Promise<IAlertRule> => {
-      return apiFetch<IAlertRule>(`/alert-rules/${id}`, {
+    update: async (id: number, rule: IAlertRuleUpdate): Promise<IAlertRule> => {
+      return apiFetch(`/alert-rules/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: JSON.stringify(rule),
       });
     },
 
     /**
      * Delete alert rule
-     * @param id Alert rule UUID
-     * @throws ApiError with 404 if not found
      */
-    delete: async (id: string): Promise<void> => {
-      await apiFetch<void>(`/alert-rules/${id}`, {
+    delete: async (id: number): Promise<void> => {
+      return apiFetch(`/alert-rules/${id}`, {
         method: 'DELETE',
       });
     },
 
     /**
-     * Test alert rule against historical events
-     * @param id Alert rule UUID
-     * @param data Optional test parameters
-     * @returns Test results with matching event IDs
-     * @throws ApiError with 404 if not found
+     * Toggle alert rule enabled status
      */
-    test: async (id: string, data?: IAlertRuleTestRequest): Promise<IAlertRuleTestResponse> => {
-      return apiFetch<IAlertRuleTestResponse>(`/alert-rules/${id}/test`, {
-        method: 'POST',
-        body: JSON.stringify(data || {}),
-      });
-    },
-  },
-
-  /**
-   * Webhooks API namespace (Story 5.3)
-   */
-  webhooks: {
-    /**
-     * Test a webhook URL
-     * @param data Test request with URL, optional headers and payload
-     * @returns Test result with status code and response details
-     */
-    test: async (data: IWebhookTestRequest): Promise<IWebhookTestResponse> => {
-      return apiFetch<IWebhookTestResponse>('/webhooks/test', {
-        method: 'POST',
-        body: JSON.stringify(data),
+    toggle: async (id: number, enabled: boolean): Promise<IAlertRule> => {
+      return apiFetch(`/alert-rules/${id}/toggle`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
       });
     },
 
     /**
-     * Get webhook logs with filtering
-     * @param filters Optional filters
-     * @returns Paginated list of webhook logs
+     * Test alert rule against recent events
      */
-    getLogs: async (filters?: IWebhookLogsFilter): Promise<IWebhookLogsResponse> => {
-      const params = new URLSearchParams();
-      if (filters?.rule_id) params.append('rule_id', filters.rule_id);
-      if (filters?.success !== undefined) params.append('success', String(filters.success));
-      if (filters?.start_date) params.append('start_date', filters.start_date);
-      if (filters?.end_date) params.append('end_date', filters.end_date);
-      if (filters?.limit) params.append('limit', String(filters.limit));
-      if (filters?.offset) params.append('offset', String(filters.offset));
-
-      const queryString = params.toString();
-      return apiFetch<IWebhookLogsResponse>(`/webhooks/logs${queryString ? `?${queryString}` : ''}`);
+    test: async (ruleId: string, request?: IAlertRuleTestRequest): Promise<IAlertRuleTestResponse> => {
+      return apiFetch(`/alert-rules/${ruleId}/test`, {
+        method: 'POST',
+        body: request ? JSON.stringify(request) : undefined,
+      });
     },
 
     /**
-     * Export webhook logs as CSV
-     * @param filters Optional filters
-     * @returns CSV file blob
+     * Test webhook delivery (Story P1-3.4)
      */
-    exportLogs: async (filters?: IWebhookLogsFilter): Promise<Blob> => {
-      const params = new URLSearchParams();
-      if (filters?.rule_id) params.append('rule_id', filters.rule_id);
-      if (filters?.success !== undefined) params.append('success', String(filters.success));
-      if (filters?.start_date) params.append('start_date', filters.start_date);
-      if (filters?.end_date) params.append('end_date', filters.end_date);
+    testWebhook: async (request: IWebhookTestRequest): Promise<IWebhookTestResponse> => {
+      return apiFetch('/alert-rules/test-webhook', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+    },
 
+    /**
+     * Get webhook delivery logs (Story P1-3.5)
+     */
+    getWebhookLogs: async (filters?: IWebhookLogsFilter): Promise<IWebhookLogsResponse> => {
+      const params = new URLSearchParams();
+      if (filters?.rule_id !== undefined) params.set('rule_id', String(filters.rule_id));
+      if (filters?.success !== undefined) params.set('success', String(filters.success));
+      if (filters?.offset !== undefined) params.set('skip', String(filters.offset));
+      if (filters?.limit !== undefined) params.set('limit', String(filters.limit));
       const queryString = params.toString();
-      const response = await fetch(`${API_BASE_URL}/webhooks/logs/export${queryString ? `?${queryString}` : ''}`, {
+      return apiFetch(`/alert-rules/webhook-logs${queryString ? `?${queryString}` : ''}`);
+    },
+
+    /**
+     * Retry a failed webhook delivery (Story P1-3.5)
+     */
+    retryWebhook: async (logId: number): Promise<IWebhookTestResponse> => {
+      return apiFetch(`/alert-rules/webhook-logs/${logId}/retry`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Export webhook logs as CSV (placeholder - not yet implemented in backend)
+     */
+    exportWebhookLogs: async (filters?: IWebhookLogsFilter): Promise<Blob> => {
+      const params = new URLSearchParams();
+      if (filters?.rule_id !== undefined) params.set('rule_id', String(filters.rule_id));
+      if (filters?.success !== undefined) params.set('success', String(filters.success));
+      if (filters?.start_date !== undefined) params.set('start_date', filters.start_date);
+      if (filters?.end_date !== undefined) params.set('end_date', filters.end_date);
+      const queryString = params.toString();
+      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/alert-rules/webhook-logs/export${queryString ? `?${queryString}` : ''}`, {
         method: 'GET',
-        headers: {
-          'Accept': 'text/csv',
-        },
+        headers: getAuthHeaders(),
       });
-
       if (!response.ok) {
-        throw new ApiError(`Failed to export logs: ${response.statusText}`, response.status);
+        throw new ApiError('Failed to export webhook logs', response.status);
       }
-
       return response.blob();
     },
   },
 
-  /**
-   * Notifications API namespace (Story 5.4)
-   */
   notifications: {
     /**
-     * Get notifications with optional filtering
-     * @param filters Optional filters (read status, pagination)
-     * @returns Paginated list of notifications with unread count
+     * List notifications with optional filters
      */
     list: async (filters?: {
-      read?: boolean;
+      unread_only?: boolean;
+      skip?: number;
       limit?: number;
-      offset?: number;
     }): Promise<INotificationListResponse> => {
       const params = new URLSearchParams();
-      if (filters?.read !== undefined) params.append('read', String(filters.read));
-      if (filters?.limit) params.append('limit', String(filters.limit));
-      if (filters?.offset) params.append('offset', String(filters.offset));
-
+      if (filters?.unread_only) params.set('unread_only', 'true');
+      if (filters?.skip !== undefined) params.set('skip', String(filters.skip));
+      if (filters?.limit !== undefined) params.set('limit', String(filters.limit));
       const queryString = params.toString();
-      return apiFetch<INotificationListResponse>(
-        `/notifications${queryString ? `?${queryString}` : ''}`
-      );
+      return apiFetch(`/notifications${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
-     * Mark a single notification as read
-     * @param id Notification UUID
-     * @returns Updated notification
+     * Get single notification
      */
-    markAsRead: async (id: string): Promise<INotification> => {
-      return apiFetch<INotification>(`/notifications/${id}/read`, {
-        method: 'PATCH',
+    get: async (id: number): Promise<INotification> => {
+      return apiFetch(`/notifications/${id}`);
+    },
+
+    /**
+     * Mark notification as read
+     */
+    markRead: async (id: number): Promise<IMarkReadResponse> => {
+      return apiFetch(`/notifications/${id}/read`, {
+        method: 'POST',
       });
     },
 
     /**
      * Mark all notifications as read
-     * @returns Success status and count of updated notifications
      */
-    markAllAsRead: async (): Promise<IMarkReadResponse> => {
-      return apiFetch<IMarkReadResponse>('/notifications/mark-all-read', {
-        method: 'PATCH',
+    markAllRead: async (): Promise<IMarkReadResponse> => {
+      return apiFetch('/notifications/read-all', {
+        method: 'POST',
       });
     },
 
     /**
-     * Delete a single notification
-     * @param id Notification UUID
-     * @returns Deletion confirmation
+     * Delete notification
      */
-    delete: async (id: string): Promise<IDeleteNotificationResponse> => {
-      return apiFetch<IDeleteNotificationResponse>(`/notifications/${id}`, {
+    delete: async (id: number): Promise<IDeleteNotificationResponse> => {
+      return apiFetch(`/notifications/${id}`, {
         method: 'DELETE',
       });
     },
 
     /**
-     * Delete notifications in bulk
-     * @param readOnly If true, only delete read notifications
-     * @returns Deletion confirmation with count
+     * Delete all notifications
      */
-    deleteAll: async (readOnly: boolean = false): Promise<IBulkDeleteResponse> => {
-      const params = new URLSearchParams();
-      if (readOnly) params.append('read_only', 'true');
-      const queryString = params.toString();
-      return apiFetch<IBulkDeleteResponse>(
-        `/notifications${queryString ? `?${queryString}` : ''}`,
-        { method: 'DELETE' }
-      );
+    deleteAll: async (): Promise<IBulkDeleteResponse> => {
+      return apiFetch('/notifications', {
+        method: 'DELETE',
+      });
+    },
+
+    /**
+     * Get unread count
+     */
+    getUnreadCount: async (): Promise<{ count: number }> => {
+      return apiFetch('/notifications/unread-count');
     },
   },
 
-  /**
-   * Monitoring API client (Story 6.2)
-   */
   monitoring: {
     /**
      * Get system health status
-     * @returns Health check response
      */
-    getHealth: async (): Promise<SystemHealth> => {
-      const url = `${API_BASE_URL}/health`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new ApiError('Failed to get health status', response.status);
-      }
-      return response.json();
+    health: async (): Promise<SystemHealth> => {
+      return apiFetch('/system/health');
     },
 
     /**
-     * Get log entries with filtering
-     * @param params Query parameters for filtering logs
-     * @returns Paginated log entries
+     * Get system logs
      */
-    getLogs: async (params?: LogsQueryParams): Promise<LogsResponse> => {
-      const queryParams = new URLSearchParams();
-      if (params?.level) queryParams.append('level', params.level);
-      if (params?.module) queryParams.append('module', params.module);
-      if (params?.search) queryParams.append('search', params.search);
-      if (params?.start_date) queryParams.append('start_date', params.start_date);
-      if (params?.end_date) queryParams.append('end_date', params.end_date);
-      if (params?.limit) queryParams.append('limit', String(params.limit));
-      if (params?.offset) queryParams.append('offset', String(params.offset));
-
-      const queryString = queryParams.toString();
-      return apiFetch<LogsResponse>(`/logs${queryString ? `?${queryString}` : ''}`);
+    logs: async (params?: LogsQueryParams): Promise<LogsResponse> => {
+      const searchParams = new URLSearchParams();
+      if (params?.level) searchParams.set('level', params.level);
+      if (params?.source) searchParams.set('source', params.source);
+      if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
+      if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
+      if (params?.search) searchParams.set('search', params.search);
+      if (params?.start_time) searchParams.set('start_time', params.start_time);
+      if (params?.end_time) searchParams.set('end_time', params.end_time);
+      const queryString = searchParams.toString();
+      return apiFetch(`/system/logs${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
-     * Get available log files
-     * @returns List of log files
+     * Get available log files for download
      */
-    getLogFiles: async (): Promise<LogFilesResponse> => {
-      return apiFetch<LogFilesResponse>('/logs/files');
+    logFiles: async (): Promise<LogFilesResponse> => {
+      return apiFetch('/system/logs/files');
     },
 
     /**
-     * Download log file
-     * @param date Optional date string (YYYY-MM-DD)
-     * @param logType Log type ('app' or 'error')
-     * @returns Blob for download
+     * Get download URL for a log file
      */
-    downloadLogs: async (date?: string, logType: string = 'app'): Promise<Blob> => {
-      const params = new URLSearchParams();
-      if (date) params.append('date', date);
-      params.append('log_type', logType);
-      const queryString = params.toString();
+    getLogFileUrl: (filename: string): string => {
+      return `${API_BASE_URL}${API_V1_PREFIX}/system/logs/files/${encodeURIComponent(filename)}`;
+    },
 
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/logs/download${queryString ? `?${queryString}` : ''}`;
-      const response = await fetch(url);
+    /**
+     * Download logs as a file
+     */
+    downloadLogs: async (_params?: LogsQueryParams, source?: string): Promise<Blob> => {
+      const filename = source ? `${source}.log` : 'app.log';
+      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/system/logs/files/${encodeURIComponent(filename)}`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
       if (!response.ok) {
         throw new ApiError('Failed to download logs', response.status);
       }
       return response.blob();
     },
-
-    /**
-     * Get Prometheus metrics
-     * @returns Raw metrics text
-     */
-    getMetrics: async (): Promise<string> => {
-      const url = `${API_BASE_URL}/metrics`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new ApiError('Failed to get metrics', response.status);
-      }
-      return response.text();
-    },
   },
 
-  /**
-   * Authentication API (Story 6.3)
-   */
   auth: {
     /**
      * Login with username and password
-     * @param credentials Login credentials
-     * @returns Login response with user info
+     * @param request Login credentials
+     * @returns Login response with token
      */
-    login: async (credentials: ILoginRequest): Promise<ILoginResponse> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/auth/login`;
-      const response = await fetch(url, {
+    login: async (request: ILoginRequest): Promise<ILoginResponse> => {
+      return apiFetch('/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials),
-        credentials: 'include', // Include cookies
+        body: JSON.stringify(request),
       });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-
-      return data as ILoginResponse;
     },
 
     /**
      * Logout current user
-     * @returns Message response
+     * @returns Success message
      */
     logout: async (): Promise<IMessageResponse> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/auth/logout`;
-      const response = await fetch(url, {
+      return apiFetch('/auth/logout', {
         method: 'POST',
-        credentials: 'include',
       });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-
-      return data as IMessageResponse;
     },
 
     /**
-     * Get current user info
-     * @returns Current user
+     * Get current user profile
+     * @returns Current user data
      */
-    getCurrentUser: async (): Promise<IUser> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/auth/me`;
-      const headers: HeadersInit = {};
-      const token = getAuthToken();
-      if (token) {
-        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-      }
-
-      const response = await fetch(url, {
-        credentials: 'include',
-        headers,
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-
-      return data as IUser;
+    me: async (): Promise<IUser> => {
+      return apiFetch('/auth/me');
     },
 
     /**
-     * Change password for current user
-     * @param passwordData Current and new password
-     * @returns Message response
+     * Change current user's password
+     * @param request Password change request
+     * @returns Success message
      */
-    changePassword: async (passwordData: IChangePasswordRequest): Promise<IMessageResponse> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/auth/change-password`;
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const token = getAuthToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const response = await fetch(url, {
+    changePassword: async (request: IChangePasswordRequest): Promise<IMessageResponse> => {
+      return apiFetch('/auth/change-password', {
         method: 'POST',
-        headers,
-        body: JSON.stringify(passwordData),
-        credentials: 'include',
+        body: JSON.stringify(request),
       });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-
-      return data as IMessageResponse;
     },
 
     /**
-     * Check if initial setup is complete
+     * Get initial setup status
      * @returns Setup status
      */
     getSetupStatus: async (): Promise<ISetupStatusResponse> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/auth/setup-status`;
-      const response = await fetch(url);
+      return apiFetch('/auth/setup-status');
+    },
 
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-
-      return data as ISetupStatusResponse;
+    /**
+     * Complete initial setup with admin credentials
+     * @param request Admin setup request (username, password)
+     * @returns Login response with token
+     */
+    completeSetup: async (request: { username: string; password: string }): Promise<ILoginResponse> => {
+      return apiFetch('/auth/setup', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
     },
   },
 
-  /**
-   * Backup and Restore API (Story 6.4, FF-007)
-   */
   backup: {
     /**
-     * Create a system backup with optional selective components (FF-007)
-     * @param options Optional backup options for selective backup
-     * @returns Backup result with download URL
+     * Create a new backup
+     * @param options Optional backup configuration
+     * @returns Backup creation result
      */
     create: async (options?: IBackupOptions): Promise<IBackupResponse> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/system/backup`;
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-      };
-      const token = getAuthToken();
-      if (token) {
-        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-      }
-
-      const response = await fetch(url, {
+      return apiFetch('/backup', {
         method: 'POST',
-        headers,
-        credentials: 'include',
-        body: options ? JSON.stringify(options) : undefined,
+        body: JSON.stringify(options || {}),
       });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-
-      return data as IBackupResponse;
-    },
-
-    /**
-     * Download a backup file
-     * @param timestamp Backup timestamp
-     * @returns Blob containing the ZIP file
-     */
-    download: async (timestamp: string): Promise<Blob> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/system/backup/${timestamp}/download`;
-      const response = await fetch(url, {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new ApiError(`Failed to download backup: ${response.statusText}`, response.status);
-      }
-
-      return response.blob();
     },
 
     /**
      * List all available backups
-     * @returns List of backups with metadata
+     * @returns List of backup files with metadata
      */
     list: async (): Promise<IBackupListResponse> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/system/backup/list`;
-      const response = await fetch(url, {
-        credentials: 'include',
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-
-      return data as IBackupListResponse;
+      return apiFetch('/backup');
     },
 
     /**
      * Validate a backup file before restore
-     * @param file ZIP file to validate
-     * @returns Validation result
+     * @param fileOrFilename File object (uploaded) or filename (existing on server)
+     * @returns Validation result with backup metadata
      */
-    validate: async (file: File): Promise<IValidationResponse> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/system/backup/validate`;
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
+    validate: async (fileOrFilename: File | string): Promise<IValidationResponse> => {
+      if (typeof fileOrFilename === 'string') {
+        return apiFetch(`/backup/${encodeURIComponent(fileOrFilename)}/validate`);
       }
-
-      return data as IValidationResponse;
+      // Upload file for validation
+      const formData = new FormData();
+      formData.append('file', fileOrFilename);
+      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/backup/validate`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new ApiError(errorData.detail || 'Validation failed', response.status);
+      }
+      return response.json();
     },
 
     /**
-     * Restore from a backup file with optional selective components (FF-007)
-     * @param file ZIP file to restore from
-     * @param options Optional restore options for selective restore
+     * Restore from a backup file
+     * @param fileOrFilename File object (uploaded) or filename (existing on server)
+     * @param options Optional restore configuration
      * @returns Restore result
      */
-    restore: async (file: File, options?: IRestoreOptions): Promise<IRestoreResponse> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/system/restore`;
+    restore: async (fileOrFilename: File | string, options?: IRestoreOptions): Promise<IRestoreResponse> => {
+      if (typeof fileOrFilename === 'string') {
+        return apiFetch(`/backup/${encodeURIComponent(fileOrFilename)}/restore`, {
+          method: 'POST',
+          body: JSON.stringify(options || {}),
+        });
+      }
+      // Upload file for restore
       const formData = new FormData();
-      formData.append('file', file);
-
-      // FF-007: Add selective restore options as form fields
-      if (options) {
+      formData.append('file', fileOrFilename);
+      if (options?.restore_database !== undefined) {
         formData.append('restore_database', String(options.restore_database));
+      }
+      if (options?.restore_thumbnails !== undefined) {
         formData.append('restore_thumbnails', String(options.restore_thumbnails));
+      }
+      if (options?.restore_settings !== undefined) {
         formData.append('restore_settings', String(options.restore_settings));
       }
-
-      const headers: HeadersInit = {};
-      const token = getAuthToken();
-      if (token) {
-        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-      }
-
-      const response = await fetch(url, {
+      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/restore`, {
         method: 'POST',
-        headers,
+        headers: getAuthHeaders(),
         body: formData,
-        credentials: 'include',
       });
-
-      const data = await response.json().catch(() => null);
-
       if (!response.ok) {
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
+        const errorData = await response.json().catch(() => ({}));
+        throw new ApiError(errorData.detail || 'Restore failed', response.status);
       }
-
-      return data as IRestoreResponse;
+      return response.json();
     },
 
     /**
-     * Delete a backup
-     * @param timestamp Backup timestamp
+     * Delete a backup file
+     * @param filename Name of backup file to delete
+     * @returns Deletion result
      */
-    delete: async (timestamp: string): Promise<void> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/system/backup/${timestamp}`;
-      const response = await fetch(url, {
+    delete: async (filename: string): Promise<{ success: boolean; message: string }> => {
+      return apiFetch(`/backup/${encodeURIComponent(filename)}`, {
         method: 'DELETE',
-        credentials: 'include',
       });
+    },
 
+    /**
+     * Get download URL for a backup file
+     * @param filename Name of backup file
+     * @returns Download URL
+     */
+    getDownloadUrl: (filename: string): string => {
+      return `${API_BASE_URL}${API_V1_PREFIX}/backup/${encodeURIComponent(filename)}/download`;
+    },
+
+    /**
+     * Download a backup file as blob
+     * @param filename Name of backup file
+     * @returns Backup file blob
+     */
+    download: async (filename: string): Promise<Blob> => {
+      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/backup/${encodeURIComponent(filename)}/download`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
       if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
+        throw new ApiError('Failed to download backup', response.status);
       }
+      return response.blob();
     },
   },
 
-  // ============================================================================
-  // UniFi Protect Controllers (Story P2-1.3)
-  // ============================================================================
-  protect: {
+  discovery: {
     /**
-     * Test connection to a UniFi Protect controller
-     * Does NOT save credentials - test only
-     * @param data Connection parameters
+     * Start network camera discovery
+     * @returns Discovery session info
      */
-    testConnection: async (data: {
-      host: string;
-      port?: number;
-      username: string;
-      password: string;
-      verify_ssl?: boolean;
-    }): Promise<{
-      data: {
-        success: boolean;
-        message: string;
-        firmware_version?: string;
-        camera_count?: number;
-      };
-      meta: { request_id: string; timestamp: string };
-    }> => {
-      return apiFetch(`/protect/controllers/test`, {
+    start: async (): Promise<IDiscoveryResponse> => {
+      return apiFetch('/discovery/start', {
         method: 'POST',
-        body: JSON.stringify({
-          host: data.host,
-          port: data.port ?? 443,
-          username: data.username,
-          password: data.password,
-          verify_ssl: data.verify_ssl ?? false,
-        }),
       });
     },
 
     /**
-     * Create a new UniFi Protect controller
+     * Get current discovery status and results
+     * @returns Discovery status with found devices
+     */
+    status: async (): Promise<IDiscoveryStatusResponse> => {
+      return apiFetch('/discovery/status');
+    },
+
+    /**
+     * Get detailed device information
+     * @param address Device IP address
+     * @returns Detailed device info
+     */
+    getDeviceDetails: async (address: string): Promise<IDeviceDetailsResponse> => {
+      return apiFetch(`/discovery/device/${encodeURIComponent(address)}`);
+    },
+
+    /**
+     * Test RTSP connection with credentials
+     * @param address Device IP address
+     * @param credentials Optional credentials
+     * @returns Connection test result
+     */
+    testConnection: async (
+      address: string,
+      credentials?: { username?: string; password?: string; port?: number }
+    ): Promise<ITestConnectionResponse> => {
+      const params = new URLSearchParams();
+      if (credentials?.username) params.set('username', credentials.username);
+      if (credentials?.password) params.set('password', credentials.password);
+      if (credentials?.port) params.set('port', String(credentials.port));
+      const queryString = params.toString();
+      return apiFetch(`/discovery/device/${encodeURIComponent(address)}/test${queryString ? `?${queryString}` : ''}`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Import discovered camera
+     * @param address Device IP address
+     * @param options Import configuration
+     * @returns Imported camera
+     */
+    importCamera: async (
+      address: string,
+      options: {
+        name: string;
+        username?: string;
+        password?: string;
+        rtsp_url?: string;
+        enable_motion_detection?: boolean;
+      }
+    ): Promise<ICamera> => {
+      return apiFetch(`/discovery/device/${encodeURIComponent(address)}/import`, {
+        method: 'POST',
+        body: JSON.stringify(options),
+      });
+    },
+  },
+
+  protect: {
+    /**
+     * Get all UniFi Protect controllers
+     * @returns List of configured controllers
+     */
+    listControllers: async (): Promise<Array<{
+      id: number;
+      name: string;
+      host: string;
+      port: number;
+      use_ssl: boolean;
+      verify_ssl: boolean;
+      enabled: boolean;
+      is_connected: boolean;
+      last_connected_at: string | null;
+      last_error: string | null;
+      connection_error: string | null;
+      camera_count: number;
+      created_at: string;
+      updated_at: string | null;
+    }>> => {
+      return apiFetch('/protect/controllers');
+    },
+
+    /**
+     * Get single controller by ID
+     * @param id Controller ID
+     * @returns Controller details
+     */
+    getController: async (id: number): Promise<{
+      id: number;
+      name: string;
+      host: string;
+      port: number;
+      use_ssl: boolean;
+      verify_ssl: boolean;
+      enabled: boolean;
+      is_connected: boolean;
+      last_connected_at: string | null;
+      last_error: string | null;
+      connection_error: string | null;
+      camera_count: number;
+      created_at: string;
+      updated_at: string | null;
+    }> => {
+      return apiFetch(`/protect/controllers/${id}`);
+    },
+
+    /**
+     * Create new UniFi Protect controller
      * @param data Controller configuration
+     * @returns Created controller
      */
     createController: async (data: {
       name: string;
@@ -1329,127 +1166,61 @@ export const apiClient = {
       port?: number;
       username: string;
       password: string;
+      use_ssl?: boolean;
       verify_ssl?: boolean;
+      enabled?: boolean;
     }): Promise<{
-      data: {
-        id: string;
-        name: string;
-        host: string;
-        port: number;
-        username: string;
-        verify_ssl: boolean;
-        is_connected: boolean;
-        last_connected_at: string | null;
-        last_error: string | null;
-        created_at: string;
-        updated_at: string;
-      };
-      meta: { request_id: string; timestamp: string };
+      id: number;
+      name: string;
+      host: string;
+      port: number;
+      use_ssl: boolean;
+      verify_ssl: boolean;
+      enabled: boolean;
+      is_connected: boolean;
+      last_connected_at: string | null;
+      last_error: string | null;
+      connection_error: string | null;
+      camera_count: number;
+      created_at: string;
+      updated_at: string | null;
     }> => {
-      return apiFetch(`/protect/controllers`, {
+      return apiFetch('/protect/controllers', {
         method: 'POST',
-        body: JSON.stringify({
-          name: data.name,
-          host: data.host,
-          port: data.port ?? 443,
-          username: data.username,
-          password: data.password,
-          verify_ssl: data.verify_ssl ?? false,
-        }),
+        body: JSON.stringify(data),
       });
     },
 
     /**
-     * List all UniFi Protect controllers
+     * Update existing UniFi Protect controller
+     * @param id Controller ID
+     * @param data Updated configuration
+     * @returns Updated controller
      */
-    listControllers: async (): Promise<{
-      data: Array<{
-        id: string;
-        name: string;
-        host: string;
-        port: number;
-        username: string;
-        verify_ssl: boolean;
-        is_connected: boolean;
-        last_connected_at: string | null;
-        last_error: string | null;
-        created_at: string;
-        updated_at: string;
-      }>;
-      meta: { request_id: string; timestamp: string; count?: number };
-    }> => {
-      return apiFetch(`/protect/controllers`);
-    },
-
-    /**
-     * Get a single UniFi Protect controller by ID
-     * @param id Controller UUID
-     */
-    getController: async (id: string): Promise<{
-      data: {
-        id: string;
-        name: string;
-        host: string;
-        port: number;
-        username: string;
-        verify_ssl: boolean;
-        is_connected: boolean;
-        last_connected_at: string | null;
-        last_error: string | null;
-        created_at: string;
-        updated_at: string;
-      };
-      meta: { request_id: string; timestamp: string };
-    }> => {
-      return apiFetch(`/protect/controllers/${id}`);
-    },
-
-    /**
-     * Test connection to an existing controller using stored credentials
-     * @param id Controller UUID
-     */
-    testExistingController: async (id: string): Promise<{
-      data: {
-        success: boolean;
-        message: string;
-        firmware_version?: string;
-        camera_count?: number;
-      };
-      meta: { request_id: string; timestamp: string };
-    }> => {
-      return apiFetch(`/protect/controllers/${id}/test`, {
-        method: 'POST',
-      });
-    },
-
-    /**
-     * Update a UniFi Protect controller (Story P2-1.5)
-     * Supports partial updates - only provided fields are modified
-     * @param id Controller UUID
-     * @param data Partial controller data to update
-     */
-    updateController: async (id: string, data: {
+    updateController: async (id: number, data: {
       name?: string;
       host?: string;
       port?: number;
       username?: string;
       password?: string;
+      use_ssl?: boolean;
       verify_ssl?: boolean;
+      enabled?: boolean;
     }): Promise<{
-      data: {
-        id: string;
-        name: string;
-        host: string;
-        port: number;
-        username: string;
-        verify_ssl: boolean;
-        is_connected: boolean;
-        last_connected_at: string | null;
-        last_error: string | null;
-        created_at: string;
-        updated_at: string;
-      };
-      meta: { request_id: string; timestamp: string };
+      id: number;
+      name: string;
+      host: string;
+      port: number;
+      use_ssl: boolean;
+      verify_ssl: boolean;
+      enabled: boolean;
+      is_connected: boolean;
+      last_connected_at: string | null;
+      last_error: string | null;
+      connection_error: string | null;
+      camera_count: number;
+      created_at: string;
+      updated_at: string | null;
     }> => {
       return apiFetch(`/protect/controllers/${id}`, {
         method: 'PUT',
@@ -1458,278 +1229,151 @@ export const apiClient = {
     },
 
     /**
-     * Delete a UniFi Protect controller (Story P2-1.5)
-     * Disconnects WebSocket, disassociates cameras, preserves events
-     * @param id Controller UUID
+     * Delete UniFi Protect controller
+     * @param id Controller ID
+     * @returns Deletion confirmation
      */
-    deleteController: async (id: string): Promise<{
-      data: { deleted: boolean };
-      meta: { request_id: string; timestamp: string };
-    }> => {
+    deleteController: async (id: number): Promise<{ message: string }> => {
       return apiFetch(`/protect/controllers/${id}`, {
         method: 'DELETE',
       });
     },
 
     /**
-     * Discover cameras from a connected Protect controller (Story P2-2.1)
-     * Results are cached for 60 seconds
-     * @param controllerId Controller UUID
-     * @param forceRefresh If true, bypass cache and fetch fresh data
+     * Test connection to a Protect controller (before saving)
+     * @param data Connection parameters
+     * @returns Test result
      */
-    discoverCameras: async (controllerId: string, forceRefresh: boolean = false): Promise<{
-      data: ProtectDiscoveredCamera[];
-      meta: {
-        request_id: string;
-        timestamp: string;
-        count: number;
-        controller_id: string;
-        cached: boolean;
-        cached_at: string | null;
-        warning: string | null;
-      };
-    }> => {
-      const params = forceRefresh ? '?force_refresh=true' : '';
-      return apiFetch(`/protect/controllers/${controllerId}/cameras${params}`);
-    },
-
-    /**
-     * Enable a discovered camera for AI analysis (Story P2-2.2)
-     * Creates or updates camera record in database with source_type='protect'
-     * @param controllerId Controller UUID
-     * @param cameraId Protect camera ID
-     * @param options Optional name override and smart detection types
-     */
-    enableCamera: async (
-      controllerId: string,
-      cameraId: string,
-      options?: { name?: string; smart_detection_types?: string[] }
-    ): Promise<{
-      data: ProtectCameraEnableData;
-      meta: { request_id: string; timestamp: string };
-    }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${cameraId}/enable`, {
-        method: 'POST',
-        body: options ? JSON.stringify(options) : undefined,
-      });
-    },
-
-    /**
-     * Disable a camera from AI analysis (Story P2-2.2)
-     * Keeps camera record but marks as disabled for settings persistence
-     * @param controllerId Controller UUID
-     * @param cameraId Protect camera ID
-     */
-    disableCamera: async (
-      controllerId: string,
-      cameraId: string
-    ): Promise<{
-      data: ProtectCameraDisableData;
-      meta: { request_id: string; timestamp: string };
-    }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${cameraId}/disable`, {
-        method: 'POST',
-      });
-    },
-
-    /**
-     * Update camera event type filters (Story P2-2.3)
-     * Updates smart_detection_types for an enabled camera
-     * @param controllerId Controller UUID
-     * @param cameraId Protect camera ID
-     * @param filters The filter configuration
-     */
-    updateCameraFilters: async (
-      controllerId: string,
-      cameraId: string,
-      filters: { smart_detection_types: string[] }
-    ): Promise<{
-      data: ProtectCameraFiltersData;
-      meta: { request_id: string; timestamp: string };
-    }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${cameraId}/filters`, {
-        method: 'PUT',
-        body: JSON.stringify(filters),
-      });
-    },
-  },
-
-  // ============================================================================
-  // Push Notifications (Story P4-1.2)
-  // ============================================================================
-  push: {
-    /**
-     * Get VAPID public key for push subscription
-     * The frontend uses this key as applicationServerKey when calling pushManager.subscribe()
-     * @returns VAPID public key in URL-safe base64 format
-     */
-    getVapidPublicKey: async (): Promise<{ public_key: string }> => {
-      return apiFetch<{ public_key: string }>('/push/vapid-public-key');
-    },
-
-    /**
-     * Register a push subscription
-     * Stores the browser's push subscription for receiving notifications
-     * If the endpoint already exists, the subscription is updated (upsert)
-     * @param subscription Browser PushSubscription data
-     * @returns Created/updated subscription with ID
-     */
-    subscribe: async (subscription: {
-      endpoint: string;
-      keys: { p256dh: string; auth: string };
-      user_agent?: string;
-    }): Promise<{ id: string; endpoint: string; created_at: string }> => {
-      return apiFetch<{ id: string; endpoint: string; created_at: string }>('/push/subscribe', {
-        method: 'POST',
-        body: JSON.stringify(subscription),
-      });
-    },
-
-    /**
-     * Unsubscribe from push notifications
-     * Removes the push subscription from the database
-     * @param endpoint Push service endpoint URL to unsubscribe
-     */
-    unsubscribe: async (endpoint: string): Promise<void> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/push/subscribe`;
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      const token = getAuthToken();
-      if (token) {
-        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-      }
-
-      const response = await fetch(url, {
-        method: 'DELETE',
-        headers,
-        credentials: 'include',
-        body: JSON.stringify({ endpoint }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-    },
-
-    /**
-     * List all push subscriptions (admin endpoint)
-     * Returns all registered push subscriptions for debugging
-     * @returns List of subscriptions with metadata
-     */
-    listSubscriptions: async (): Promise<{
-      subscriptions: Array<{
-        id: string;
-        user_id: string | null;
-        endpoint: string;
-        user_agent: string | null;
-        created_at: string | null;
-        last_used_at: string | null;
-      }>;
-      total: number;
-    }> => {
-      return apiFetch('/push/subscriptions');
-    },
-
-    /**
-     * Send a test push notification
-     * Sends a test notification to all subscribed devices
-     * @returns Test result with delivery status
-     */
-    sendTest: async (): Promise<{
-      success: boolean;
-      message: string;
-      results?: Array<{
-        subscription_id: string;
-        success: boolean;
-        error?: string;
-      }>;
-    }> => {
-      return apiFetch('/push/test', {
-        method: 'POST',
-      });
-    },
-
-    /**
-     * Get notification preferences for a subscription (Story P4-1.4)
-     * Returns preferences identified by the subscription endpoint
-     * Creates default preferences if none exist
-     * @param endpoint Push subscription endpoint URL
-     * @returns Notification preferences
-     */
-    getPreferences: async (endpoint: string): Promise<{
-      id: string;
-      subscription_id: string;
-      enabled_cameras: string[] | null;
-      enabled_object_types: string[] | null;
-      quiet_hours_enabled: boolean;
-      quiet_hours_start: string | null;
-      quiet_hours_end: string | null;
-      timezone: string;
-      sound_enabled: boolean;
-      created_at: string | null;
-      updated_at: string | null;
-    }> => {
-      return apiFetch('/push/preferences', {
-        method: 'POST',
-        body: JSON.stringify({ endpoint }),
-      });
-    },
-
-    /**
-     * Update notification preferences for a subscription (Story P4-1.4)
-     * @param preferences Notification preferences to update
-     * @returns Updated preferences
-     */
-    updatePreferences: async (preferences: {
-      endpoint: string;
-      enabled_cameras?: string[] | null;
-      enabled_object_types?: string[] | null;
-      quiet_hours_enabled: boolean;
-      quiet_hours_start?: string | null;
-      quiet_hours_end?: string | null;
-      timezone: string;
-      sound_enabled: boolean;
+    testConnection: async (data: {
+      host: string;
+      port?: number;
+      username: string;
+      password: string;
+      use_ssl?: boolean;
+      verify_ssl?: boolean;
     }): Promise<{
-      id: string;
-      subscription_id: string;
-      enabled_cameras: string[] | null;
-      enabled_object_types: string[] | null;
-      quiet_hours_enabled: boolean;
-      quiet_hours_start: string | null;
-      quiet_hours_end: string | null;
-      timezone: string;
-      sound_enabled: boolean;
-      created_at: string | null;
-      updated_at: string | null;
+      data: {
+        success: boolean;
+        message: string;
+        firmware_version?: string;
+        camera_count?: number;
+      };
+      meta: { request_id: string };
     }> => {
-      return apiFetch('/push/preferences', {
+      return apiFetch('/protect/controllers/test', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    /**
+     * Test connection to an existing controller using stored credentials (Story P2-1.2)
+     * @param id Controller ID
+     * @returns Test result
+     */
+    testExistingController: async (id: number): Promise<{
+      data: {
+        success: boolean;
+        message: string;
+        firmware_version?: string;
+        camera_count?: number;
+      };
+      meta: { request_id: string };
+    }> => {
+      return apiFetch(`/protect/controllers/${id}/test`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Discover cameras from a Protect controller
+     * @param id Controller ID
+     * @returns List of discovered cameras
+     */
+    discoverCameras: async (id: number): Promise<{
+      controller_id: number;
+      cameras: ProtectDiscoveredCamera[];
+    }> => {
+      return apiFetch(`/protect/controllers/${id}/cameras`);
+    },
+
+    /**
+     * Enable a Protect camera for AI processing
+     * @param controllerId Controller ID
+     * @param protectCameraId Protect camera ID
+     * @returns Updated camera info
+     */
+    enableCamera: async (controllerId: number, protectCameraId: string): Promise<{
+      protect_id: string;
+      name: string;
+      is_enabled_for_ai: boolean;
+      message: string;
+    }> => {
+      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/enable`, {
         method: 'PUT',
-        body: JSON.stringify(preferences),
+      });
+    },
+
+    /**
+     * Disable a Protect camera for AI processing
+     * @param controllerId Controller ID
+     * @param protectCameraId Protect camera ID
+     * @returns Updated camera info
+     */
+    disableCamera: async (controllerId: number, protectCameraId: string): Promise<{
+      protect_id: string;
+      name: string;
+      is_enabled_for_ai: boolean;
+      message: string;
+    }> => {
+      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/disable`, {
+        method: 'PUT',
+      });
+    },
+
+    /**
+     * Update event filters for a Protect camera
+     * @param controllerId Controller ID
+     * @param protectCameraId Protect camera ID
+     * @param filters Event types to enable
+     * @returns Updated camera info
+     */
+    updateEventFilters: async (
+      controllerId: number,
+      protectCameraId: string,
+      filters: string[]
+    ): Promise<{
+      protect_id: string;
+      name: string;
+      event_filters: string[];
+      message: string;
+    }> => {
+      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/filters`, {
+        method: 'PUT',
+        body: JSON.stringify({ event_filters: filters }),
       });
     },
   },
 
   // ============================================================================
-  // MQTT / Home Assistant Integration (Story P4-2.4)
+  // MQTT Integration (Story P4-2)
   // ============================================================================
   mqtt: {
     /**
-     * Get current MQTT configuration
-     * @returns MQTT configuration with has_password boolean (password omitted)
+     * Get MQTT configuration
+     * @returns Current MQTT configuration
      */
     getConfig: async (): Promise<MQTTConfigResponse> => {
-      return apiFetch<MQTTConfigResponse>('/integrations/mqtt/config');
+      return apiFetch('/mqtt/config');
     },
 
     /**
      * Update MQTT configuration
-     * Triggers reconnect if enabled
-     * @param config Configuration to update
-     * @returns Updated configuration
+     * @param config Updated configuration values
+     * @returns Updated MQTT configuration
      */
     updateConfig: async (config: MQTTConfigUpdate): Promise<MQTTConfigResponse> => {
-      return apiFetch<MQTTConfigResponse>('/integrations/mqtt/config', {
+      return apiFetch('/mqtt/config', {
         method: 'PUT',
         body: JSON.stringify(config),
       });
@@ -1737,43 +1381,62 @@ export const apiClient = {
 
     /**
      * Get MQTT connection status
-     * @returns Connection status with statistics
+     * @returns Current connection status
      */
     getStatus: async (): Promise<MQTTStatusResponse> => {
-      return apiFetch<MQTTStatusResponse>('/integrations/mqtt/status');
+      return apiFetch('/mqtt/status');
     },
 
     /**
-     * Test MQTT connection without persisting
-     * @param testRequest Connection parameters to test
-     * @returns Test result with success/failure message
+     * Test MQTT connection
+     * @param request Test connection parameters
+     * @returns Test result
      */
-    testConnection: async (testRequest: MQTTTestRequest): Promise<MQTTTestResponse> => {
-      return apiFetch<MQTTTestResponse>('/integrations/mqtt/test', {
+    testConnection: async (request: MQTTTestRequest): Promise<MQTTTestResponse> => {
+      return apiFetch('/mqtt/test', {
         method: 'POST',
-        body: JSON.stringify(testRequest),
+        body: JSON.stringify(request),
       });
     },
 
     /**
-     * Publish Home Assistant discovery for all cameras
-     * Requires MQTT to be connected and discovery enabled
-     * @returns Number of cameras published
+     * Connect to MQTT broker
+     * @returns Connection result
+     */
+    connect: async (): Promise<{ success: boolean; message: string }> => {
+      return apiFetch('/mqtt/connect', {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Disconnect from MQTT broker
+     * @returns Disconnection result
+     */
+    disconnect: async (): Promise<{ success: boolean; message: string }> => {
+      return apiFetch('/mqtt/disconnect', {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Publish Home Assistant discovery config
+     * @returns Discovery publish result
      */
     publishDiscovery: async (): Promise<MQTTPublishDiscoveryResponse> => {
-      return apiFetch<MQTTPublishDiscoveryResponse>('/integrations/mqtt/publish-discovery', {
+      return apiFetch('/mqtt/discovery/publish', {
         method: 'POST',
       });
     },
   },
 
   // ============================================================================
-  // HomeKit Integration (Story P4-6.1, P5-1.8)
+  // HomeKit Integration (Story P4-6, P5-1, P7-1)
   // ============================================================================
   homekit: {
     /**
-     * Get current HomeKit status
-     * @returns HomeKit status including enabled, running, paired state, and setup code
+     * Get HomeKit bridge status
+     * @returns Current HomeKit status including pairing info
      */
     getStatus: async (): Promise<{
       enabled: boolean;
@@ -1787,13 +1450,13 @@ export const apiClient = {
       error: string | null;
       available: boolean;
     }> => {
-      return apiFetch('/integrations/homekit/status');
+      return apiFetch('/homekit/status');
     },
 
     /**
      * Enable or disable HomeKit integration
      * @param enabled Whether to enable HomeKit
-     * @returns Updated HomeKit status
+     * @returns Updated status
      */
     setEnabled: async (enabled: boolean): Promise<{
       enabled: boolean;
@@ -1807,30 +1470,29 @@ export const apiClient = {
       error: string | null;
       available: boolean;
     }> => {
-      return apiFetch('/integrations/homekit/enable', {
+      return apiFetch('/homekit/settings', {
         method: 'PUT',
         body: JSON.stringify({ enabled }),
       });
     },
 
     /**
-     * Reset HomeKit pairing
-     * Removes existing pairing state, requiring re-pairing with Home app
-     * @returns Reset result with new setup code
+     * Reset HomeKit pairing (generates new setup code)
+     * @returns New setup code
      */
     resetPairing: async (): Promise<{
       success: boolean;
       message: string;
       new_setup_code: string | null;
     }> => {
-      return apiFetch('/integrations/homekit/reset', {
+      return apiFetch('/homekit/reset', {
         method: 'POST',
       });
     },
 
     /**
-     * Get list of paired devices (Story P5-1.8)
-     * @returns List of paired clients with their info
+     * Get HomeKit pairings (Story P5-1.8)
+     * @returns List of paired devices
      */
     getPairings: async (): Promise<{
       pairings: Array<{
@@ -1844,7 +1506,7 @@ export const apiClient = {
     },
 
     /**
-     * Remove a specific pairing (Story P5-1.8)
+     * Remove a specific HomeKit pairing (Story P5-1.8)
      * @param pairingId The pairing ID to remove
      * @returns Removal result
      */
@@ -1859,7 +1521,7 @@ export const apiClient = {
     },
 
     /**
-     * Get HomeKit diagnostics (Story P7-1.1)
+     * Get HomeKit diagnostics (Story P7-1.1, P7-1.4)
      * @returns Diagnostic information for troubleshooting
      */
     getDiagnostics: async (): Promise<{
@@ -1869,10 +1531,18 @@ export const apiClient = {
       connected_clients: number;
       last_event_delivery: {
         camera_id: string;
+        camera_name?: string | null;  // Story P7-1.4
         sensor_type: string;
         timestamp: string;
         delivered: boolean;
       } | null;
+      sensor_deliveries: Array<{  // Story P7-1.4 AC3
+        camera_id: string;
+        camera_name?: string | null;
+        sensor_type: string;
+        timestamp: string;
+        delivered: boolean;
+      }>;
       recent_logs: Array<{
         timestamp: string;
         level: string;
@@ -1901,6 +1571,29 @@ export const apiClient = {
     }> => {
       return apiFetch('/homekit/test-connectivity', {
         method: 'POST',
+      });
+    },
+
+    /**
+     * Trigger a test HomeKit event for debugging (Story P7-1.3)
+     * @param request Contains camera_id and event_type to trigger
+     * @returns Test event result with delivery confirmation
+     */
+    testEvent: async (request: {
+      camera_id: string;
+      event_type: 'motion' | 'occupancy' | 'vehicle' | 'animal' | 'package' | 'doorbell';
+    }): Promise<{
+      success: boolean;
+      message: string;
+      camera_id: string;
+      event_type: string;
+      sensor_name: string | null;
+      delivered_to_clients: number;
+      timestamp: string;
+    }> => {
+      return apiFetch('/homekit/test-event', {
+        method: 'POST',
+        body: JSON.stringify(request),
       });
     },
   },
@@ -1941,21 +1634,19 @@ export const apiClient = {
     },
 
     /**
-     * Get a single entity with recent events
-     * @param entityId UUID of the entity
-     * @param eventLimit Maximum number of recent events to include (default 10)
-     * @returns Entity detail with recent events
-     * @throws ApiError with 404 if not found
+     * Get a single entity by ID
+     * @param id Entity ID
+     * @returns Entity details with recent events
      */
-    getById: async (entityId: string, eventLimit?: number): Promise<{
+    get: async (id: string): Promise<{
       id: string;
       entity_type: string;
       name: string | null;
       first_seen_at: string;
       last_seen_at: string;
       occurrence_count: number;
-      created_at: string;
-      updated_at: string;
+      created_at?: string;
+      updated_at?: string;
       recent_events: Array<{
         id: string;
         timestamp: string;
@@ -1965,18 +1656,19 @@ export const apiClient = {
         similarity_score: number;
       }>;
     }> => {
-      const params = eventLimit ? `?event_limit=${eventLimit}` : '';
-      return apiFetch(`/context/entities/${entityId}${params}`);
+      return apiFetch(`/context/entities/${encodeURIComponent(id)}`);
     },
 
     /**
-     * Update an entity's name
-     * @param entityId UUID of the entity
-     * @param data Update data with name
+     * Update entity (assign name or type)
+     * @param id Entity ID
+     * @param data Updated entity data
      * @returns Updated entity
-     * @throws ApiError with 404 if not found
      */
-    update: async (entityId: string, data: { name: string | null }): Promise<{
+    update: async (id: string, data: {
+      name?: string | null;
+      entity_type?: 'person' | 'vehicle' | 'unknown';
+    }): Promise<{
       id: string;
       entity_type: string;
       name: string | null;
@@ -1984,38 +1676,197 @@ export const apiClient = {
       last_seen_at: string;
       occurrence_count: number;
     }> => {
-      return apiFetch(`/context/entities/${entityId}`, {
+      return apiFetch(`/context/entities/${encodeURIComponent(id)}`, {
         method: 'PUT',
         body: JSON.stringify(data),
       });
     },
 
     /**
-     * Delete an entity
-     * Unlinks all associated events (events are not deleted)
-     * @param entityId UUID of the entity
-     * @throws ApiError with 404 if not found
+     * Delete entity
+     * @param id Entity ID
+     * @returns Deletion confirmation
      */
-    delete: async (entityId: string): Promise<void> => {
-      const url = `${API_BASE_URL}${API_V1_PREFIX}/context/entities/${entityId}`;
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      const token = getAuthToken();
-      if (token) {
-        (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
-      }
-
-      const response = await fetch(url, {
+    delete: async (id: string): Promise<{ message: string }> => {
+      return apiFetch(`/context/entities/${encodeURIComponent(id)}`, {
         method: 'DELETE',
-        headers,
-        credentials: 'include',
       });
+    },
 
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        const errorMessage = data?.detail || `HTTP ${response.status}: ${response.statusText}`;
-        throw new ApiError(errorMessage, response.status, data);
-      }
-      // 204 No Content - no body to parse
+    /**
+     * Merge two entities (Story P4-3.6)
+     * @param sourceId Source entity ID (will be merged into target)
+     * @param targetId Target entity ID (will remain)
+     * @returns Merged entity
+     */
+    merge: async (sourceId: string, targetId: string): Promise<{
+      merged_entity: {
+        id: string;
+        entity_type: string;
+        name: string | null;
+        first_seen_at: string;
+        last_seen_at: string;
+        occurrence_count: number;
+      };
+      message: string;
+    }> => {
+      return apiFetch(`/context/entities/${encodeURIComponent(sourceId)}/merge`, {
+        method: 'POST',
+        body: JSON.stringify({ target_id: targetId }),
+      });
+    },
+  },
+
+  // ============================================================================
+  // Push Notifications (Story P4-1)
+  // ============================================================================
+  push: {
+    /**
+     * Get VAPID public key for push subscription
+     * @returns VAPID public key
+     */
+    getVapidPublicKey: async (): Promise<{
+      public_key: string;
+    }> => {
+      return apiFetch('/push/vapid-public-key');
+    },
+
+    /**
+     * Subscribe to push notifications
+     * @param subscription Push subscription data
+     * @returns Subscription confirmation
+     */
+    subscribe: async (subscription: {
+      endpoint: string;
+      keys: {
+        p256dh: string;
+        auth: string;
+      };
+      device_name?: string;
+    }): Promise<{
+      success: boolean;
+      message: string;
+      subscription_id: string;
+    }> => {
+      return apiFetch('/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(subscription),
+      });
+    },
+
+    /**
+     * Unsubscribe from push notifications
+     * @param endpoint Push subscription endpoint
+     * @returns Unsubscription confirmation
+     */
+    unsubscribe: async (endpoint: string): Promise<{
+      success: boolean;
+      message: string;
+    }> => {
+      return apiFetch('/push/unsubscribe', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint }),
+      });
+    },
+
+    /**
+     * List all push subscriptions
+     * @returns List of subscriptions
+     */
+    listSubscriptions: async (): Promise<{
+      subscriptions: Array<{
+        id: string;
+        device_name: string | null;
+        created_at: string;
+        last_used_at: string | null;
+      }>;
+    }> => {
+      return apiFetch('/push/subscriptions');
+    },
+
+    /**
+     * Delete a push subscription by ID
+     * @param id Subscription ID
+     * @returns Deletion confirmation
+     */
+    deleteSubscription: async (id: string): Promise<{
+      success: boolean;
+      message: string;
+    }> => {
+      return apiFetch(`/push/subscriptions/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+    },
+
+    /**
+     * Test push notification delivery
+     * @returns Test result
+     */
+    testNotification: async (): Promise<{
+      success: boolean;
+      message: string;
+      subscriptions_notified: number;
+    }> => {
+      return apiFetch('/push/test', {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Get notification preferences for a subscription (Story P4-1.4)
+     * @param endpoint Push subscription endpoint
+     * @returns Notification preferences
+     */
+    getPreferences: async (endpoint: string): Promise<{
+      id: string;
+      subscription_id: string;
+      enabled_cameras: string[] | null;
+      enabled_object_types: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start: string | null;
+      quiet_hours_end: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+      created_at: string | null;
+      updated_at: string | null;
+    }> => {
+      return apiFetch('/push/preferences', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint }),
+      });
+    },
+
+    /**
+     * Update notification preferences for a subscription (Story P4-1.4)
+     * @param request Preference update request
+     * @returns Updated preferences
+     */
+    updatePreferences: async (request: {
+      endpoint: string;
+      enabled_cameras?: string[] | null;
+      enabled_object_types?: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start?: string | null;
+      quiet_hours_end?: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+    }): Promise<{
+      id: string;
+      subscription_id: string;
+      enabled_cameras: string[] | null;
+      enabled_object_types: string[] | null;
+      quiet_hours_enabled: boolean;
+      quiet_hours_start: string | null;
+      quiet_hours_end: string | null;
+      timezone: string;
+      sound_enabled: boolean;
+      created_at: string | null;
+      updated_at: string | null;
+    }> => {
+      return apiFetch('/push/preferences', {
+        method: 'PUT',
+        body: JSON.stringify(request),
+      });
     },
   },
 
@@ -2024,256 +1875,80 @@ export const apiClient = {
   // ============================================================================
   summaries: {
     /**
-     * Get recent summaries for dashboard display
-     * Returns today's and yesterday's activity summaries if they exist
-     * @returns Recent summaries with event statistics
+     * Get recent summaries (today and yesterday)
+     * @returns Recent summaries for dashboard display
      */
     recent: async (): Promise<RecentSummariesResponse> => {
-      return apiFetch<RecentSummariesResponse>('/summaries/recent');
+      return apiFetch('/summaries/recent');
     },
 
     /**
-     * Generate an on-demand summary for a time period (Story P4-4.5)
-     *
-     * Accepts EITHER:
-     * - hours_back: Shorthand for "last N hours" (e.g., hours_back: 3 for last 3 hours)
-     * - OR start_time + end_time: Explicit time range
-     *
+     * Generate an on-demand summary
      * @param params Generation parameters
-     * @returns Generated summary with stats
+     * @returns Generated summary
      */
     generate: async (params: SummaryGenerateRequest): Promise<SummaryGenerateResponse> => {
-      return apiFetch<SummaryGenerateResponse>('/summaries/generate', {
+      return apiFetch('/summaries/generate', {
         method: 'POST',
         body: JSON.stringify(params),
       });
     },
 
     /**
-     * List all summaries with pagination
-     * @param limit Maximum number to return (default 20)
-     * @param offset Pagination offset (default 0)
-     * @returns List of summaries
+     * List summaries with pagination
+     * @param limit Max summaries to return
+     * @param offset Pagination offset
+     * @returns Summary list
      */
     list: async (limit = 20, offset = 0): Promise<SummaryListResponse> => {
-      const params = new URLSearchParams({
-        limit: String(limit),
-        offset: String(offset),
-      });
-      return apiFetch<SummaryListResponse>(`/summaries?${params}`);
-    },
-  },
-
-  // ============================================================================
-  // ONVIF Camera Discovery (Story P5-2.3)
-  // ============================================================================
-  discovery: {
-    /**
-     * Check if ONVIF discovery feature is available
-     * Returns availability status based on whether WSDiscovery is installed
-     * @returns Discovery availability status
-     */
-    getStatus: async (): Promise<IDiscoveryStatusResponse> => {
-      return apiFetch<IDiscoveryStatusResponse>('/cameras/discover/status');
-    },
-
-    /**
-     * Start ONVIF camera discovery scan
-     * Sends WS-Discovery probes to multicast address and collects responses
-     * @param timeout Discovery timeout in seconds (1-60, default 10)
-     * @returns Discovery results with list of devices
-     */
-    startScan: async (timeout: number = 10): Promise<IDiscoveryResponse> => {
-      return apiFetch<IDiscoveryResponse>('/cameras/discover', {
-        method: 'POST',
-        body: JSON.stringify({ timeout }),
-      });
-    },
-
-    /**
-     * Get detailed information for a discovered ONVIF device
-     * Queries device for manufacturer, model, and stream profiles
-     * @param endpointUrl ONVIF device service URL from discovery
-     * @param username Optional username for ONVIF authentication
-     * @param password Optional password for ONVIF authentication
-     * @returns Device details with stream profiles and RTSP URLs
-     */
-    getDeviceDetails: async (
-      endpointUrl: string,
-      username?: string | null,
-      password?: string | null
-    ): Promise<IDeviceDetailsResponse> => {
-      return apiFetch<IDeviceDetailsResponse>('/cameras/discover/device', {
-        method: 'POST',
-        body: JSON.stringify({
-          endpoint_url: endpointUrl,
-          username: username || null,
-          password: password || null,
-        }),
-      });
-    },
-
-    /**
-     * Clear discovery cache to force fresh scan
-     * @returns Success message
-     */
-    clearCache: async (): Promise<{ status: string; message: string }> => {
-      return apiFetch<{ status: string; message: string }>('/cameras/discover/clear-cache', {
-        method: 'POST',
-      });
-    },
-
-    /**
-     * Test an RTSP connection without saving the camera (Story P5-2.4)
-     * Validates connectivity and returns stream metadata on success
-     * @param rtspUrl RTSP URL to test (must start with rtsp:// or rtsps://)
-     * @param username Optional username for RTSP authentication
-     * @param password Optional password for RTSP authentication
-     * @returns Test result with success status and stream metadata
-     */
-    testConnection: async (
-      rtspUrl: string,
-      username?: string | null,
-      password?: string | null
-    ): Promise<ITestConnectionResponse> => {
-      return apiFetch<ITestConnectionResponse>('/cameras/test', {
-        method: 'POST',
-        body: JSON.stringify({
-          rtsp_url: rtspUrl,
-          username: username || null,
-          password: password || null,
-        }),
-      });
+      return apiFetch(`/summaries?limit=${limit}&offset=${offset}`);
     },
   },
 };
 
-// Story P2-2.1: Camera Discovery Types
+// ============================================================================
+// Exported Types for Activity Summaries (Story P4-4.4, P4-4.5)
+// ============================================================================
 
-/** Discovered camera from Protect controller */
-export interface ProtectDiscoveredCamera {
-  protect_camera_id: string;
-  name: string;
-  type: 'camera' | 'doorbell';
-  model: string;
-  is_online: boolean;
-  is_doorbell: boolean;
-  is_enabled_for_ai: boolean;
-  smart_detection_capabilities: string[];
-  /** Configured filter types for enabled cameras (Story P2-2.3) */
-  smart_detection_types?: string[] | null;
-  /** Whether this camera was newly discovered (not in database) (Story P2-2.4 AC11) */
-  is_new?: boolean;
-  /** Database camera ID (only set when camera is enabled for AI) (Story P3-3.3) */
-  camera_id?: string | null;
-  /** AI analysis mode for this camera (Story P3-3.3) */
-  analysis_mode?: 'single_frame' | 'multi_frame' | 'video_native' | null;
-}
-
-// Story P2-2.2: Camera Enable/Disable Types
-
-/** Response data when camera is enabled for AI */
-export interface ProtectCameraEnableData {
-  camera_id: string;
-  protect_camera_id: string;
-  name: string;
-  is_enabled_for_ai: boolean;
-  smart_detection_types: string[];
-}
-
-/** Response data when camera is disabled */
-export interface ProtectCameraDisableData {
-  protect_camera_id: string;
-  is_enabled_for_ai: boolean;
-}
-
-// Story P2-2.3: Camera Filters Types
-
-/** Response data when camera filters are updated */
-export interface ProtectCameraFiltersData {
-  protect_camera_id: string;
-  name: string;
-  smart_detection_types: string[];
-  is_enabled_for_ai: boolean;
-}
-
-// Story P4-1.2: Push Notification Types (re-exported from types/push.ts)
-export type {
-  IVapidPublicKeyResponse,
-  IPushSubscribeRequest,
-  IPushSubscriptionResponse,
-  IPushUnsubscribeRequest,
-  IPushSubscriptionsListResponse,
-  IPushTestResponse,
-} from '@/types/push';
-
-// Story P4-3.6: Entity Types (re-exported from types/entity.ts)
-export type {
-  IEntity,
-  IEntityDetail,
-  IEntityListResponse,
-  IEntityQueryParams,
-  IEntityUpdateRequest,
-  EntityType,
-} from '@/types/entity';
-
-// Story P4-4.4 & P4-4.5: Activity Summary Types
-
-/** Summary item from recent summaries endpoint */
 export interface RecentSummaryItem {
   id: string;
   date: string;
-  summary_text: string;
+  period: 'morning' | 'afternoon' | 'evening' | 'night' | 'daily';
   event_count: number;
+  summary_text: string;
+  highlights: string[];
+  created_at: string;
+  // Stats for display
   camera_count: number;
   alert_count: number;
   doorbell_count: number;
   person_count: number;
   vehicle_count: number;
-  generated_at: string;
 }
 
-/** Response from GET /api/v1/summaries/recent */
 export interface RecentSummariesResponse {
   summaries: RecentSummaryItem[];
+  today: RecentSummaryItem | null;
+  yesterday: RecentSummaryItem | null;
 }
 
-/** Statistical breakdown of events in summary (Story P4-4.5) */
-export interface SummaryStats {
-  total_events: number;
-  by_type: Record<string, number>;
-  by_camera: Record<string, number>;
-  alerts_triggered: number;
-  doorbell_rings: number;
-}
-
-/**
- * Request for on-demand summary generation (Story P4-4.5)
- *
- * Either hours_back OR (start_time AND end_time) must be provided, not both.
- */
 export interface SummaryGenerateRequest {
-  /** Generate summary for last N hours (1-168). Mutually exclusive with start_time/end_time. */
   hours_back?: number;
-  /** Start of time period (ISO 8601). Required if hours_back not provided. */
   start_time?: string;
-  /** End of time period (ISO 8601). Required if hours_back not provided. */
   end_time?: string;
-  /** List of camera UUIDs to include (null = all cameras) */
-  camera_ids?: string[] | null;
+  camera_ids?: number[];
 }
 
-/** Response from POST /api/v1/summaries/generate (Story P4-4.5) */
 export interface SummaryGenerateResponse {
   id: string;
   summary_text: string;
+  event_count: number;
   period_start: string;
   period_end: string;
-  event_count: number;
-  generated_at: string;
-  stats: SummaryStats | null;
-  ai_cost: number;
-  provider_used: string | null;
+  highlights: string[];
+  created_at: string;
+  provider_used?: string;
+  // Stats for display
   camera_count: number;
   alert_count: number;
   doorbell_count: number;
@@ -2281,20 +1956,13 @@ export interface SummaryGenerateResponse {
   vehicle_count: number;
 }
 
-/** Response from GET /api/v1/summaries (Story P4-4.5) */
-export interface SummaryListResponse {
-  summaries: SummaryGenerateResponse[];
-  total: number;
+export interface SummaryStats {
+  total_summaries: number;
+  avg_events_per_summary: number;
 }
 
-// Story P5-2.3 & P5-2.4: ONVIF Discovery Types (re-exported from types/discovery.ts)
-export type {
-  IDiscoveryResponse,
-  IDiscoveryStatusResponse,
-  IDeviceDetailsResponse,
-  IDiscoveredDevice,
-  IDiscoveredCameraDetails,
-  IStreamProfile,
-  IDeviceInfo,
-  ITestConnectionResponse,
-} from '@/types/discovery';
+export interface SummaryListResponse {
+  summaries: RecentSummaryItem[];
+  total: number;
+  stats: SummaryStats;
+}
