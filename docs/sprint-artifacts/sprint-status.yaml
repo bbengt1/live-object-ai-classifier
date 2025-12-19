@@ -416,7 +416,7 @@ development_status:
   # Epic P7-3: HomeKit Camera Streaming
   epic-p7-3: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P7-3.md
   p7-3-1-verify-rtsp-to-srtp-streaming-works: done
-  p7-3-2-add-camera-snapshot-support: backlog
+  p7-3-2-add-camera-snapshot-support: done
   p7-3-3-add-camera-streaming-diagnostics: backlog
   epic-p7-3-retrospective: optional
 

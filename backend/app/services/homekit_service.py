@@ -1740,6 +1740,53 @@ class HomekitService:
 
         return True
 
+    async def get_camera_snapshot(self, camera_id: str) -> Optional[bytes]:
+        """
+        Get a snapshot from a camera accessory (Story P7-3.2 AC1, AC2).
+
+        Calls the camera's _get_snapshot() method which includes caching (AC3)
+        and placeholder fallback for offline cameras (AC4).
+
+        Args:
+            camera_id: Camera identifier
+
+        Returns:
+            JPEG bytes or None if camera not found
+        """
+        if not self.is_running:
+            logger.warning(
+                "Cannot get camera snapshot - HomeKit service not running",
+                extra={"camera_id": camera_id}
+            )
+            return None
+
+        camera = self._cameras.get(camera_id)
+        if not camera:
+            logger.warning(
+                f"Camera not found in HomeKit bridge: {camera_id}",
+                extra={"camera_id": camera_id}
+            )
+            return None
+
+        try:
+            # Call the camera's snapshot method (includes caching)
+            snapshot = await camera._get_snapshot({"image-width": 640, "image-height": 480})
+            logger.debug(
+                f"Got snapshot from camera {camera.camera_name}",
+                extra={
+                    "camera_id": camera_id,
+                    "size": len(snapshot) if snapshot else 0,
+                    "cached": camera._is_snapshot_cache_valid()
+                }
+            )
+            return snapshot
+        except Exception as e:
+            logger.error(
+                f"Failed to get snapshot from camera {camera_id}: {e}",
+                extra={"camera_id": camera_id}
+            )
+            return None
+
     async def reset_pairing(self) -> bool:
         """
         Reset HomeKit pairing by removing state file.

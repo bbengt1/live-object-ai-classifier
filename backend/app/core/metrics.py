@@ -248,6 +248,24 @@ homekit_stream_rejections_total = Counter(
 )
 
 # ============================================================================
+# HomeKit Snapshot Metrics (Story P7-3.2)
+# ============================================================================
+
+homekit_snapshot_cache_hits_total = Counter(
+    'argusai_homekit_snapshot_cache_hits_total',
+    'Total HomeKit snapshot cache hits',
+    ['camera_id'],
+    registry=REGISTRY
+)
+
+homekit_snapshot_cache_misses_total = Counter(
+    'argusai_homekit_snapshot_cache_misses_total',
+    'Total HomeKit snapshot cache misses',
+    ['camera_id'],
+    registry=REGISTRY
+)
+
+# ============================================================================
 # System Resource Metrics
 # ============================================================================
 
@@ -518,6 +536,26 @@ def update_homekit_total_streams(total_count: int):
         total_count: Total number of active streams across all cameras
     """
     homekit_streams_total.set(total_count)
+
+
+def record_homekit_snapshot_cache_hit(camera_id: str):
+    """
+    Record a HomeKit snapshot cache hit (Story P7-3.2 AC3).
+
+    Args:
+        camera_id: Camera ID
+    """
+    homekit_snapshot_cache_hits_total.labels(camera_id=camera_id).inc()
+
+
+def record_homekit_snapshot_cache_miss(camera_id: str):
+    """
+    Record a HomeKit snapshot cache miss (Story P7-3.2 AC3).
+
+    Args:
+        camera_id: Camera ID
+    """
+    homekit_snapshot_cache_misses_total.labels(camera_id=camera_id).inc()
 
 
 def update_system_metrics():

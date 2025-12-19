@@ -28,10 +28,14 @@ from enum import Enum
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
+from datetime import datetime
+
 from app.core.metrics import (
     record_homekit_stream_start,
     update_homekit_active_streams,
     update_homekit_total_streams,
+    record_homekit_snapshot_cache_hit,
+    record_homekit_snapshot_cache_miss,
 )
 
 try:
@@ -47,6 +51,9 @@ logger = logging.getLogger(__name__)
 
 # Story P5-1.3 AC4: Maximum concurrent streams
 MAX_CONCURRENT_STREAMS = 2
+
+# Story P7-3.2 AC3: Snapshot caching duration
+SNAPSHOT_CACHE_SECONDS = 5
 
 
 class StreamQuality(str, Enum):
@@ -181,6 +188,9 @@ class HomeKitCameraAccessory:
         # Story P7-3.1: Store stream quality configuration
         self._stream_quality = stream_quality
         self._stream_config = StreamConfig.from_string(stream_quality)
+        # Story P7-3.2: Snapshot caching infrastructure (AC3)
+        self._snapshot_cache: Optional[bytes] = None
+        self._snapshot_timestamp: Optional[datetime] = None
 
         # Configure video options for HomeKit
         options = self._get_camera_options()
@@ -514,11 +524,39 @@ class HomeKitCameraAccessory:
             logger.error(f"Error building ffmpeg command: {e}")
             return None
 
+    def _is_snapshot_cache_valid(self) -> bool:
+        """
+        Check if snapshot cache is valid (Story P7-3.2 AC3).
+
+        Returns True if cached snapshot exists and is less than SNAPSHOT_CACHE_SECONDS old.
+
+        Returns:
+            True if cache is valid, False otherwise
+        """
+        if self._snapshot_cache is None or self._snapshot_timestamp is None:
+            return False
+        age = (datetime.utcnow() - self._snapshot_timestamp).total_seconds()
+        return age < SNAPSHOT_CACHE_SECONDS
+
+    @property
+    def last_snapshot_time(self) -> Optional[datetime]:
+        """Get the timestamp of the last snapshot capture (Story P7-3.2)."""
+        return self._snapshot_timestamp
+
+    @property
+    def snapshot_supported(self) -> bool:
+        """Whether this camera supports snapshots (Story P7-3.2)."""
+        return True
+
     async def _get_snapshot(self, image_size: dict) -> bytes:
         """
-        Get camera snapshot for HomeKit tiles (Story P5-1.3 AC1).
+        Get camera snapshot for HomeKit tiles (Story P5-1.3 AC1, P7-3.2 AC1-AC4).
 
-        Captures a single frame from the RTSP stream.
+        Story P7-3.2 enhancements:
+        - AC1: Implements get_snapshot() method
+        - AC2: Returns JPEG snapshot from camera
+        - AC3: Caches snapshot for 5 seconds to reduce load
+        - AC4: Returns placeholder gracefully when camera offline
 
         Args:
             image_size: Requested image dimensions (width, height)
@@ -526,13 +564,30 @@ class HomeKitCameraAccessory:
         Returns:
             JPEG image data as bytes
         """
-        import io
+        width = image_size.get("image-width", 640)
+        height = image_size.get("image-height", 480)
+
+        # Story P7-3.2 AC3: Check cache first
+        if self._is_snapshot_cache_valid():
+            record_homekit_snapshot_cache_hit(self.camera_id)
+            logger.debug(
+                f"Snapshot cache hit for camera {self.camera_name}",
+                extra={
+                    "camera_id": self.camera_id,
+                    "cache_age_seconds": (datetime.utcnow() - self._snapshot_timestamp).total_seconds()
+                    if self._snapshot_timestamp else 0
+                }
+            )
+            return self._snapshot_cache
+
+        # Cache miss - need to capture new snapshot
+        record_homekit_snapshot_cache_miss(self.camera_id)
+        logger.debug(
+            f"Snapshot cache miss for camera {self.camera_name}",
+            extra={"camera_id": self.camera_id}
+        )
 
         try:
-            # Try to capture frame from RTSP
-            width = image_size.get("image-width", 640)
-            height = image_size.get("image-height", 480)
-
             # Use ffmpeg to capture a single frame
             cmd = [
                 FFMPEG_PATH,
@@ -553,8 +608,12 @@ class HomeKitCameraAccessory:
             )
 
             if result.returncode == 0 and result.stdout:
+                # Story P7-3.2 AC3: Store in cache with timestamp
+                self._snapshot_cache = result.stdout
+                self._snapshot_timestamp = datetime.utcnow()
+
                 logger.debug(
-                    f"Captured snapshot for camera {self.camera_name}",
+                    f"Captured and cached snapshot for camera {self.camera_name}",
                     extra={"camera_id": self.camera_id, "size": len(result.stdout)}
                 )
                 return result.stdout
@@ -565,17 +624,19 @@ class HomeKitCameraAccessory:
             )
 
         except subprocess.TimeoutExpired:
+            # Story P7-3.2 AC4: Log when returning placeholder due to offline
             logger.warning(
-                f"Snapshot capture timeout for camera {self.camera_name}",
-                extra={"camera_id": self.camera_id}
+                f"Snapshot capture timeout for camera {self.camera_name} - returning placeholder",
+                extra={"camera_id": self.camera_id, "reason": "timeout"}
             )
         except Exception as e:
+            # Story P7-3.2 AC4: Log when returning placeholder due to error
             logger.error(
-                f"Error capturing snapshot: {e}",
-                extra={"camera_id": self.camera_id}
+                f"Error capturing snapshot for camera {self.camera_name} - returning placeholder: {e}",
+                extra={"camera_id": self.camera_id, "reason": "error"}
             )
 
-        # Return empty JPEG placeholder on failure
+        # Story P7-3.2 AC4: Return placeholder on failure
         return self._get_placeholder_image(width, height)
 
     def _get_placeholder_image(self, width: int = 640, height: int = 480) -> bytes:
