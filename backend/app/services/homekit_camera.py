@@ -1,7 +1,12 @@
 """
-HomeKit Camera accessory with RTSP-to-SRTP streaming (Story P5-1.3)
+HomeKit Camera accessory with RTSP-to-SRTP streaming (Story P5-1.3, P7-3.1)
 
 Implements HAP-python Camera class with ffmpeg transcoding for HomeKit streaming.
+
+Story P7-3.1 adds:
+- StreamQuality enum for configurable quality (low, medium, high)
+- StreamConfig dataclass for quality-to-settings mapping
+- Per-camera quality configuration from database
 
 Stream Flow:
     HomeKit requests stream → start_stream(session_info, stream_config)
@@ -19,8 +24,15 @@ import logging
 import os
 import subprocess
 import threading
+from enum import Enum
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
+
+from app.core.metrics import (
+    record_homekit_stream_start,
+    update_homekit_active_streams,
+    update_homekit_total_streams,
+)
 
 try:
     from pyhap.camera import Camera
@@ -35,6 +47,67 @@ logger = logging.getLogger(__name__)
 
 # Story P5-1.3 AC4: Maximum concurrent streams
 MAX_CONCURRENT_STREAMS = 2
+
+
+class StreamQuality(str, Enum):
+    """
+    HomeKit stream quality levels (Story P7-3.1 AC5).
+
+    Defines resolution, fps, and bitrate for each quality tier.
+    Lower quality uses less bandwidth and CPU.
+    """
+    LOW = "low"      # 640x480, 15fps, 500kbps - Best for slow networks
+    MEDIUM = "medium"  # 1280x720, 25fps, 1500kbps - Balanced quality/bandwidth
+    HIGH = "high"    # 1920x1080, 30fps, 3000kbps - Best quality, high bandwidth
+
+
+@dataclass
+class StreamConfig:
+    """
+    Stream configuration settings for a quality level (Story P7-3.1).
+
+    Maps StreamQuality enum values to actual video encoding parameters.
+    """
+    width: int
+    height: int
+    fps: int
+    bitrate: int  # kbps
+
+    @classmethod
+    def from_quality(cls, quality: StreamQuality) -> "StreamConfig":
+        """
+        Create StreamConfig from a StreamQuality enum value.
+
+        Args:
+            quality: StreamQuality enum value (LOW, MEDIUM, HIGH)
+
+        Returns:
+            StreamConfig with appropriate resolution, fps, and bitrate
+        """
+        configs = {
+            StreamQuality.LOW: cls(width=640, height=480, fps=15, bitrate=500),
+            StreamQuality.MEDIUM: cls(width=1280, height=720, fps=25, bitrate=1500),
+            StreamQuality.HIGH: cls(width=1920, height=1080, fps=30, bitrate=3000),
+        }
+        return configs.get(quality, configs[StreamQuality.MEDIUM])
+
+    @classmethod
+    def from_string(cls, quality_str: str) -> "StreamConfig":
+        """
+        Create StreamConfig from a quality string.
+
+        Args:
+            quality_str: Quality string ('low', 'medium', 'high')
+
+        Returns:
+            StreamConfig with appropriate settings
+        """
+        try:
+            quality = StreamQuality(quality_str.lower())
+            return cls.from_quality(quality)
+        except ValueError:
+            logger.warning(f"Unknown stream quality '{quality_str}', defaulting to medium")
+            return cls.from_quality(StreamQuality.MEDIUM)
 
 # Default ffmpeg path
 FFMPEG_PATH = os.environ.get("FFMPEG_PATH", "ffmpeg")
@@ -82,9 +155,10 @@ class HomeKitCameraAccessory:
         rtsp_url: str,
         manufacturer: str = "ArgusAI",
         model: str = "Camera",
+        stream_quality: str = "medium",
     ):
         """
-        Initialize a HomeKit camera accessory.
+        Initialize a HomeKit camera accessory (Story P5-1.3, P7-3.1).
 
         Args:
             driver: HAP-python AccessoryDriver instance
@@ -93,6 +167,7 @@ class HomeKitCameraAccessory:
             rtsp_url: RTSP stream URL for the camera
             manufacturer: Manufacturer name (default: ArgusAI)
             model: Model name (default: Camera)
+            stream_quality: Quality level - 'low', 'medium', 'high' (default: medium)
         """
         if not HAP_AVAILABLE:
             raise ImportError("HAP-python is not installed. Install with: pip install HAP-python")
@@ -103,6 +178,9 @@ class HomeKitCameraAccessory:
         self.manufacturer = manufacturer
         self.model = model
         self._driver = driver
+        # Story P7-3.1: Store stream quality configuration
+        self._stream_quality = stream_quality
+        self._stream_config = StreamConfig.from_string(stream_quality)
 
         # Configure video options for HomeKit
         options = self._get_camera_options()
@@ -169,9 +247,19 @@ class HomeKitCameraAccessory:
         """Get the camera display name."""
         return self.camera_name
 
+    @property
+    def stream_quality(self) -> str:
+        """Get the configured stream quality (Story P7-3.1)."""
+        return self._stream_quality
+
+    @property
+    def stream_config(self) -> StreamConfig:
+        """Get the stream configuration for this camera (Story P7-3.1)."""
+        return self._stream_config
+
     async def _start_stream(self, session_info: dict, stream_config: dict) -> bool:
         """
-        Start streaming to HomeKit client (Story P5-1.3 AC2, AC3).
+        Start streaming to HomeKit client (Story P5-1.3 AC2, AC3, P7-3.1 AC4).
 
         Spawns ffmpeg to transcode RTSP to SRTP.
 
@@ -188,11 +276,22 @@ class HomeKitCameraAccessory:
         with self._stream_lock:
             if HomeKitCameraAccessory._active_stream_count >= MAX_CONCURRENT_STREAMS:
                 logger.warning(
-                    f"Max concurrent streams ({MAX_CONCURRENT_STREAMS}) reached, rejecting stream request",
-                    extra={"camera_id": self.camera_id, "session_id": session_id}
+                    f"HomeKit stream rejected: max concurrent streams ({MAX_CONCURRENT_STREAMS}) reached. "
+                    f"Camera: {self.camera_name} ({self.camera_id}), Session: {session_id}. "
+                    f"Close existing streams to allow new connections.",
+                    extra={
+                        "camera_id": self.camera_id,
+                        "session_id": session_id,
+                        "active_streams": HomeKitCameraAccessory._active_stream_count,
+                        "max_streams": MAX_CONCURRENT_STREAMS,
+                    }
                 )
+                # P7-3.1 AC4: Record rejection in metrics
+                record_homekit_stream_start(self.camera_id, self._stream_quality, 'rejected')
                 return False
             HomeKitCameraAccessory._active_stream_count += 1
+            # P7-3.1 AC4: Update metrics
+            update_homekit_total_streams(HomeKitCameraAccessory._active_stream_count)
 
         try:
             # Build ffmpeg command
@@ -241,8 +340,12 @@ class HomeKitCameraAccessory:
                     "camera_id": self.camera_id,
                     "session_id": session_id,
                     "pid": process.pid,
+                    "quality": self._stream_quality,
                 }
             )
+
+            # P7-3.1 AC4: Record successful stream start in metrics
+            record_homekit_stream_start(self.camera_id, self._stream_quality, 'success')
 
             return True
 
@@ -251,6 +354,8 @@ class HomeKitCameraAccessory:
                 f"Failed to start HomeKit stream: {e}",
                 extra={"camera_id": self.camera_id, "session_id": session_id}
             )
+            # P7-3.1 AC4: Record error in metrics
+            record_homekit_stream_start(self.camera_id, self._stream_quality, 'error')
             self._decrement_stream_count()
             return False
 
@@ -304,19 +409,25 @@ class HomeKitCameraAccessory:
         self._decrement_stream_count()
 
     def _decrement_stream_count(self) -> None:
-        """Safely decrement the active stream count."""
+        """Safely decrement the active stream count (P7-3.1 AC4: includes metric update)."""
         with self._stream_lock:
             HomeKitCameraAccessory._active_stream_count = max(
                 0, HomeKitCameraAccessory._active_stream_count - 1
             )
+            # P7-3.1 AC4: Update total streams metric
+            update_homekit_total_streams(HomeKitCameraAccessory._active_stream_count)
 
     def _build_ffmpeg_command(self, session_info: dict, stream_config: dict) -> Optional[List[str]]:
         """
-        Build ffmpeg command for RTSP to SRTP transcoding (Story P5-1.3 AC2).
+        Build ffmpeg command for RTSP to SRTP transcoding (Story P5-1.3 AC2, P7-3.1 AC2, AC3).
+
+        Uses quality-based configuration from self._stream_config when HomeKit
+        doesn't specify explicit settings, ensuring consistent quality based
+        on the camera's homekit_stream_quality database field.
 
         Args:
             session_info: Client address, ports, SRTP keys
-            stream_config: Video settings (resolution, bitrate, fps)
+            stream_config: Video settings from HomeKit (may be empty/default)
 
         Returns:
             List of command arguments for subprocess, or None on error
@@ -326,16 +437,45 @@ class HomeKitCameraAccessory:
             address = session_info.get("address", "127.0.0.1")
             v_port = session_info.get("v_port", 0)
             v_srtp_key = session_info.get("v_srtp_key", "")
-
-            # Extract stream configuration
-            width = stream_config.get("width", 1280)
-            height = stream_config.get("height", 720)
-            fps = stream_config.get("fps", 30)
-            v_max_bitrate = stream_config.get("v_max_bitrate", 2000)
             v_ssrc = session_info.get("v_ssrc", 0)
+
+            # Story P7-3.1 AC3: Use quality-based config when HomeKit doesn't specify
+            # HomeKit may request specific resolution or let us choose
+            homekit_width = stream_config.get("width")
+            homekit_height = stream_config.get("height")
+            homekit_fps = stream_config.get("fps")
+            homekit_bitrate = stream_config.get("v_max_bitrate")
+
+            # Use our quality config if HomeKit doesn't specify or uses defaults
+            # This ensures our quality setting takes precedence
+            quality_config = self._stream_config
+            width = homekit_width if homekit_width and homekit_width != 0 else quality_config.width
+            height = homekit_height if homekit_height and homekit_height != 0 else quality_config.height
+            fps = homekit_fps if homekit_fps and homekit_fps != 0 else quality_config.fps
+            bitrate = homekit_bitrate if homekit_bitrate and homekit_bitrate != 0 else quality_config.bitrate
+
+            # Cap values to our quality config maximum (don't exceed configured quality)
+            width = min(width, quality_config.width)
+            height = min(height, quality_config.height)
+            fps = min(fps, quality_config.fps)
+            bitrate = min(bitrate, quality_config.bitrate)
+
+            logger.debug(
+                f"Building ffmpeg command with quality={self._stream_quality}: "
+                f"{width}x{height}@{fps}fps, {bitrate}kbps",
+                extra={
+                    "camera_id": self.camera_id,
+                    "quality": self._stream_quality,
+                    "width": width,
+                    "height": height,
+                    "fps": fps,
+                    "bitrate": bitrate,
+                }
+            )
 
             # Build ffmpeg command
             # AC2: Low-latency transcoding for <500ms additional delay
+            # AC3: Use baseline H.264 profile for maximum compatibility
             cmd = [
                 FFMPEG_PATH,
                 # Input options
@@ -345,21 +485,25 @@ class HomeKitCameraAccessory:
                 "-an",  # No audio
                 "-vcodec", "libx264",
                 "-pix_fmt", "yuv420p",
-                "-profile:v", "baseline",
+                "-profile:v", "baseline",  # AC3: Maximum compatibility with all iOS devices
+                "-level", "3.1",  # Standard level for 720p30 compatibility
                 "-preset", "ultrafast",
-                "-tune", "zerolatency",
+                "-tune", "zerolatency",  # AC2: Minimize latency
                 # Bitrate settings
-                "-b:v", f"{v_max_bitrate}k",
-                "-bufsize", f"{v_max_bitrate}k",
-                "-maxrate", f"{v_max_bitrate}k",
+                "-b:v", f"{bitrate}k",
+                "-bufsize", f"{bitrate}k",
+                "-maxrate", f"{bitrate}k",
                 # Frame settings
                 "-r", str(fps),
                 "-vf", f"scale={width}:{height}",
+                # Keyframe settings for seek/preview
+                "-g", str(fps * 2),  # Keyframe every 2 seconds
+                "-keyint_min", str(fps),
                 # RTP output settings
                 "-payload_type", "99",
                 "-ssrc", str(v_ssrc),
                 "-f", "rtp",
-                "-srtp_out_suite", "AES_CM_128_HMAC_SHA1_80",
+                "-srtp_out_suite", "AES_CM_128_HMAC_SHA1_80",  # AC2: Required SRTP encryption
                 "-srtp_out_params", v_srtp_key,
                 f"srtp://{address}:{v_port}?rtcpport={v_port}&pkt_size=1316",
             ]
@@ -537,9 +681,10 @@ def create_camera_accessory(
     camera_name: str,
     rtsp_url: str,
     manufacturer: str = "ArgusAI",
+    stream_quality: str = "medium",
 ) -> Optional[HomeKitCameraAccessory]:
     """
-    Factory function to create a HomeKit camera accessory.
+    Factory function to create a HomeKit camera accessory (Story P5-1.3, P7-3.1).
 
     Args:
         driver: HAP-python AccessoryDriver instance
@@ -547,6 +692,7 @@ def create_camera_accessory(
         camera_name: Display name in Home app
         rtsp_url: RTSP stream URL for the camera
         manufacturer: Manufacturer name (default: ArgusAI)
+        stream_quality: Quality level - 'low', 'medium', 'high' (default: medium)
 
     Returns:
         HomeKitCameraAccessory instance or None if HAP-python not available
@@ -562,6 +708,7 @@ def create_camera_accessory(
             camera_name=camera_name,
             rtsp_url=rtsp_url,
             manufacturer=manufacturer,
+            stream_quality=stream_quality,
         )
     except Exception as e:
         logger.error(f"Failed to create camera accessory for {camera_name}: {e}")

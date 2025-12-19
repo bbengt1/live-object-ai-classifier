@@ -217,6 +217,37 @@ mqtt_reconnect_attempts_total = Counter(
 )
 
 # ============================================================================
+# HomeKit Streaming Metrics (Story P7-3.1)
+# ============================================================================
+
+homekit_streams_active = Gauge(
+    'argusai_homekit_streams_active',
+    'Number of active HomeKit camera streams',
+    ['camera_id'],
+    registry=REGISTRY
+)
+
+homekit_streams_total = Gauge(
+    'argusai_homekit_streams_total',
+    'Total number of active HomeKit streams across all cameras',
+    registry=REGISTRY
+)
+
+homekit_stream_starts_total = Counter(
+    'argusai_homekit_stream_starts_total',
+    'Total HomeKit stream start attempts',
+    ['camera_id', 'quality', 'status'],  # status: success, rejected, error
+    registry=REGISTRY
+)
+
+homekit_stream_rejections_total = Counter(
+    'argusai_homekit_stream_rejections_total',
+    'Total HomeKit stream rejections due to concurrent limit',
+    ['camera_id'],
+    registry=REGISTRY
+)
+
+# ============================================================================
 # System Resource Metrics
 # ============================================================================
 
@@ -443,6 +474,50 @@ def record_mqtt_publish_error():
 def record_mqtt_reconnect_attempt():
     """Record an MQTT reconnect attempt."""
     mqtt_reconnect_attempts_total.inc()
+
+
+def record_homekit_stream_start(
+    camera_id: str,
+    quality: str,
+    status: str
+):
+    """
+    Record a HomeKit stream start attempt (Story P7-3.1 AC4).
+
+    Args:
+        camera_id: Camera ID
+        quality: Stream quality (low, medium, high)
+        status: Result status (success, rejected, error)
+    """
+    homekit_stream_starts_total.labels(
+        camera_id=camera_id,
+        quality=quality,
+        status=status
+    ).inc()
+
+    if status == 'rejected':
+        homekit_stream_rejections_total.labels(camera_id=camera_id).inc()
+
+
+def update_homekit_active_streams(camera_id: str, count: int):
+    """
+    Update the active stream count for a camera (Story P7-3.1 AC4).
+
+    Args:
+        camera_id: Camera ID
+        count: Number of active streams for this camera
+    """
+    homekit_streams_active.labels(camera_id=camera_id).set(count)
+
+
+def update_homekit_total_streams(total_count: int):
+    """
+    Update the total active stream count (Story P7-3.1 AC4).
+
+    Args:
+        total_count: Total number of active streams across all cameras
+    """
+    homekit_streams_total.set(total_count)
 
 
 def update_system_metrics():

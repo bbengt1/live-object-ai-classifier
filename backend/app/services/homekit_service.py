@@ -62,6 +62,8 @@ from app.services.homekit_camera import (
     HomeKitCameraAccessory,
     create_camera_accessory,
     check_ffmpeg_available,
+    StreamQuality,
+    StreamConfig,
 )
 from app.services.homekit_diagnostics import (
     get_diagnostic_handler,
@@ -696,16 +698,19 @@ class HomekitService:
                         self._bridge.add_accessory(doorbell_sensor.accessory)
                         logger.info(f"Added HomeKit doorbell sensor for camera: {camera_name}")
 
-                # Story P5-1.3: Add camera accessory for streaming (only if ffmpeg available)
+                # Story P5-1.3, P7-3.1: Add camera accessory for streaming (only if ffmpeg available)
                 if self._ffmpeg_available:
                     rtsp_url = self._get_camera_rtsp_url(camera)
                     if rtsp_url:
+                        # P7-3.1: Get stream quality from camera model (default: medium)
+                        stream_quality = getattr(camera, 'homekit_stream_quality', 'medium') or 'medium'
                         camera_accessory = create_camera_accessory(
                             driver=self._driver,
                             camera_id=camera_id,
                             camera_name=camera_name,
                             rtsp_url=rtsp_url,
                             manufacturer=self.config.manufacturer,
+                            stream_quality=stream_quality,
                         )
 
                         if camera_accessory:
