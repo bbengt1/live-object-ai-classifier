@@ -1,6 +1,6 @@
 # Story P7-2.1: Add Carrier Detection to AI Analysis
 
-Status: review
+Status: done
 
 ## Story
 
