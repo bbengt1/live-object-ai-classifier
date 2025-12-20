@@ -369,3 +369,4 @@ class TestHomekitStatusDoorbellField:
 
         status = HomekitStatus(doorbell_count=3)
         assert status.doorbell_count == 3
+
