@@ -2022,6 +2022,70 @@ class ProtectEventHandler:
                         }
                     )
 
+            # Story P4-3.3/P4-3.4: Generate embedding and match/create entity for Protect events
+            # This enables recurring visitor detection for Protect cameras
+            try:
+                if snapshot_result.image_base64:
+                    from app.services.embedding_service import get_embedding_service
+                    from app.services.entity_service import get_entity_service
+                    import base64 as b64
+
+                    embedding_service = get_embedding_service()
+
+                    # Decode base64 image
+                    image_bytes = b64.b64decode(snapshot_result.image_base64)
+
+                    # Generate embedding
+                    embedding_vector = await embedding_service.generate_embedding(image_bytes)
+
+                    if embedding_vector:
+                        # Store embedding in database
+                        await embedding_service.store_embedding(
+                            db=db,
+                            event_id=event.id,
+                            embedding=embedding_vector,
+                        )
+
+                        # Determine entity type from smart detection
+                        entity_type = "unknown"
+                        if event_type in ("person", "vehicle"):
+                            entity_type = event_type
+
+                        # Match or create entity
+                        entity_service = get_entity_service()
+                        entity_result = await entity_service.match_or_create_entity(
+                            db=db,
+                            event_id=event.id,
+                            embedding=embedding_vector,
+                            entity_type=entity_type,
+                            threshold=0.75,
+                        )
+
+                        logger.info(
+                            f"Entity {'created' if entity_result.is_new else 'matched'} for Protect event {event.id}",
+                            extra={
+                                "event_type": "entity_matched",
+                                "event_id": event.id,
+                                "entity_id": entity_result.entity_id,
+                                "entity_type": entity_result.entity_type,
+                                "is_new": entity_result.is_new,
+                                "similarity_score": entity_result.similarity_score,
+                                "occurrence_count": entity_result.occurrence_count
+                            }
+                        )
+            except Exception as embed_error:
+                # Don't fail event creation if embedding/entity matching fails
+                logger.warning(
+                    f"Embedding/entity matching failed for Protect event {event.id}: {embed_error}",
+                    extra={
+                        "event_type": "protect_embedding_error",
+                        "event_id": event.id,
+                        "camera_id": camera.id,
+                        "error_type": type(embed_error).__name__,
+                        "error_message": str(embed_error)
+                    }
+                )
+
             logger.info(
                 f"Protect event stored: {event.id} for camera '{camera.name}'",
                 extra={
@@ -2122,6 +2186,42 @@ class ProtectEventHandler:
             db.add(event)
             db.commit()
             db.refresh(event)
+
+            # Story P4-3.3/P4-3.4: Generate embedding and match/create entity even for events without AI
+            # This enables recurring visitor detection regardless of AI availability
+            try:
+                if snapshot_result.image_base64:
+                    from app.services.embedding_service import get_embedding_service
+                    from app.services.entity_service import get_entity_service
+                    import base64 as b64
+
+                    embedding_service = get_embedding_service()
+                    image_bytes = b64.b64decode(snapshot_result.image_base64)
+                    embedding_vector = await embedding_service.generate_embedding(image_bytes)
+
+                    if embedding_vector:
+                        await embedding_service.store_embedding(
+                            db=db,
+                            event_id=event.id,
+                            embedding=embedding_vector,
+                        )
+
+                        entity_type = "unknown"
+                        if event_type in ("person", "vehicle"):
+                            entity_type = event_type
+
+                        entity_service = get_entity_service()
+                        await entity_service.match_or_create_entity(
+                            db=db,
+                            event_id=event.id,
+                            embedding=embedding_vector,
+                            entity_type=entity_type,
+                            threshold=0.75,
+                        )
+            except Exception as embed_error:
+                logger.debug(
+                    f"Embedding/entity matching failed for no-AI event {event.id}: {embed_error}"
+                )
 
             logger.warning(
                 f"Protect event stored WITHOUT AI description: {event.id} for camera '{camera.name}'",
