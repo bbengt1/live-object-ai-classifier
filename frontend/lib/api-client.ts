@@ -754,14 +754,14 @@ export const apiClient = {
       if (filters?.offset !== undefined) params.set('skip', String(filters.offset));
       if (filters?.limit !== undefined) params.set('limit', String(filters.limit));
       const queryString = params.toString();
-      return apiFetch(`/alert-rules/webhook-logs${queryString ? `?${queryString}` : ''}`);
+      return apiFetch(`/webhooks/logs${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
      * Retry a failed webhook delivery (Story P1-3.5)
      */
     retryWebhook: async (logId: number): Promise<IWebhookTestResponse> => {
-      return apiFetch(`/alert-rules/webhook-logs/${logId}/retry`, {
+      return apiFetch(`/webhooks/logs/${logId}/retry`, {
         method: 'POST',
       });
     },
@@ -776,7 +776,7 @@ export const apiClient = {
       if (filters?.start_date !== undefined) params.set('start_date', filters.start_date);
       if (filters?.end_date !== undefined) params.set('end_date', filters.end_date);
       const queryString = params.toString();
-      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/alert-rules/webhook-logs/export${queryString ? `?${queryString}` : ''}`, {
+      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/webhooks/logs/export${queryString ? `?${queryString}` : ''}`, {
         method: 'GET',
         headers: getAuthHeaders(),
       });
@@ -1191,7 +1191,7 @@ export const apiClient = {
      * @returns List of configured controllers
      */
     listControllers: async (): Promise<Array<{
-      id: number;
+      id: string;
       name: string;
       host: string;
       port: number;
@@ -1206,7 +1206,23 @@ export const apiClient = {
       created_at: string;
       updated_at: string | null;
     }>> => {
-      return apiFetch('/protect/controllers');
+      const response = await apiFetch<{ data: Array<{
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        use_ssl: boolean;
+        verify_ssl: boolean;
+        enabled: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        connection_error: string | null;
+        camera_count: number;
+        created_at: string;
+        updated_at: string | null;
+      }> }>('/protect/controllers');
+      return response.data;
     },
 
     /**
@@ -1214,8 +1230,8 @@ export const apiClient = {
      * @param id Controller ID
      * @returns Controller details
      */
-    getController: async (id: number): Promise<{
-      id: number;
+    getController: async (id: string): Promise<{
+      id: string;
       name: string;
       host: string;
       port: number;
@@ -1230,7 +1246,23 @@ export const apiClient = {
       created_at: string;
       updated_at: string | null;
     }> => {
-      return apiFetch(`/protect/controllers/${id}`);
+      const response = await apiFetch<{ data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        use_ssl: boolean;
+        verify_ssl: boolean;
+        enabled: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        connection_error: string | null;
+        camera_count: number;
+        created_at: string;
+        updated_at: string | null;
+      } }>(`/protect/controllers/${id}`);
+      return response.data;
     },
 
     /**
@@ -1248,7 +1280,7 @@ export const apiClient = {
       verify_ssl?: boolean;
       enabled?: boolean;
     }): Promise<{
-      id: number;
+      id: string;
       name: string;
       host: string;
       port: number;
@@ -1263,10 +1295,26 @@ export const apiClient = {
       created_at: string;
       updated_at: string | null;
     }> => {
-      return apiFetch('/protect/controllers', {
+      const response = await apiFetch<{ data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        use_ssl: boolean;
+        verify_ssl: boolean;
+        enabled: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        connection_error: string | null;
+        camera_count: number;
+        created_at: string;
+        updated_at: string | null;
+      } }>('/protect/controllers', {
         method: 'POST',
         body: JSON.stringify(data),
       });
+      return response.data;
     },
 
     /**
@@ -1275,7 +1323,7 @@ export const apiClient = {
      * @param data Updated configuration
      * @returns Updated controller
      */
-    updateController: async (id: number, data: {
+    updateController: async (id: string, data: {
       name?: string;
       host?: string;
       port?: number;
@@ -1285,7 +1333,7 @@ export const apiClient = {
       verify_ssl?: boolean;
       enabled?: boolean;
     }): Promise<{
-      id: number;
+      id: string;
       name: string;
       host: string;
       port: number;
@@ -1300,10 +1348,26 @@ export const apiClient = {
       created_at: string;
       updated_at: string | null;
     }> => {
-      return apiFetch(`/protect/controllers/${id}`, {
+      const response = await apiFetch<{ data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        use_ssl: boolean;
+        verify_ssl: boolean;
+        enabled: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        connection_error: string | null;
+        camera_count: number;
+        created_at: string;
+        updated_at: string | null;
+      } }>(`/protect/controllers/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
       });
+      return response.data;
     },
 
     /**
@@ -1311,10 +1375,11 @@ export const apiClient = {
      * @param id Controller ID
      * @returns Deletion confirmation
      */
-    deleteController: async (id: number): Promise<{ message: string }> => {
-      return apiFetch(`/protect/controllers/${id}`, {
+    deleteController: async (id: string): Promise<{ deleted: boolean }> => {
+      const response = await apiFetch<{ data: { deleted: boolean } }>(`/protect/controllers/${id}`, {
         method: 'DELETE',
       });
+      return response.data;
     },
 
     /**
@@ -1349,7 +1414,7 @@ export const apiClient = {
      * @param id Controller ID
      * @returns Test result
      */
-    testExistingController: async (id: number): Promise<{
+    testExistingController: async (id: string): Promise<{
       data: {
         success: boolean;
         message: string;
@@ -1368,11 +1433,9 @@ export const apiClient = {
      * @param id Controller ID
      * @returns List of discovered cameras
      */
-    discoverCameras: async (id: number): Promise<{
-      controller_id: number;
-      cameras: ProtectDiscoveredCamera[];
-    }> => {
-      return apiFetch(`/protect/controllers/${id}/cameras`);
+    discoverCameras: async (id: string): Promise<ProtectDiscoveredCamera[]> => {
+      const response = await apiFetch<{ data: ProtectDiscoveredCamera[] }>(`/protect/controllers/${id}/cameras`);
+      return response.data;
     },
 
     /**
@@ -1381,15 +1444,21 @@ export const apiClient = {
      * @param protectCameraId Protect camera ID
      * @returns Updated camera info
      */
-    enableCamera: async (controllerId: number, protectCameraId: string): Promise<{
-      protect_id: string;
+    enableCamera: async (controllerId: string, protectCameraId: string): Promise<{
+      protect_camera_id: string;
       name: string;
       is_enabled_for_ai: boolean;
-      message: string;
+      smart_detection_types: string[];
     }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/enable`, {
+      const response = await apiFetch<{ data: {
+        protect_camera_id: string;
+        name: string;
+        is_enabled_for_ai: boolean;
+        smart_detection_types: string[];
+      } }>(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/enable`, {
         method: 'PUT',
       });
+      return response.data;
     },
 
     /**
@@ -1398,15 +1467,17 @@ export const apiClient = {
      * @param protectCameraId Protect camera ID
      * @returns Updated camera info
      */
-    disableCamera: async (controllerId: number, protectCameraId: string): Promise<{
-      protect_id: string;
-      name: string;
+    disableCamera: async (controllerId: string, protectCameraId: string): Promise<{
+      protect_camera_id: string;
       is_enabled_for_ai: boolean;
-      message: string;
     }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/disable`, {
+      const response = await apiFetch<{ data: {
+        protect_camera_id: string;
+        is_enabled_for_ai: boolean;
+      } }>(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/disable`, {
         method: 'PUT',
       });
+      return response.data;
     },
 
     /**
@@ -1417,19 +1488,25 @@ export const apiClient = {
      * @returns Updated camera info
      */
     updateEventFilters: async (
-      controllerId: number,
+      controllerId: string,
       protectCameraId: string,
       filters: string[]
     ): Promise<{
-      protect_id: string;
+      protect_camera_id: string;
       name: string;
-      event_filters: string[];
-      message: string;
+      smart_detection_types: string[];
+      is_enabled_for_ai: boolean;
     }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/filters`, {
+      const response = await apiFetch<{ data: {
+        protect_camera_id: string;
+        name: string;
+        smart_detection_types: string[];
+        is_enabled_for_ai: boolean;
+      } }>(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/filters`, {
         method: 'PUT',
-        body: JSON.stringify({ event_filters: filters }),
+        body: JSON.stringify({ smart_detection_types: filters }),
       });
+      return response.data;
     },
   },
 

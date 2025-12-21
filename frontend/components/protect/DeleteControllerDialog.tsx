@@ -44,7 +44,7 @@ export function DeleteControllerDialog({
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      return apiClient.protect.deleteController(Number(controllerId));
+      return apiClient.protect.deleteController(controllerId);
     },
     onSuccess: () => {
       // Invalidate controller queries to refresh data

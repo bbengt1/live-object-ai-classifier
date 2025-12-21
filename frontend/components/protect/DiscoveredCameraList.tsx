@@ -123,7 +123,7 @@ export function DiscoveredCameraList({
   // Fetch discovered cameras with 60-second stale time (matching backend cache)
   const camerasQuery = useQuery({
     queryKey: ['protect-cameras', controllerId],
-    queryFn: () => apiClient.protect.discoverCameras(Number(controllerId)),
+    queryFn: () => apiClient.protect.discoverCameras(controllerId),
     enabled: isControllerConnected && !!controllerId,
     staleTime: 60 * 1000, // 60 seconds to match backend cache
     refetchOnWindowFocus: false,
@@ -132,7 +132,7 @@ export function DiscoveredCameraList({
   // Enable camera mutation with optimistic update (AC8)
   const enableMutation = useMutation({
     mutationFn: (cameraId: string) =>
-      apiClient.protect.enableCamera(Number(controllerId), cameraId),
+      apiClient.protect.enableCamera(controllerId, cameraId),
     onMutate: async (cameraId) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['protect-cameras', controllerId] });
@@ -143,16 +143,13 @@ export function DiscoveredCameraList({
       // Optimistic update
       queryClient.setQueryData(
         ['protect-cameras', controllerId],
-        (old: { controller_id: number; cameras: ProtectDiscoveredCamera[] } | undefined) => {
+        (old: ProtectDiscoveredCamera[] | undefined) => {
           if (!old) return old;
-          return {
-            ...old,
-            cameras: old.cameras.map((cam) =>
-              cam.protect_camera_id === cameraId
-                ? { ...cam, is_enabled_for_ai: true }
-                : cam
-            ),
-          };
+          return old.map((cam) =>
+            cam.protect_camera_id === cameraId
+              ? { ...cam, is_enabled_for_ai: true }
+              : cam
+          );
         }
       );
 
@@ -179,7 +176,7 @@ export function DiscoveredCameraList({
   // Disable camera mutation with optimistic update (AC8)
   const disableMutation = useMutation({
     mutationFn: (cameraId: string) =>
-      apiClient.protect.disableCamera(Number(controllerId), cameraId),
+      apiClient.protect.disableCamera(controllerId, cameraId),
     onMutate: async (cameraId) => {
       await queryClient.cancelQueries({ queryKey: ['protect-cameras', controllerId] });
 
@@ -187,16 +184,13 @@ export function DiscoveredCameraList({
 
       queryClient.setQueryData(
         ['protect-cameras', controllerId],
-        (old: { controller_id: number; cameras: ProtectDiscoveredCamera[] } | undefined) => {
+        (old: ProtectDiscoveredCamera[] | undefined) => {
           if (!old) return old;
-          return {
-            ...old,
-            cameras: old.cameras.map((cam) =>
-              cam.protect_camera_id === cameraId
-                ? { ...cam, is_enabled_for_ai: false }
-                : cam
-            ),
-          };
+          return old.map((cam) =>
+            cam.protect_camera_id === cameraId
+              ? { ...cam, is_enabled_for_ai: false }
+              : cam
+          );
         }
       );
 
@@ -229,7 +223,7 @@ export function DiscoveredCameraList({
 
   // Refresh mutation for force refresh with success/error toasts (Story P2-2.4 AC2, AC4, AC5)
   const refreshMutation = useMutation({
-    mutationFn: () => apiClient.protect.discoverCameras(Number(controllerId)),
+    mutationFn: () => apiClient.protect.discoverCameras(controllerId),
     onSuccess: (data) => {
       // Update query cache with fresh data
       queryClient.setQueryData(['protect-cameras', controllerId], data);
@@ -247,15 +241,16 @@ export function DiscoveredCameraList({
 
   // Sort cameras (AC3)
   const sortedCameras = useMemo(() => {
-    if (!camerasQuery.data?.cameras) return [];
-    return sortCameras(camerasQuery.data.cameras);
-  }, [camerasQuery.data?.cameras]);
+    if (!camerasQuery.data) return [];
+    return sortCameras(camerasQuery.data);
+  }, [camerasQuery.data]);
 
-  const cameraCount = camerasQuery.data?.cameras?.length ?? 0;
+  const cameraCount = camerasQuery.data?.length ?? 0;
   const isLoading = camerasQuery.isLoading;
   const isRefetching = camerasQuery.isRefetching || refreshMutation.isPending; // AC3
   // Story P2-6.3 AC7: Check for partial failure warning
-  const discoveryWarning = (camerasQuery.data as { warning?: string } | undefined)?.warning;
+  // Note: Warning is in meta response, not data - would need API update to expose
+  const discoveryWarning: string | undefined = undefined;
 
   // Disconnected state (AC10)
   if (!isControllerConnected) {
