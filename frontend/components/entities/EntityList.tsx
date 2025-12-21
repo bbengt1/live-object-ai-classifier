@@ -269,8 +269,7 @@ export function EntityList({
             <EntityCard
               key={entity.id}
               entity={entity}
-              // Thumbnail will be loaded from entity detail or recent events
-              thumbnailUrl={null}
+              thumbnailUrl={entity.thumbnail_path}
               onClick={() => onEntityClick(entity)}
             />
           ))}

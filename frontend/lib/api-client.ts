@@ -1799,6 +1799,7 @@ export const apiClient = {
         id: string;
         entity_type: string;
         name: string | null;
+        thumbnail_path: string | null;
         first_seen_at: string;
         last_seen_at: string;
         occurrence_count: number;
