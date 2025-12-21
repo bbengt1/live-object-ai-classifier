@@ -1094,71 +1094,93 @@ export const apiClient = {
 
   discovery: {
     /**
-     * Start network camera discovery
-     * @returns Discovery session info
+     * Start network camera discovery (ONVIF WS-Discovery)
+     * @returns Discovery results with found devices
      */
     start: async (): Promise<IDiscoveryResponse> => {
-      return apiFetch('/discovery/start', {
+      return apiFetch('/cameras/discover', {
         method: 'POST',
       });
     },
 
     /**
-     * Get current discovery status and results
-     * @returns Discovery status with found devices
+     * Check if ONVIF discovery is available (WSDiscovery installed)
+     * @returns Discovery availability status
      */
     status: async (): Promise<IDiscoveryStatusResponse> => {
-      return apiFetch('/discovery/status');
+      return apiFetch('/cameras/discover/status');
     },
 
     /**
-     * Get detailed device information
-     * @param address Device IP address
-     * @returns Detailed device info
+     * Get detailed device information via ONVIF
+     * @param endpointUrl ONVIF device endpoint URL
+     * @param username Optional auth username
+     * @param password Optional auth password
+     * @returns Detailed device info with stream profiles
      */
-    getDeviceDetails: async (address: string): Promise<IDeviceDetailsResponse> => {
-      return apiFetch(`/discovery/device/${encodeURIComponent(address)}`);
+    getDeviceDetails: async (
+      endpointUrl: string,
+      username?: string,
+      password?: string
+    ): Promise<IDeviceDetailsResponse> => {
+      return apiFetch('/cameras/discover/device', {
+        method: 'POST',
+        body: JSON.stringify({
+          endpoint_url: endpointUrl,
+          username,
+          password,
+        }),
+      });
     },
 
     /**
      * Test RTSP connection with credentials
-     * @param address Device IP address
-     * @param credentials Optional credentials
-     * @returns Connection test result
+     * @param rtspUrl RTSP URL to test
+     * @param username Optional auth username
+     * @param password Optional auth password
+     * @returns Connection test result with stream metadata
      */
     testConnection: async (
-      address: string,
-      credentials?: { username?: string; password?: string; port?: number }
+      rtspUrl: string,
+      username?: string,
+      password?: string
     ): Promise<ITestConnectionResponse> => {
-      const params = new URLSearchParams();
-      if (credentials?.username) params.set('username', credentials.username);
-      if (credentials?.password) params.set('password', credentials.password);
-      if (credentials?.port) params.set('port', String(credentials.port));
-      const queryString = params.toString();
-      return apiFetch(`/discovery/device/${encodeURIComponent(address)}/test${queryString ? `?${queryString}` : ''}`, {
+      return apiFetch('/cameras/discover/test', {
         method: 'POST',
+        body: JSON.stringify({
+          rtsp_url: rtspUrl,
+          username,
+          password,
+        }),
       });
     },
 
     /**
-     * Import discovered camera
-     * @param address Device IP address
-     * @param options Import configuration
-     * @returns Imported camera
+     * Import discovered camera (creates a new camera)
+     * @param options Camera configuration for import
+     * @returns Created camera
      */
     importCamera: async (
-      address: string,
       options: {
         name: string;
+        rtsp_url: string;
         username?: string;
         password?: string;
-        rtsp_url?: string;
         enable_motion_detection?: boolean;
       }
     ): Promise<ICamera> => {
-      return apiFetch(`/discovery/device/${encodeURIComponent(address)}/import`, {
+      // Import uses the standard camera create endpoint
+      return apiFetch('/cameras', {
         method: 'POST',
-        body: JSON.stringify(options),
+        body: JSON.stringify({
+          name: options.name,
+          rtsp_url: options.rtsp_url,
+          username: options.username,
+          password: options.password,
+          source_type: 'rtsp',
+          enabled: true,
+          motion_detection_enabled: options.enable_motion_detection ?? true,
+        }),
       });
     },
   },
