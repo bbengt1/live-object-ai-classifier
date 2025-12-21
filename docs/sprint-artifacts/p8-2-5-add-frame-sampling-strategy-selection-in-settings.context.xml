@@ -1,0 +1,196 @@
+<story-context id="p8-2-5-add-frame-sampling-strategy-selection-in-settings" v="1.0">
+  <metadata>
+    <epicId>P8-2</epicId>
+    <storyId>P8-2.5</storyId>
+    <title>Add Frame Sampling Strategy Selection in Settings</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-20</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p8-2-5-add-frame-sampling-strategy-selection-in-settings.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>user</asA>
+    <iWant>to choose between uniform and adaptive frame sampling strategies in settings</iWant>
+    <soThat>I can optimize video analysis for my specific camera content and use case</soThat>
+    <tasks>
+      <task id="1">Add backend settings support (AC: 5.4, 5.6)
+        <subtask id="1.1">Add `settings_frame_sampling_strategy` key to settings schema</subtask>
+        <subtask id="1.2">Add validation for values: `uniform`, `adaptive`, `hybrid`</subtask>
+        <subtask id="1.3">Default value is `uniform`</subtask>
+        <subtask id="1.4">Include in GET /api/v1/system/settings response</subtask>
+      </task>
+      <task id="2">Integrate strategy into event processing (AC: 5.5, 5.7)
+        <subtask id="2.1">Update protect_event_handler.py to load `settings_frame_sampling_strategy`</subtask>
+        <subtask id="2.2">Pass `sampling_strategy` parameter to frame_extractor.extract_frames_with_timestamps()</subtask>
+        <subtask id="2.3">Log the strategy used for each event</subtask>
+      </task>
+      <task id="3">Build frame sampling strategy UI component (AC: 5.1, 5.2, 5.3)
+        <subtask id="3.1">Create `FrameSamplingStrategySelector.tsx` component</subtask>
+        <subtask id="3.2">Implement radio button group with three options</subtask>
+        <subtask id="3.3">Add descriptions for each option</subtask>
+        <subtask id="3.4">Style consistently with existing settings components</subtask>
+      </task>
+      <task id="4">Integrate into GeneralSettings page (AC: 5.1, 5.4)
+        <subtask id="4.1">Import and add FrameSamplingStrategySelector to settings page</subtask>
+        <subtask id="4.2">Position below "Analysis Frame Count" setting</subtask>
+        <subtask id="4.3">Connect to settings state (load on mount, save on change)</subtask>
+        <subtask id="4.4">Use existing settings mutation pattern</subtask>
+      </task>
+      <task id="5">Write backend tests (AC: 5.4, 5.5, 5.6, 5.7)</task>
+      <task id="6">Write frontend tests (AC: 5.1, 5.2, 5.3)</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC5.1">Given Settings > General, when viewing, then "Frame Sampling Strategy" option visible below Analysis Frame Count</criterion>
+    <criterion id="AC5.2">Given strategy selector, when expanded, then Uniform, Adaptive, Hybrid options shown as radio buttons</criterion>
+    <criterion id="AC5.3">Given each option, when viewed, then description of strategy and recommended use case shown</criterion>
+    <criterion id="AC5.4">Given strategy change, when saved, then setting persisted to database</criterion>
+    <criterion id="AC5.5">Given new strategy, when event processed, then selected strategy passed to frame extractor</criterion>
+    <criterion id="AC5.6">Given default, when not configured, then Uniform strategy used</criterion>
+    <criterion id="AC5.7">Given protect_event_handler, when processing event, then sampling_strategy loaded from settings and passed to frame extractor</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-P8-2.md</path>
+        <title>Epic P8-2 Technical Specification</title>
+        <section>P8-2.5: Add Frame Sampling Strategy Selection in Settings</section>
+        <snippet>Settings key: `frame_sampling_strategy`. Valid values: `uniform`, `adaptive`, `hybrid`. Default: `uniform` (backwards compatible). UI location: Settings > General, below Analysis Frame Count.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics-phase8.md</path>
+        <title>Phase 8 Epic Breakdown</title>
+        <section>Story P8-2.5</section>
+        <snippet>Add radio button group with Uniform (fixed interval), Adaptive (content-aware), and Hybrid (uniform + adaptive filter) options with descriptions and trade-off summaries.</snippet>
+      </doc>
+      <doc>
+        <path>docs/sprint-artifacts/p8-2-4-implement-adaptive-frame-sampling.md</path>
+        <title>Previous Story: Adaptive Frame Sampling</title>
+        <section>Dev Agent Record</section>
+        <snippet>AdaptiveSampler service created at backend/app/services/adaptive_sampler.py. Frame extractor now accepts sampling_strategy parameter (line 566). Supports "uniform", "adaptive", "hybrid" strategies.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <file>
+        <path>backend/app/schemas/system.py</path>
+        <kind>schema</kind>
+        <symbol>SystemSettings, SystemSettingsUpdate</symbol>
+        <lines>139-312</lines>
+        <reason>Add frame_sampling_strategy field to both schemas. Follow pattern from analysis_frame_count (lines 179-181, 308-311)</reason>
+      </file>
+      <file>
+        <path>backend/app/api/v1/system.py</path>
+        <kind>api</kind>
+        <symbol>get_settings, update_settings</symbol>
+        <lines>396-590</lines>
+        <reason>Settings GET/PUT handlers. Frame_sampling_strategy needs to be included in response and accepted in update. Check no_prefix_fields dict at line 509-537 for pattern.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/protect_event_handler.py</path>
+        <kind>service</kind>
+        <symbol>_process_multi_frame_analysis</symbol>
+        <lines>1555-1576</lines>
+        <reason>Currently loads analysis_frame_count from settings. Add similar logic to load frame_sampling_strategy and pass to extract_frames_with_timestamps()</reason>
+      </file>
+      <file>
+        <path>backend/app/services/frame_extractor.py</path>
+        <kind>service</kind>
+        <symbol>extract_frames_with_timestamps</symbol>
+        <lines>560-792</lines>
+        <reason>Already accepts sampling_strategy parameter (line 566). Values: "uniform", "adaptive", "hybrid". No changes needed here.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/adaptive_sampler.py</path>
+        <kind>service</kind>
+        <symbol>AdaptiveSampler, get_adaptive_sampler</symbol>
+        <lines>28-458</lines>
+        <reason>Already implemented in P8-2.4. Called by frame_extractor when sampling_strategy is "adaptive" or "hybrid". No changes needed.</reason>
+      </file>
+      <file>
+        <path>frontend/app/settings/page.tsx</path>
+        <kind>page</kind>
+        <symbol>SettingsPage</symbol>
+        <lines>429-481</lines>
+        <reason>Analysis Frame Count setting section (lines 429-454). Add FrameSamplingStrategySelector below this, before closing CardContent.</reason>
+      </file>
+      <file>
+        <path>frontend/components/settings/CostWarningModal.tsx</path>
+        <kind>component</kind>
+        <symbol>CostWarningModal</symbol>
+        <reason>Reference component for modal pattern. Frame sampling strategy doesn't need a warning modal, but follow styling patterns.</reason>
+      </file>
+    </code>
+
+    <dependencies>
+      <python>
+        <package>pydantic>=2.0</package>
+        <package>fastapi>=0.115</package>
+        <package>sqlalchemy>=2.0</package>
+      </python>
+      <node>
+        <package>react>=19.0</package>
+        <package>next>=15.0</package>
+        <package>@radix-ui/react-radio-group</package>
+        <package>react-hook-form</package>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Default value must be "uniform" for backwards compatibility</constraint>
+    <constraint>Valid values: "uniform", "adaptive", "hybrid" - reject any other values</constraint>
+    <constraint>Setting key in database: settings_frame_sampling_strategy (with prefix)</constraint>
+    <constraint>Follow existing settings pattern from analysis_frame_count implementation</constraint>
+    <constraint>UI should use radio button group, not dropdown (per AC5.2)</constraint>
+    <constraint>Each option must show description and recommended use case (per AC5.3)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>GET /api/v1/system/settings</name>
+      <kind>REST endpoint</kind>
+      <signature>GET /api/v1/system/settings -> SystemSettings (includes frame_sampling_strategy: Literal["uniform", "adaptive", "hybrid"])</signature>
+      <path>backend/app/api/v1/system.py:396</path>
+    </interface>
+    <interface>
+      <name>PUT /api/v1/system/settings</name>
+      <kind>REST endpoint</kind>
+      <signature>PUT /api/v1/system/settings body=SystemSettingsUpdate -> SystemSettings</signature>
+      <path>backend/app/api/v1/system.py:475</path>
+    </interface>
+    <interface>
+      <name>extract_frames_with_timestamps</name>
+      <kind>function signature</kind>
+      <signature>async def extract_frames_with_timestamps(clip_path: Path, frame_count: int, strategy: str, filter_blur: bool, sampling_strategy: str = "uniform") -> Tuple[List[bytes], List[float]]</signature>
+      <path>backend/app/services/frame_extractor.py:560</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Backend tests use pytest with async support. Frontend tests use Vitest with React Testing Library.
+      Backend tests go in backend/tests/test_api/ for API tests and backend/tests/test_services/ for service tests.
+      Frontend tests go in frontend/__tests__/components/.
+      Follow existing patterns from test_analysis_frame_count.py and CostWarningModal.test.tsx.
+    </standards>
+    <locations>
+      <location>backend/tests/test_api/</location>
+      <location>backend/tests/test_services/</location>
+      <location>frontend/__tests__/components/settings/</location>
+    </locations>
+    <ideas>
+      <idea ac="5.1, 5.2">test_frame_sampling_strategy_selector_renders_three_options</idea>
+      <idea ac="5.3">test_each_option_shows_description</idea>
+      <idea ac="5.4">test_get_settings_includes_frame_sampling_strategy</idea>
+      <idea ac="5.4">test_put_settings_accepts_valid_strategy</idea>
+      <idea ac="5.4">test_put_settings_rejects_invalid_strategy</idea>
+      <idea ac="5.6">test_default_strategy_is_uniform</idea>
+      <idea ac="5.7">test_protect_event_handler_loads_strategy_from_settings</idea>
+      <idea ac="5.7">test_strategy_passed_to_frame_extractor</idea>
+    </ideas>
+  </tests>
+</story-context>

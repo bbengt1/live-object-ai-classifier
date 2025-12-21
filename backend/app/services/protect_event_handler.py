@@ -1553,9 +1553,11 @@ class ProtectEventHandler:
             )
 
             # Story P8-2.3: Load analysis_frame_count from settings (default: 10)
+            # Story P8-2.5: Load frame_sampling_strategy from settings (default: uniform)
             from app.models.system_setting import SystemSetting
             from app.core.database import SessionLocal
             frame_count = 10  # Default
+            sampling_strategy = "uniform"  # Default (Story P8-2.5 AC5.6)
             try:
                 db = SessionLocal()
                 frame_count_setting = db.query(SystemSetting).filter(
@@ -1563,16 +1565,43 @@ class ProtectEventHandler:
                 ).first()
                 if frame_count_setting and frame_count_setting.value:
                     frame_count = int(frame_count_setting.value)
+
+                # Story P8-2.5: Load sampling strategy setting
+                sampling_strategy_setting = db.query(SystemSetting).filter(
+                    SystemSetting.key == 'settings_frame_sampling_strategy'
+                ).first()
+                if sampling_strategy_setting and sampling_strategy_setting.value:
+                    # Validate the value is one of the allowed strategies
+                    valid_strategies = ["uniform", "adaptive", "hybrid"]
+                    if sampling_strategy_setting.value in valid_strategies:
+                        sampling_strategy = sampling_strategy_setting.value
+                    else:
+                        logger.warning(
+                            f"Invalid sampling_strategy value '{sampling_strategy_setting.value}', using default 'uniform'"
+                        )
                 db.close()
             except Exception as e:
-                logger.warning(f"Failed to load analysis_frame_count setting, using default: {e}")
+                logger.warning(f"Failed to load analysis settings, using defaults: {e}")
+
+            # Story P8-2.5: Log the sampling strategy being used (AC5.7)
+            logger.info(
+                f"Using frame sampling strategy '{sampling_strategy}' for camera '{camera.name}'",
+                extra={
+                    "event_type": "frame_sampling_strategy_selected",
+                    "camera_id": camera.id,
+                    "sampling_strategy": sampling_strategy,
+                    "frame_count": frame_count
+                }
+            )
 
             # Story P3-7.5: Use extract_frames_with_timestamps to get both frames and timestamps
+            # Story P8-2.5: Pass sampling_strategy parameter (AC5.5, AC5.7)
             frames, timestamps = await frame_extractor.extract_frames_with_timestamps(
                 clip_path=clip_path,
                 frame_count=frame_count,  # Story P8-2.3: Use configured frame count
                 strategy="evenly_spaced",
-                filter_blur=True
+                filter_blur=True,
+                sampling_strategy=sampling_strategy  # Story P8-2.5: Use configured sampling strategy
             )
 
             # Story P3-2.6 AC2: Check if frame extraction succeeded
