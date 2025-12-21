@@ -52,6 +52,7 @@ router = APIRouter(
 
 class HomeKitStatusResponse(BaseModel):
     """HomeKit bridge status response."""
+    available: bool = Field(..., description="Whether HAP-python is installed and available")
     enabled: bool = Field(..., description="Whether HomeKit is enabled in config")
     running: bool = Field(..., description="Whether bridge is currently running")
     paired: bool = Field(..., description="Whether any iOS devices are paired")
@@ -68,6 +69,7 @@ class HomeKitStatusResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "available": True,
                 "enabled": True,
                 "running": True,
                 "paired": False,
@@ -298,6 +300,7 @@ async def get_homekit_status(db: Session = Depends(get_db)):
         # Merge database config with runtime status
         # Story P5-1.2 AC4: Hide setup_code and setup_uri when paired
         return HomeKitStatusResponse(
+            available=service.is_available,  # Whether HAP-python is installed
             enabled=config.enabled,
             running=service_status.running,
             paired=service_status.paired,
