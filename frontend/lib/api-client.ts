@@ -1420,7 +1420,7 @@ export const apiClient = {
      * @returns Current MQTT configuration
      */
     getConfig: async (): Promise<MQTTConfigResponse> => {
-      return apiFetch('/mqtt/config');
+      return apiFetch('/integrations/mqtt/config');
     },
 
     /**
@@ -1429,7 +1429,7 @@ export const apiClient = {
      * @returns Updated MQTT configuration
      */
     updateConfig: async (config: MQTTConfigUpdate): Promise<MQTTConfigResponse> => {
-      return apiFetch('/mqtt/config', {
+      return apiFetch('/integrations/mqtt/config', {
         method: 'PUT',
         body: JSON.stringify(config),
       });
@@ -1440,7 +1440,7 @@ export const apiClient = {
      * @returns Current connection status
      */
     getStatus: async (): Promise<MQTTStatusResponse> => {
-      return apiFetch('/mqtt/status');
+      return apiFetch('/integrations/mqtt/status');
     },
 
     /**
@@ -1449,7 +1449,7 @@ export const apiClient = {
      * @returns Test result
      */
     testConnection: async (request: MQTTTestRequest): Promise<MQTTTestResponse> => {
-      return apiFetch('/mqtt/test', {
+      return apiFetch('/integrations/mqtt/test', {
         method: 'POST',
         body: JSON.stringify(request),
       });
@@ -1460,7 +1460,7 @@ export const apiClient = {
      * @returns Connection result
      */
     connect: async (): Promise<{ success: boolean; message: string }> => {
-      return apiFetch('/mqtt/connect', {
+      return apiFetch('/integrations/mqtt/connect', {
         method: 'POST',
       });
     },
@@ -1470,7 +1470,7 @@ export const apiClient = {
      * @returns Disconnection result
      */
     disconnect: async (): Promise<{ success: boolean; message: string }> => {
-      return apiFetch('/mqtt/disconnect', {
+      return apiFetch('/integrations/mqtt/disconnect', {
         method: 'POST',
       });
     },
@@ -1480,7 +1480,7 @@ export const apiClient = {
      * @returns Discovery publish result
      */
     publishDiscovery: async (): Promise<MQTTPublishDiscoveryResponse> => {
-      return apiFetch('/mqtt/discovery/publish', {
+      return apiFetch('/integrations/mqtt/discovery/publish', {
         method: 'POST',
       });
     },
