@@ -180,6 +180,12 @@ class SystemSettings(BaseModel):
         default=10, description="Number of frames to extract for AI analysis"
     )
 
+    # Story P8-2.5: Frame Sampling Strategy Selection
+    frame_sampling_strategy: Literal["uniform", "adaptive", "hybrid"] = Field(
+        default="uniform",
+        description="Frame sampling strategy: uniform (fixed interval), adaptive (content-aware), or hybrid (uniform + adaptive filter)"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -308,6 +314,11 @@ class SystemSettingsUpdate(BaseModel):
     # Story P8-2.3: Configurable Frame Count Setting
     analysis_frame_count: Optional[Literal[5, 10, 15, 20]] = Field(
         None, description="Number of frames to extract for AI analysis (default: 10)"
+    )
+
+    # Story P8-2.5: Frame Sampling Strategy Selection
+    frame_sampling_strategy: Optional[Literal["uniform", "adaptive", "hybrid"]] = Field(
+        None, description="Frame sampling strategy: uniform (default), adaptive, or hybrid"
     )
 
 

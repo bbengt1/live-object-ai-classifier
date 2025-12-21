@@ -714,10 +714,18 @@ app.include_router(audio_router, prefix=settings.API_V1_PREFIX)  # Story P6-3.2 
 from fastapi.responses import FileResponse, Response as FastAPIResponse
 
 @app.get("/api/v1/thumbnails/{date}/{filename}")
-async def get_thumbnail(date: str, filename: str):
-    """Serve thumbnail images (CORS handled by middleware)"""
+async def get_thumbnail(date: str, filename: str, request: Request):
+    """Serve thumbnail images with CORS headers"""
     thumbnail_dir = os.path.join(os.path.dirname(__file__), 'data', 'thumbnails')
     file_path = os.path.join(thumbnail_dir, date, filename)
+
+    # Get origin for CORS
+    origin = request.headers.get("origin", "http://localhost:3000")
+    cors_headers = {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Cache-Control": "public, max-age=86400"
+    }
 
     if os.path.exists(file_path):
         with open(file_path, "rb") as f:
@@ -725,13 +733,14 @@ async def get_thumbnail(date: str, filename: str):
         return FastAPIResponse(
             content=content,
             media_type="image/jpeg",
-            headers={
-                "Cache-Control": "public, max-age=86400"
-            }
+            headers=cors_headers
         )
 
-    from fastapi import HTTPException
-    raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return FastAPIResponse(
+        content=b"",
+        status_code=404,
+        headers=cors_headers
+    )
 
 
 @app.get("/")

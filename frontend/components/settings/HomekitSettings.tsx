@@ -4,7 +4,7 @@
  * HomekitSettings component (Story P4-6.1, P5-1.8, P7-1.1, P7-1.2, P7-3.3)
  *
  * Settings UI for HomeKit integration with enable toggle, pairing status,
- * QR code display, pairings list, and reset functionality.
+ * pairings list, and reset functionality.
  *
  * Story P5-1.8 additions:
  * - Display list of paired devices (AC3)

@@ -173,7 +173,8 @@ export function CameraForm({
 
         const result = await apiClient.discovery.testConnection(
           rtspUrl,
-          username || password ? { username: username || undefined, password: password || undefined } : undefined
+          username || undefined,
+          password || undefined
         );
 
         // Map discovery response to camera test response format

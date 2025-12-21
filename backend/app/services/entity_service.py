@@ -476,7 +476,8 @@ class EntityService:
         Returns:
             Tuple of (list of entity dicts, total count)
         """
-        from app.models.recognized_entity import RecognizedEntity
+        from app.models.recognized_entity import RecognizedEntity, EntityEvent
+        from app.models.event import Event
 
         query = db.query(RecognizedEntity)
 
@@ -496,13 +497,32 @@ class EntityService:
             desc(RecognizedEntity.last_seen_at)
         ).offset(offset).limit(limit).all()
 
+        # Get the most recent event thumbnail for each entity
+        entity_ids = [e.id for e in entities]
+        entity_thumbnails = {}
+
+        if entity_ids:
+            # Get the most recent event's thumbnail for each entity
+            for entity_id in entity_ids:
+                most_recent_event = db.query(Event.thumbnail_path).join(
+                    EntityEvent, EntityEvent.event_id == Event.id
+                ).filter(
+                    EntityEvent.entity_id == entity_id,
+                    Event.thumbnail_path.isnot(None)
+                ).order_by(
+                    desc(Event.timestamp)
+                ).first()
+
+                if most_recent_event and most_recent_event.thumbnail_path:
+                    entity_thumbnails[entity_id] = most_recent_event.thumbnail_path
+
         return [
             {
                 "id": e.id,
                 "entity_type": e.entity_type,
                 "name": e.name,
                 "notes": e.notes,
-                "thumbnail_path": e.thumbnail_path,
+                "thumbnail_path": e.thumbnail_path or entity_thumbnails.get(e.id),
                 "first_seen_at": e.first_seen_at,
                 "last_seen_at": e.last_seen_at,
                 "occurrence_count": e.occurrence_count,

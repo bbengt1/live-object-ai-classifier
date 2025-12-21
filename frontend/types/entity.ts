@@ -17,6 +17,7 @@ export interface IEntity {
   id: string;
   entity_type: string; // 'person' | 'vehicle' | 'unknown' from API
   name: string | null;
+  thumbnail_path: string | null;
   first_seen_at: string;
   last_seen_at: string;
   occurrence_count: number;

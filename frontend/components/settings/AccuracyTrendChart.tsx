@@ -36,23 +36,37 @@ interface ChartDataPoint {
 // Custom tooltip component
 interface CustomTooltipProps {
   active?: boolean;
-  payload?: Array<{ value: number; name: string; color: string }>;
+  payload?: Array<{ value: number; name: string; color: string; payload?: ChartDataPoint }>;
   label?: string;
 }
 
-function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
-  if (!active || !payload || !label) {
+function CustomTooltip({ active, payload }: CustomTooltipProps) {
+  if (!active || !payload || payload.length === 0) {
     return null;
   }
+
+  // Get the original ISO date from the data point
+  const dataPoint = payload[0]?.payload;
+  const dateStr = dataPoint?.date as string | undefined;
 
   const helpful = payload.find((p) => p.name === 'Helpful')?.value || 0;
   const notHelpful = payload.find((p) => p.name === 'Not Helpful')?.value || 0;
   const total = helpful + notHelpful;
   const accuracyRate = total > 0 ? ((helpful / total) * 100).toFixed(1) : '0.0';
 
+  // Format date safely
+  let formattedDate = 'Unknown date';
+  if (dateStr) {
+    try {
+      formattedDate = format(parseISO(dateStr), 'MMM d, yyyy');
+    } catch {
+      formattedDate = dateStr;
+    }
+  }
+
   return (
     <div className="bg-background border rounded-lg p-3 shadow-lg">
-      <p className="font-medium text-sm mb-2">{format(parseISO(label), 'MMM d, yyyy')}</p>
+      <p className="font-medium text-sm mb-2">{formattedDate}</p>
       <div className="space-y-1 text-sm">
         <p className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-green-500" />

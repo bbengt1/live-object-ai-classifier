@@ -14,6 +14,7 @@
 import { usePathname } from 'next/navigation';
 import { Header } from '@/components/layout/Header';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { DesktopToolbar } from '@/components/layout/DesktopToolbar';
 import { SkipToContent } from '@/components/layout/SkipToContent';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { InstallPrompt } from '@/components/pwa/InstallPrompt';
@@ -44,6 +45,7 @@ export function AppShell({ children }: AppShellProps) {
       <SkipToContent />
       <Header />
       <Sidebar />
+      <DesktopToolbar />
       {/* IMP-003: pt-16 for header space on mobile, pt-0 on desktop (header hidden) */}
       {/* P6-2.1: id="main-content" and tabIndex={-1} for skip link target */}
       <main

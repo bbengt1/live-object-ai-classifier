@@ -479,7 +479,7 @@ export const apiClient = {
       if (params?.camera_id) searchParams.set('camera_id', String(params.camera_id));
       if (params?.days) searchParams.set('days', String(params.days));
       const queryString = searchParams.toString();
-      return apiFetch(`/events/feedback/stats${queryString ? `?${queryString}` : ''}`);
+      return apiFetch(`/feedback/stats${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
@@ -487,7 +487,7 @@ export const apiClient = {
      * @returns Prompt improvement suggestions
      */
     getPromptInsights: async (): Promise<IPromptInsightsResponse> => {
-      return apiFetch('/events/feedback/prompt-insights');
+      return apiFetch('/feedback/prompt-insights');
     },
 
     /**
@@ -496,7 +496,7 @@ export const apiClient = {
      * @returns Result of applying the suggestion
      */
     applyPromptSuggestion: async (request: IApplySuggestionRequest): Promise<IApplySuggestionResponse> => {
-      return apiFetch('/events/feedback/apply-suggestion', {
+      return apiFetch('/feedback/apply-suggestion', {
         method: 'POST',
         body: JSON.stringify(request),
       });
@@ -507,7 +507,7 @@ export const apiClient = {
      * @returns A/B test comparison data
      */
     getABTestResults: async (): Promise<IABTestResultsResponse> => {
-      return apiFetch('/events/feedback/ab-test-results');
+      return apiFetch('/feedback/ab-test-results');
     },
 
     /**
@@ -523,7 +523,7 @@ export const apiClient = {
       if (params?.limit) searchParams.set('limit', String(params.limit));
       if (params?.offset) searchParams.set('offset', String(params.offset));
       const queryString = searchParams.toString();
-      return apiFetch(`/events/feedback/prompt-history${queryString ? `?${queryString}` : ''}`);
+      return apiFetch(`/feedback/prompt-history${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
@@ -649,14 +649,14 @@ export const apiClient = {
       if (params?.provider) searchParams.set('provider', params.provider);
       if (params?.camera_id) searchParams.set('camera_id', String(params.camera_id));
       const queryString = searchParams.toString();
-      return apiFetch(`/ai/usage${queryString ? `?${queryString}` : ''}`);
+      return apiFetch(`/system/ai-usage${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
-     * Get cost cap status (Story P3-3.4)
+     * Get cost cap status (Story P3-7.3)
      */
     getCostCapStatus: async (): Promise<ICostCapStatus> => {
-      return apiFetch('/ai/cost-cap/status');
+      return apiFetch('/system/ai-cost-status');
     },
 
     /**
@@ -754,14 +754,14 @@ export const apiClient = {
       if (filters?.offset !== undefined) params.set('skip', String(filters.offset));
       if (filters?.limit !== undefined) params.set('limit', String(filters.limit));
       const queryString = params.toString();
-      return apiFetch(`/alert-rules/webhook-logs${queryString ? `?${queryString}` : ''}`);
+      return apiFetch(`/webhooks/logs${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
      * Retry a failed webhook delivery (Story P1-3.5)
      */
     retryWebhook: async (logId: number): Promise<IWebhookTestResponse> => {
-      return apiFetch(`/alert-rules/webhook-logs/${logId}/retry`, {
+      return apiFetch(`/webhooks/logs/${logId}/retry`, {
         method: 'POST',
       });
     },
@@ -776,7 +776,7 @@ export const apiClient = {
       if (filters?.start_date !== undefined) params.set('start_date', filters.start_date);
       if (filters?.end_date !== undefined) params.set('end_date', filters.end_date);
       const queryString = params.toString();
-      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/alert-rules/webhook-logs/export${queryString ? `?${queryString}` : ''}`, {
+      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/webhooks/logs/export${queryString ? `?${queryString}` : ''}`, {
         method: 'GET',
         headers: getAuthHeaders(),
       });
@@ -876,21 +876,21 @@ export const apiClient = {
       if (params?.start_time) searchParams.set('start_time', params.start_time);
       if (params?.end_time) searchParams.set('end_time', params.end_time);
       const queryString = searchParams.toString();
-      return apiFetch(`/system/logs${queryString ? `?${queryString}` : ''}`);
+      return apiFetch(`/logs${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
      * Get available log files for download
      */
     logFiles: async (): Promise<LogFilesResponse> => {
-      return apiFetch('/system/logs/files');
+      return apiFetch('/logs/files');
     },
 
     /**
      * Get download URL for a log file
      */
     getLogFileUrl: (filename: string): string => {
-      return `${API_BASE_URL}${API_V1_PREFIX}/system/logs/files/${encodeURIComponent(filename)}`;
+      return `${API_BASE_URL}${API_V1_PREFIX}/logs/files/${encodeURIComponent(filename)}`;
     },
 
     /**
@@ -898,7 +898,7 @@ export const apiClient = {
      */
     downloadLogs: async (_params?: LogsQueryParams, source?: string): Promise<Blob> => {
       const filename = source ? `${source}.log` : 'app.log';
-      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/system/logs/files/${encodeURIComponent(filename)}`, {
+      const response = await fetch(`${API_BASE_URL}${API_V1_PREFIX}/logs/files/${encodeURIComponent(filename)}`, {
         method: 'GET',
         headers: getAuthHeaders(),
       });
@@ -1094,71 +1094,93 @@ export const apiClient = {
 
   discovery: {
     /**
-     * Start network camera discovery
-     * @returns Discovery session info
+     * Start network camera discovery (ONVIF WS-Discovery)
+     * @returns Discovery results with found devices
      */
     start: async (): Promise<IDiscoveryResponse> => {
-      return apiFetch('/discovery/start', {
+      return apiFetch('/cameras/discover', {
         method: 'POST',
       });
     },
 
     /**
-     * Get current discovery status and results
-     * @returns Discovery status with found devices
+     * Check if ONVIF discovery is available (WSDiscovery installed)
+     * @returns Discovery availability status
      */
     status: async (): Promise<IDiscoveryStatusResponse> => {
-      return apiFetch('/discovery/status');
+      return apiFetch('/cameras/discover/status');
     },
 
     /**
-     * Get detailed device information
-     * @param address Device IP address
-     * @returns Detailed device info
+     * Get detailed device information via ONVIF
+     * @param endpointUrl ONVIF device endpoint URL
+     * @param username Optional auth username
+     * @param password Optional auth password
+     * @returns Detailed device info with stream profiles
      */
-    getDeviceDetails: async (address: string): Promise<IDeviceDetailsResponse> => {
-      return apiFetch(`/discovery/device/${encodeURIComponent(address)}`);
+    getDeviceDetails: async (
+      endpointUrl: string,
+      username?: string,
+      password?: string
+    ): Promise<IDeviceDetailsResponse> => {
+      return apiFetch('/cameras/discover/device', {
+        method: 'POST',
+        body: JSON.stringify({
+          endpoint_url: endpointUrl,
+          username,
+          password,
+        }),
+      });
     },
 
     /**
      * Test RTSP connection with credentials
-     * @param address Device IP address
-     * @param credentials Optional credentials
-     * @returns Connection test result
+     * @param rtspUrl RTSP URL to test
+     * @param username Optional auth username
+     * @param password Optional auth password
+     * @returns Connection test result with stream metadata
      */
     testConnection: async (
-      address: string,
-      credentials?: { username?: string; password?: string; port?: number }
+      rtspUrl: string,
+      username?: string,
+      password?: string
     ): Promise<ITestConnectionResponse> => {
-      const params = new URLSearchParams();
-      if (credentials?.username) params.set('username', credentials.username);
-      if (credentials?.password) params.set('password', credentials.password);
-      if (credentials?.port) params.set('port', String(credentials.port));
-      const queryString = params.toString();
-      return apiFetch(`/discovery/device/${encodeURIComponent(address)}/test${queryString ? `?${queryString}` : ''}`, {
+      return apiFetch('/cameras/discover/test', {
         method: 'POST',
+        body: JSON.stringify({
+          rtsp_url: rtspUrl,
+          username,
+          password,
+        }),
       });
     },
 
     /**
-     * Import discovered camera
-     * @param address Device IP address
-     * @param options Import configuration
-     * @returns Imported camera
+     * Import discovered camera (creates a new camera)
+     * @param options Camera configuration for import
+     * @returns Created camera
      */
     importCamera: async (
-      address: string,
       options: {
         name: string;
+        rtsp_url: string;
         username?: string;
         password?: string;
-        rtsp_url?: string;
         enable_motion_detection?: boolean;
       }
     ): Promise<ICamera> => {
-      return apiFetch(`/discovery/device/${encodeURIComponent(address)}/import`, {
+      // Import uses the standard camera create endpoint
+      return apiFetch('/cameras', {
         method: 'POST',
-        body: JSON.stringify(options),
+        body: JSON.stringify({
+          name: options.name,
+          rtsp_url: options.rtsp_url,
+          username: options.username,
+          password: options.password,
+          source_type: 'rtsp',
+          enabled: true,
+          motion_detection_enabled: options.enable_motion_detection ?? true,
+        }),
       });
     },
   },
@@ -1169,7 +1191,7 @@ export const apiClient = {
      * @returns List of configured controllers
      */
     listControllers: async (): Promise<Array<{
-      id: number;
+      id: string;
       name: string;
       host: string;
       port: number;
@@ -1184,7 +1206,23 @@ export const apiClient = {
       created_at: string;
       updated_at: string | null;
     }>> => {
-      return apiFetch('/protect/controllers');
+      const response = await apiFetch<{ data: Array<{
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        use_ssl: boolean;
+        verify_ssl: boolean;
+        enabled: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        connection_error: string | null;
+        camera_count: number;
+        created_at: string;
+        updated_at: string | null;
+      }> }>('/protect/controllers');
+      return response.data;
     },
 
     /**
@@ -1192,8 +1230,8 @@ export const apiClient = {
      * @param id Controller ID
      * @returns Controller details
      */
-    getController: async (id: number): Promise<{
-      id: number;
+    getController: async (id: string): Promise<{
+      id: string;
       name: string;
       host: string;
       port: number;
@@ -1208,7 +1246,23 @@ export const apiClient = {
       created_at: string;
       updated_at: string | null;
     }> => {
-      return apiFetch(`/protect/controllers/${id}`);
+      const response = await apiFetch<{ data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        use_ssl: boolean;
+        verify_ssl: boolean;
+        enabled: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        connection_error: string | null;
+        camera_count: number;
+        created_at: string;
+        updated_at: string | null;
+      } }>(`/protect/controllers/${id}`);
+      return response.data;
     },
 
     /**
@@ -1226,7 +1280,7 @@ export const apiClient = {
       verify_ssl?: boolean;
       enabled?: boolean;
     }): Promise<{
-      id: number;
+      id: string;
       name: string;
       host: string;
       port: number;
@@ -1241,10 +1295,26 @@ export const apiClient = {
       created_at: string;
       updated_at: string | null;
     }> => {
-      return apiFetch('/protect/controllers', {
+      const response = await apiFetch<{ data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        use_ssl: boolean;
+        verify_ssl: boolean;
+        enabled: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        connection_error: string | null;
+        camera_count: number;
+        created_at: string;
+        updated_at: string | null;
+      } }>('/protect/controllers', {
         method: 'POST',
         body: JSON.stringify(data),
       });
+      return response.data;
     },
 
     /**
@@ -1253,7 +1323,7 @@ export const apiClient = {
      * @param data Updated configuration
      * @returns Updated controller
      */
-    updateController: async (id: number, data: {
+    updateController: async (id: string, data: {
       name?: string;
       host?: string;
       port?: number;
@@ -1263,7 +1333,7 @@ export const apiClient = {
       verify_ssl?: boolean;
       enabled?: boolean;
     }): Promise<{
-      id: number;
+      id: string;
       name: string;
       host: string;
       port: number;
@@ -1278,10 +1348,26 @@ export const apiClient = {
       created_at: string;
       updated_at: string | null;
     }> => {
-      return apiFetch(`/protect/controllers/${id}`, {
+      const response = await apiFetch<{ data: {
+        id: string;
+        name: string;
+        host: string;
+        port: number;
+        use_ssl: boolean;
+        verify_ssl: boolean;
+        enabled: boolean;
+        is_connected: boolean;
+        last_connected_at: string | null;
+        last_error: string | null;
+        connection_error: string | null;
+        camera_count: number;
+        created_at: string;
+        updated_at: string | null;
+      } }>(`/protect/controllers/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
       });
+      return response.data;
     },
 
     /**
@@ -1289,10 +1375,11 @@ export const apiClient = {
      * @param id Controller ID
      * @returns Deletion confirmation
      */
-    deleteController: async (id: number): Promise<{ message: string }> => {
-      return apiFetch(`/protect/controllers/${id}`, {
+    deleteController: async (id: string): Promise<{ deleted: boolean }> => {
+      const response = await apiFetch<{ data: { deleted: boolean } }>(`/protect/controllers/${id}`, {
         method: 'DELETE',
       });
+      return response.data;
     },
 
     /**
@@ -1327,7 +1414,7 @@ export const apiClient = {
      * @param id Controller ID
      * @returns Test result
      */
-    testExistingController: async (id: number): Promise<{
+    testExistingController: async (id: string): Promise<{
       data: {
         success: boolean;
         message: string;
@@ -1346,11 +1433,9 @@ export const apiClient = {
      * @param id Controller ID
      * @returns List of discovered cameras
      */
-    discoverCameras: async (id: number): Promise<{
-      controller_id: number;
-      cameras: ProtectDiscoveredCamera[];
-    }> => {
-      return apiFetch(`/protect/controllers/${id}/cameras`);
+    discoverCameras: async (id: string): Promise<ProtectDiscoveredCamera[]> => {
+      const response = await apiFetch<{ data: ProtectDiscoveredCamera[] }>(`/protect/controllers/${id}/cameras`);
+      return response.data;
     },
 
     /**
@@ -1359,15 +1444,21 @@ export const apiClient = {
      * @param protectCameraId Protect camera ID
      * @returns Updated camera info
      */
-    enableCamera: async (controllerId: number, protectCameraId: string): Promise<{
-      protect_id: string;
+    enableCamera: async (controllerId: string, protectCameraId: string): Promise<{
+      protect_camera_id: string;
       name: string;
       is_enabled_for_ai: boolean;
-      message: string;
+      smart_detection_types: string[];
     }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/enable`, {
+      const response = await apiFetch<{ data: {
+        protect_camera_id: string;
+        name: string;
+        is_enabled_for_ai: boolean;
+        smart_detection_types: string[];
+      } }>(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/enable`, {
         method: 'PUT',
       });
+      return response.data;
     },
 
     /**
@@ -1376,15 +1467,17 @@ export const apiClient = {
      * @param protectCameraId Protect camera ID
      * @returns Updated camera info
      */
-    disableCamera: async (controllerId: number, protectCameraId: string): Promise<{
-      protect_id: string;
-      name: string;
+    disableCamera: async (controllerId: string, protectCameraId: string): Promise<{
+      protect_camera_id: string;
       is_enabled_for_ai: boolean;
-      message: string;
     }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/disable`, {
+      const response = await apiFetch<{ data: {
+        protect_camera_id: string;
+        is_enabled_for_ai: boolean;
+      } }>(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/disable`, {
         method: 'PUT',
       });
+      return response.data;
     },
 
     /**
@@ -1395,19 +1488,25 @@ export const apiClient = {
      * @returns Updated camera info
      */
     updateEventFilters: async (
-      controllerId: number,
+      controllerId: string,
       protectCameraId: string,
       filters: string[]
     ): Promise<{
-      protect_id: string;
+      protect_camera_id: string;
       name: string;
-      event_filters: string[];
-      message: string;
+      smart_detection_types: string[];
+      is_enabled_for_ai: boolean;
     }> => {
-      return apiFetch(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/filters`, {
+      const response = await apiFetch<{ data: {
+        protect_camera_id: string;
+        name: string;
+        smart_detection_types: string[];
+        is_enabled_for_ai: boolean;
+      } }>(`/protect/controllers/${controllerId}/cameras/${protectCameraId}/filters`, {
         method: 'PUT',
-        body: JSON.stringify({ event_filters: filters }),
+        body: JSON.stringify({ smart_detection_types: filters }),
       });
+      return response.data;
     },
   },
 
@@ -1420,7 +1519,7 @@ export const apiClient = {
      * @returns Current MQTT configuration
      */
     getConfig: async (): Promise<MQTTConfigResponse> => {
-      return apiFetch('/mqtt/config');
+      return apiFetch('/integrations/mqtt/config');
     },
 
     /**
@@ -1429,7 +1528,7 @@ export const apiClient = {
      * @returns Updated MQTT configuration
      */
     updateConfig: async (config: MQTTConfigUpdate): Promise<MQTTConfigResponse> => {
-      return apiFetch('/mqtt/config', {
+      return apiFetch('/integrations/mqtt/config', {
         method: 'PUT',
         body: JSON.stringify(config),
       });
@@ -1440,7 +1539,7 @@ export const apiClient = {
      * @returns Current connection status
      */
     getStatus: async (): Promise<MQTTStatusResponse> => {
-      return apiFetch('/mqtt/status');
+      return apiFetch('/integrations/mqtt/status');
     },
 
     /**
@@ -1449,7 +1548,7 @@ export const apiClient = {
      * @returns Test result
      */
     testConnection: async (request: MQTTTestRequest): Promise<MQTTTestResponse> => {
-      return apiFetch('/mqtt/test', {
+      return apiFetch('/integrations/mqtt/test', {
         method: 'POST',
         body: JSON.stringify(request),
       });
@@ -1460,7 +1559,7 @@ export const apiClient = {
      * @returns Connection result
      */
     connect: async (): Promise<{ success: boolean; message: string }> => {
-      return apiFetch('/mqtt/connect', {
+      return apiFetch('/integrations/mqtt/connect', {
         method: 'POST',
       });
     },
@@ -1470,7 +1569,7 @@ export const apiClient = {
      * @returns Disconnection result
      */
     disconnect: async (): Promise<{ success: boolean; message: string }> => {
-      return apiFetch('/mqtt/disconnect', {
+      return apiFetch('/integrations/mqtt/disconnect', {
         method: 'POST',
       });
     },
@@ -1480,7 +1579,7 @@ export const apiClient = {
      * @returns Discovery publish result
      */
     publishDiscovery: async (): Promise<MQTTPublishDiscoveryResponse> => {
-      return apiFetch('/mqtt/discovery/publish', {
+      return apiFetch('/integrations/mqtt/discovery/publish', {
         method: 'POST',
       });
     },
@@ -1526,9 +1625,10 @@ export const apiClient = {
       error: string | null;
       available: boolean;
     }> => {
-      return apiFetch('/homekit/settings', {
-        method: 'PUT',
-        body: JSON.stringify({ enabled }),
+      // Backend has separate /enable and /disable endpoints
+      const endpoint = enabled ? '/homekit/enable' : '/homekit/disable';
+      return apiFetch(endpoint, {
+        method: 'POST',
       });
     },
 
@@ -1699,6 +1799,7 @@ export const apiClient = {
         id: string;
         entity_type: string;
         name: string | null;
+        thumbnail_path: string | null;
         first_seen_at: string;
         last_seen_at: string;
         occurrence_count: number;

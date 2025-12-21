@@ -180,6 +180,8 @@ const mockExistingCameras: ICamera[] = [
     motion_algorithm: 'mog2',
     source_type: 'rtsp',
     analysis_mode: 'single_frame',
+    homekit_stream_quality: 'high',
+    audio_enabled: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -189,7 +191,7 @@ describe('CameraDiscovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default to available status
-    vi.mocked(apiClient.discovery.getStatus).mockResolvedValue(mockDiscoveryStatusAvailable);
+    vi.mocked(apiClient.discovery.status).mockResolvedValue(mockDiscoveryStatusAvailable);
   });
 
   describe('Initial Render', () => {
@@ -212,7 +214,7 @@ describe('CameraDiscovery', () => {
 
   describe('Discovery Unavailable', () => {
     it('disables button when discovery is unavailable', async () => {
-      vi.mocked(apiClient.discovery.getStatus).mockResolvedValue(mockDiscoveryStatusUnavailable);
+      vi.mocked(apiClient.discovery.status).mockResolvedValue(mockDiscoveryStatusUnavailable);
 
       render(<CameraDiscovery />, { wrapper: createWrapper() });
 
@@ -227,7 +229,7 @@ describe('CameraDiscovery', () => {
     });
 
     it('shows warning message when discovery is unavailable', async () => {
-      vi.mocked(apiClient.discovery.getStatus).mockResolvedValue(mockDiscoveryStatusUnavailable);
+      vi.mocked(apiClient.discovery.status).mockResolvedValue(mockDiscoveryStatusUnavailable);
 
       render(<CameraDiscovery />, { wrapper: createWrapper() });
 
@@ -239,7 +241,7 @@ describe('CameraDiscovery', () => {
   describe('Scanning State', () => {
     it('disables button and shows loading state during scan', async () => {
       // Make startScan take a while
-      vi.mocked(apiClient.discovery.startScan).mockImplementation(
+      vi.mocked(apiClient.discovery.start).mockImplementation(
         () => new Promise((resolve) => setTimeout(() => resolve(mockDiscoveryResponse), 1000))
       );
 
@@ -255,7 +257,7 @@ describe('CameraDiscovery', () => {
     });
 
     it('shows progress message during scan', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockImplementation(
+      vi.mocked(apiClient.discovery.start).mockImplementation(
         () => new Promise((resolve) => setTimeout(() => resolve(mockDiscoveryResponse), 1000))
       );
 
@@ -271,7 +273,7 @@ describe('CameraDiscovery', () => {
 
   describe('Discovery Results', () => {
     it('displays discovered cameras after successful scan', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockResolvedValue(mockDiscoveryResponse);
+      vi.mocked(apiClient.discovery.start).mockResolvedValue(mockDiscoveryResponse);
       vi.mocked(apiClient.discovery.getDeviceDetails).mockResolvedValue(mockDeviceDetailsResponse);
 
       const user = userEvent.setup();
@@ -287,7 +289,7 @@ describe('CameraDiscovery', () => {
     });
 
     it('shows camera details after fetching', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockResolvedValue({
+      vi.mocked(apiClient.discovery.start).mockResolvedValue({
         ...mockDiscoveryResponse,
         devices: [mockDiscoveryResponse.devices[0]], // Just one device
         device_count: 1,
@@ -344,7 +346,7 @@ describe('CameraDiscovery', () => {
       };
 
       // Return just the device at 192.168.1.101
-      vi.mocked(apiClient.discovery.startScan).mockResolvedValue({
+      vi.mocked(apiClient.discovery.start).mockResolvedValue({
         status: 'complete',
         duration_ms: 5000,
         devices: [{
@@ -375,7 +377,7 @@ describe('CameraDiscovery', () => {
 
   describe('Empty State', () => {
     it('shows empty state when no cameras found', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockResolvedValue(mockEmptyDiscoveryResponse);
+      vi.mocked(apiClient.discovery.start).mockResolvedValue(mockEmptyDiscoveryResponse);
 
       const user = userEvent.setup();
       render(<CameraDiscovery />, { wrapper: createWrapper() });
@@ -390,7 +392,7 @@ describe('CameraDiscovery', () => {
     });
 
     it('shows guidance in empty state', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockResolvedValue(mockEmptyDiscoveryResponse);
+      vi.mocked(apiClient.discovery.start).mockResolvedValue(mockEmptyDiscoveryResponse);
 
       const user = userEvent.setup();
       render(<CameraDiscovery />, { wrapper: createWrapper() });
@@ -404,7 +406,7 @@ describe('CameraDiscovery', () => {
     });
 
     it('shows retry button in empty state', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockResolvedValue(mockEmptyDiscoveryResponse);
+      vi.mocked(apiClient.discovery.start).mockResolvedValue(mockEmptyDiscoveryResponse);
 
       const user = userEvent.setup();
       render(<CameraDiscovery />, { wrapper: createWrapper() });
@@ -418,7 +420,7 @@ describe('CameraDiscovery', () => {
     });
 
     it('shows manual entry link in empty state', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockResolvedValue(mockEmptyDiscoveryResponse);
+      vi.mocked(apiClient.discovery.start).mockResolvedValue(mockEmptyDiscoveryResponse);
 
       const user = userEvent.setup();
       render(<CameraDiscovery />, { wrapper: createWrapper() });
@@ -434,7 +436,7 @@ describe('CameraDiscovery', () => {
 
   describe('Error State', () => {
     it('shows error state when discovery fails', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockRejectedValue(
+      vi.mocked(apiClient.discovery.start).mockRejectedValue(
         new Error('Network error')
       );
 
@@ -451,7 +453,7 @@ describe('CameraDiscovery', () => {
     });
 
     it('shows retry button in error state', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockRejectedValue(
+      vi.mocked(apiClient.discovery.start).mockRejectedValue(
         new Error('Network error')
       );
 
@@ -467,7 +469,7 @@ describe('CameraDiscovery', () => {
     });
 
     it('can retry after error', async () => {
-      vi.mocked(apiClient.discovery.startScan)
+      vi.mocked(apiClient.discovery.start)
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce(mockDiscoveryResponse);
       vi.mocked(apiClient.discovery.getDeviceDetails).mockResolvedValue(mockDeviceDetailsResponse);
@@ -495,7 +497,7 @@ describe('CameraDiscovery', () => {
 
   describe('Rescan', () => {
     it('shows rescan button after successful scan', async () => {
-      vi.mocked(apiClient.discovery.startScan).mockResolvedValue(mockDiscoveryResponse);
+      vi.mocked(apiClient.discovery.start).mockResolvedValue(mockDiscoveryResponse);
       vi.mocked(apiClient.discovery.getDeviceDetails).mockResolvedValue(mockDeviceDetailsResponse);
 
       const user = userEvent.setup();

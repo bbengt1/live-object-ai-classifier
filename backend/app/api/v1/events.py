@@ -49,6 +49,21 @@ router = APIRouter(prefix="/events", tags=["events"])
 THUMBNAIL_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'thumbnails')
 
 
+def _normalize_thumbnail_path(thumbnail_path: str) -> str:
+    """
+    Normalize thumbnail path by stripping API URL prefix if present.
+
+    Handles both formats:
+    - Relative path: "2025-12-19/event.jpg"
+    - API URL path: "/api/v1/thumbnails/2025-12-19/event.jpg"
+
+    Returns the relative path suitable for joining with THUMBNAIL_DIR.
+    """
+    if thumbnail_path.startswith('/api/v1/thumbnails/'):
+        return thumbnail_path[len('/api/v1/thumbnails/'):]
+    return thumbnail_path
+
+
 def _save_thumbnail_to_filesystem(thumbnail_base64: str, event_id: str) -> str:
     """
     Save base64-encoded thumbnail to filesystem
@@ -1044,7 +1059,8 @@ async def bulk_delete_events(
         for event in events:
             # Delete thumbnail file if exists
             if event.thumbnail_path:
-                thumbnail_file = os.path.join(THUMBNAIL_DIR, event.thumbnail_path)
+                thumb_path = _normalize_thumbnail_path(event.thumbnail_path)
+                thumbnail_file = os.path.join(THUMBNAIL_DIR, thumb_path)
                 if os.path.exists(thumbnail_file):
                     try:
                         space_freed_bytes += os.path.getsize(thumbnail_file)
@@ -1160,7 +1176,8 @@ async def delete_event(
 
         # Delete thumbnail file if exists
         if event.thumbnail_path:
-            thumbnail_file = os.path.join(THUMBNAIL_DIR, event.thumbnail_path)
+            thumb_path = _normalize_thumbnail_path(event.thumbnail_path)
+            thumbnail_file = os.path.join(THUMBNAIL_DIR, thumb_path)
             if os.path.exists(thumbnail_file):
                 try:
                     os.remove(thumbnail_file)
@@ -1431,14 +1448,15 @@ async def reanalyze_event(
                 image_base64 = event.thumbnail_base64
             elif event.thumbnail_path:
                 # Load thumbnail from file
-                thumbnail_full_path = os.path.join(THUMBNAIL_DIR, event.thumbnail_path)
+                thumb_path = _normalize_thumbnail_path(event.thumbnail_path)
+                thumbnail_full_path = os.path.join(THUMBNAIL_DIR, thumb_path)
                 if os.path.exists(thumbnail_full_path):
                     with open(thumbnail_full_path, 'rb') as f:
                         image_base64 = base64.b64encode(f.read()).decode('utf-8')
                 else:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Thumbnail not available for re-analysis"
+                        detail=f"Thumbnail not available for re-analysis (path: {thumb_path})"
                     )
             else:
                 raise HTTPException(

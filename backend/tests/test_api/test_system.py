@@ -956,6 +956,120 @@ class TestAIUsageEndpoint:
         assert "by_mode" in data
 
 
+# ============================================================================
+# Frame Sampling Strategy Settings Tests (Story P8-2.5)
+# ============================================================================
+
+
+class TestFrameSamplingStrategySetting:
+    """Tests for frame_sampling_strategy in system settings (Story P8-2.5)"""
+
+    def test_get_settings_includes_frame_sampling_strategy_default(self):
+        """Test GET /settings includes frame_sampling_strategy with default 'uniform'"""
+        response = client.get("/api/v1/system/settings")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should include frame_sampling_strategy with default value
+        assert "frame_sampling_strategy" in data
+        assert data["frame_sampling_strategy"] == "uniform"
+
+    def test_put_settings_accepts_valid_uniform_strategy(self):
+        """Test PUT /settings accepts 'uniform' strategy"""
+        response = client.put(
+            "/api/v1/system/settings",
+            json={"frame_sampling_strategy": "uniform"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["frame_sampling_strategy"] == "uniform"
+
+        # Verify stored in database
+        db = TestingSessionLocal()
+        try:
+            setting = db.query(SystemSetting).filter(
+                SystemSetting.key == "settings_frame_sampling_strategy"
+            ).first()
+            assert setting is not None
+            assert setting.value == "uniform"
+        finally:
+            db.close()
+
+    def test_put_settings_accepts_valid_adaptive_strategy(self):
+        """Test PUT /settings accepts 'adaptive' strategy"""
+        response = client.put(
+            "/api/v1/system/settings",
+            json={"frame_sampling_strategy": "adaptive"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["frame_sampling_strategy"] == "adaptive"
+
+        # Verify stored in database
+        db = TestingSessionLocal()
+        try:
+            setting = db.query(SystemSetting).filter(
+                SystemSetting.key == "settings_frame_sampling_strategy"
+            ).first()
+            assert setting is not None
+            assert setting.value == "adaptive"
+        finally:
+            db.close()
+
+    def test_put_settings_accepts_valid_hybrid_strategy(self):
+        """Test PUT /settings accepts 'hybrid' strategy"""
+        response = client.put(
+            "/api/v1/system/settings",
+            json={"frame_sampling_strategy": "hybrid"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["frame_sampling_strategy"] == "hybrid"
+
+        # Verify stored in database
+        db = TestingSessionLocal()
+        try:
+            setting = db.query(SystemSetting).filter(
+                SystemSetting.key == "settings_frame_sampling_strategy"
+            ).first()
+            assert setting is not None
+            assert setting.value == "hybrid"
+        finally:
+            db.close()
+
+    def test_put_settings_rejects_invalid_strategy(self):
+        """Test PUT /settings rejects invalid strategy values"""
+        invalid_strategies = ["random", "sequential", "invalid", "UNIFORM", ""]
+
+        for invalid_strategy in invalid_strategies:
+            response = client.put(
+                "/api/v1/system/settings",
+                json={"frame_sampling_strategy": invalid_strategy}
+            )
+
+            assert response.status_code == 422, f"Expected 422 for '{invalid_strategy}'"
+
+    def test_get_settings_returns_saved_strategy(self):
+        """Test GET /settings returns previously saved strategy"""
+        # Save a strategy
+        db = TestingSessionLocal()
+        try:
+            db.add(SystemSetting(key="settings_frame_sampling_strategy", value="adaptive"))
+            db.commit()
+        finally:
+            db.close()
+
+        response = client.get("/api/v1/system/settings")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["frame_sampling_strategy"] == "adaptive"
+
+
 # Cleanup test database on module exit
 def teardown_module():
     """Remove test database file"""

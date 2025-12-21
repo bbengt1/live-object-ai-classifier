@@ -37,6 +37,7 @@ class TestHomeKitSchemas:
     def test_status_response_schema(self):
         """AC6: HomeKitStatusResponse validates correctly."""
         response = HomeKitStatusResponse(
+            available=True,
             enabled=True,
             running=True,
             paired=False,
@@ -59,6 +60,7 @@ class TestHomeKitSchemas:
     def test_status_response_with_error(self):
         """HomeKitStatusResponse handles error state."""
         response = HomeKitStatusResponse(
+            available=False,
             enabled=False,
             running=False,
             paired=False,
@@ -77,6 +79,7 @@ class TestHomeKitSchemas:
     def test_status_response_hidden_setup_code_when_paired(self):
         """Setup code should be None when paired."""
         response = HomeKitStatusResponse(
+            available=True,
             enabled=True,
             running=True,
             paired=True,
@@ -216,6 +219,7 @@ class TestHomeKitAPIEndpoints:
         """AC6: Status endpoint returns expected format."""
         # Simulate the response format
         status = {
+            "available": True,
             "enabled": True,
             "running": True,
             "paired": False,
@@ -263,6 +267,7 @@ class TestHomeKitAPIEndpoints:
     def test_graceful_degradation_error_format(self):
         """AC8: Error response when HAP-python not available."""
         error_status = {
+            "available": False,
             "enabled": False,
             "running": False,
             "paired": False,
@@ -699,6 +704,7 @@ class TestSnapshotEndpoint:
     def test_status_response_with_camera_info(self):
         """Status response includes camera and stream counts (P7-3.2)."""
         response = HomeKitStatusResponse(
+            available=True,
             enabled=True,
             running=True,
             paired=True,

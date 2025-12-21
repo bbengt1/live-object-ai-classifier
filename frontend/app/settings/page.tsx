@@ -59,6 +59,7 @@ import { HomekitSettings } from '@/components/settings/HomekitSettings';
 import { AnomalySettings } from '@/components/settings/AnomalySettings';
 import { MotionEventsExport } from '@/components/settings/MotionEventsExport';
 import { CostWarningModal } from '@/components/settings/CostWarningModal';
+import { FrameSamplingStrategySelector, type FrameSamplingStrategy } from '@/components/settings/FrameSamplingStrategySelector';
 import { ControllerForm, type ControllerData, DeleteControllerDialog, DiscoveredCameraList } from '@/components/protect';
 import { useQuery } from '@tanstack/react-query';
 import type { AIProvider } from '@/types/settings';
@@ -127,6 +128,7 @@ export default function SettingsPage() {
       thumbnail_storage: 'filesystem',
       auto_cleanup: true,
       analysis_frame_count: 10, // Story P8-2.3: Default frame count
+      frame_sampling_strategy: 'uniform', // Story P8-2.5: Default sampling strategy
     },
   });
 
@@ -451,6 +453,24 @@ export default function SettingsPage() {
                     <p className="text-xs text-muted-foreground">
                       Number of video frames extracted for AI analysis. More frames may improve description accuracy but increase AI costs.
                     </p>
+                  </div>
+
+                  {/* Story P8-2.5: Frame Sampling Strategy Selector */}
+                  <div className="pt-4 border-t">
+                    <FrameSamplingStrategySelector
+                      value={(form.watch('frame_sampling_strategy') || 'uniform') as FrameSamplingStrategy}
+                      onChange={async (value) => {
+                        try {
+                          // Save immediately to backend
+                          await apiClient.settings.update({ frame_sampling_strategy: value });
+                          form.setValue('frame_sampling_strategy', value, { shouldDirty: false });
+                          toast.success(`Frame sampling strategy updated to ${value}`);
+                        } catch (error) {
+                          console.error('Failed to save sampling strategy:', error);
+                          toast.error('Failed to save sampling strategy setting');
+                        }
+                      }}
+                    />
                   </div>
                 </CardContent>
               </Card>

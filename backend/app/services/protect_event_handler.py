@@ -1553,9 +1553,11 @@ class ProtectEventHandler:
             )
 
             # Story P8-2.3: Load analysis_frame_count from settings (default: 10)
+            # Story P8-2.5: Load frame_sampling_strategy from settings (default: uniform)
             from app.models.system_setting import SystemSetting
             from app.core.database import SessionLocal
             frame_count = 10  # Default
+            sampling_strategy = "uniform"  # Default (Story P8-2.5 AC5.6)
             try:
                 db = SessionLocal()
                 frame_count_setting = db.query(SystemSetting).filter(
@@ -1563,16 +1565,43 @@ class ProtectEventHandler:
                 ).first()
                 if frame_count_setting and frame_count_setting.value:
                     frame_count = int(frame_count_setting.value)
+
+                # Story P8-2.5: Load sampling strategy setting
+                sampling_strategy_setting = db.query(SystemSetting).filter(
+                    SystemSetting.key == 'settings_frame_sampling_strategy'
+                ).first()
+                if sampling_strategy_setting and sampling_strategy_setting.value:
+                    # Validate the value is one of the allowed strategies
+                    valid_strategies = ["uniform", "adaptive", "hybrid"]
+                    if sampling_strategy_setting.value in valid_strategies:
+                        sampling_strategy = sampling_strategy_setting.value
+                    else:
+                        logger.warning(
+                            f"Invalid sampling_strategy value '{sampling_strategy_setting.value}', using default 'uniform'"
+                        )
                 db.close()
             except Exception as e:
-                logger.warning(f"Failed to load analysis_frame_count setting, using default: {e}")
+                logger.warning(f"Failed to load analysis settings, using defaults: {e}")
+
+            # Story P8-2.5: Log the sampling strategy being used (AC5.7)
+            logger.info(
+                f"Using frame sampling strategy '{sampling_strategy}' for camera '{camera.name}'",
+                extra={
+                    "event_type": "frame_sampling_strategy_selected",
+                    "camera_id": camera.id,
+                    "sampling_strategy": sampling_strategy,
+                    "frame_count": frame_count
+                }
+            )
 
             # Story P3-7.5: Use extract_frames_with_timestamps to get both frames and timestamps
+            # Story P8-2.5: Pass sampling_strategy parameter (AC5.5, AC5.7)
             frames, timestamps = await frame_extractor.extract_frames_with_timestamps(
                 clip_path=clip_path,
                 frame_count=frame_count,  # Story P8-2.3: Use configured frame count
                 strategy="evenly_spaced",
-                filter_blur=True
+                filter_blur=True,
+                sampling_strategy=sampling_strategy  # Story P8-2.5: Use configured sampling strategy
             )
 
             # Story P3-2.6 AC2: Check if frame extraction succeeded
@@ -1993,6 +2022,70 @@ class ProtectEventHandler:
                         }
                     )
 
+            # Story P4-3.3/P4-3.4: Generate embedding and match/create entity for Protect events
+            # This enables recurring visitor detection for Protect cameras
+            try:
+                if snapshot_result.image_base64:
+                    from app.services.embedding_service import get_embedding_service
+                    from app.services.entity_service import get_entity_service
+                    import base64 as b64
+
+                    embedding_service = get_embedding_service()
+
+                    # Decode base64 image
+                    image_bytes = b64.b64decode(snapshot_result.image_base64)
+
+                    # Generate embedding
+                    embedding_vector = await embedding_service.generate_embedding(image_bytes)
+
+                    if embedding_vector:
+                        # Store embedding in database
+                        await embedding_service.store_embedding(
+                            db=db,
+                            event_id=event.id,
+                            embedding=embedding_vector,
+                        )
+
+                        # Determine entity type from smart detection
+                        entity_type = "unknown"
+                        if event_type in ("person", "vehicle"):
+                            entity_type = event_type
+
+                        # Match or create entity
+                        entity_service = get_entity_service()
+                        entity_result = await entity_service.match_or_create_entity(
+                            db=db,
+                            event_id=event.id,
+                            embedding=embedding_vector,
+                            entity_type=entity_type,
+                            threshold=0.75,
+                        )
+
+                        logger.info(
+                            f"Entity {'created' if entity_result.is_new else 'matched'} for Protect event {event.id}",
+                            extra={
+                                "event_type": "entity_matched",
+                                "event_id": event.id,
+                                "entity_id": entity_result.entity_id,
+                                "entity_type": entity_result.entity_type,
+                                "is_new": entity_result.is_new,
+                                "similarity_score": entity_result.similarity_score,
+                                "occurrence_count": entity_result.occurrence_count
+                            }
+                        )
+            except Exception as embed_error:
+                # Don't fail event creation if embedding/entity matching fails
+                logger.warning(
+                    f"Embedding/entity matching failed for Protect event {event.id}: {embed_error}",
+                    extra={
+                        "event_type": "protect_embedding_error",
+                        "event_id": event.id,
+                        "camera_id": camera.id,
+                        "error_type": type(embed_error).__name__,
+                        "error_message": str(embed_error)
+                    }
+                )
+
             logger.info(
                 f"Protect event stored: {event.id} for camera '{camera.name}'",
                 extra={
@@ -2093,6 +2186,42 @@ class ProtectEventHandler:
             db.add(event)
             db.commit()
             db.refresh(event)
+
+            # Story P4-3.3/P4-3.4: Generate embedding and match/create entity even for events without AI
+            # This enables recurring visitor detection regardless of AI availability
+            try:
+                if snapshot_result.image_base64:
+                    from app.services.embedding_service import get_embedding_service
+                    from app.services.entity_service import get_entity_service
+                    import base64 as b64
+
+                    embedding_service = get_embedding_service()
+                    image_bytes = b64.b64decode(snapshot_result.image_base64)
+                    embedding_vector = await embedding_service.generate_embedding(image_bytes)
+
+                    if embedding_vector:
+                        await embedding_service.store_embedding(
+                            db=db,
+                            event_id=event.id,
+                            embedding=embedding_vector,
+                        )
+
+                        entity_type = "unknown"
+                        if event_type in ("person", "vehicle"):
+                            entity_type = event_type
+
+                        entity_service = get_entity_service()
+                        await entity_service.match_or_create_entity(
+                            db=db,
+                            event_id=event.id,
+                            embedding=embedding_vector,
+                            entity_type=entity_type,
+                            threshold=0.75,
+                        )
+            except Exception as embed_error:
+                logger.debug(
+                    f"Embedding/entity matching failed for no-AI event {event.id}: {embed_error}"
+                )
 
             logger.warning(
                 f"Protect event stored WITHOUT AI description: {event.id} for camera '{camera.name}'",

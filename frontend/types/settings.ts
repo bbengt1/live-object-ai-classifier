@@ -9,6 +9,9 @@ export type TimeFormat = '12h' | '24h';
 export type DateFormat = 'MM/DD/YYYY' | 'DD/MM/YYYY' | 'YYYY-MM-DD';
 export type ThumbnailStorage = 'filesystem' | 'database';
 
+// Story P8-2.5: Frame Sampling Strategy Selection
+export type FrameSamplingStrategy = 'uniform' | 'adaptive' | 'hybrid';
+
 export interface SystemSettings {
   // General
   system_name: string;
@@ -46,6 +49,9 @@ export interface SystemSettings {
 
   // Story P8-2.3: Configurable Frame Count Setting
   analysis_frame_count?: 5 | 10 | 15 | 20;  // Number of frames for AI analysis (default: 10)
+
+  // Story P8-2.5: Frame Sampling Strategy Selection
+  frame_sampling_strategy?: FrameSamplingStrategy;  // Frame selection strategy (default: uniform)
 }
 
 export interface StorageStats {

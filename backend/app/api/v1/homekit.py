@@ -52,6 +52,7 @@ router = APIRouter(
 
 class HomeKitStatusResponse(BaseModel):
     """HomeKit bridge status response."""
+    available: bool = Field(..., description="Whether HAP-python is installed and available")
     enabled: bool = Field(..., description="Whether HomeKit is enabled in config")
     running: bool = Field(..., description="Whether bridge is currently running")
     paired: bool = Field(..., description="Whether any iOS devices are paired")
@@ -61,6 +62,7 @@ class HomeKitStatusResponse(BaseModel):
     bridge_name: str = Field(..., description="Bridge name shown in Apple Home")
     setup_code: Optional[str] = Field(None, description="Pairing code (hidden if paired)")
     setup_uri: Optional[str] = Field(None, description="X-HM:// Setup URI for QR code (Story P5-1.2)")
+    qr_code_data: Optional[str] = Field(None, description="Base64 PNG QR code for pairing (hidden if paired)")
     port: int = Field(..., description="HAP server port")
     ffmpeg_available: bool = Field(False, description="Whether ffmpeg is available for streaming (Story P5-1.3)")
     error: Optional[str] = Field(None, description="Error message if any")
@@ -68,6 +70,7 @@ class HomeKitStatusResponse(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "available": True,
                 "enabled": True,
                 "running": True,
                 "paired": False,
@@ -77,6 +80,7 @@ class HomeKitStatusResponse(BaseModel):
                 "bridge_name": "ArgusAI",
                 "setup_code": "123-45-678",
                 "setup_uri": "X-HM://0023B6WQLAB1C",
+                "qr_code_data": "data:image/png;base64,...",
                 "port": 51826,
                 "ffmpeg_available": True,
                 "error": None
@@ -296,8 +300,9 @@ async def get_homekit_status(db: Session = Depends(get_db)):
         service_status = service.get_status()
 
         # Merge database config with runtime status
-        # Story P5-1.2 AC4: Hide setup_code and setup_uri when paired
+        # Story P5-1.2 AC4: Hide setup_code, setup_uri, qr_code_data when paired
         return HomeKitStatusResponse(
+            available=service.is_available,  # Whether HAP-python is installed
             enabled=config.enabled,
             running=service_status.running,
             paired=service_status.paired,
@@ -307,6 +312,7 @@ async def get_homekit_status(db: Session = Depends(get_db)):
             bridge_name=config.bridge_name,
             setup_code=config.get_pin_code() if not service_status.paired else None,
             setup_uri=service_status.setup_uri,  # Story P5-1.2: Include X-HM:// URI
+            qr_code_data=service.get_qr_code_data() if not service_status.paired else None,
             port=config.port,
             ffmpeg_available=service_status.ffmpeg_available,  # Story P5-1.3
             error=service_status.error
