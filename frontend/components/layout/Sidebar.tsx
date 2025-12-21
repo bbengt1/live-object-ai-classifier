@@ -1,35 +1,18 @@
 /**
  * Desktop sidebar navigation with collapse/expand functionality
  * Visible only on screens >= 1024px (lg breakpoint)
- * IMP-003: Now includes header elements (notifications, user menu) since header is hidden on desktop
+ * Status, notifications, and user menu are in DesktopToolbar (top-right corner)
  */
 
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { Home, Calendar, Video, Bell, Settings, ChevronLeft, ChevronRight, User, LogOut, KeyRound, Circle, Users, Sparkles } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { Home, Calendar, Video, Bell, Settings, ChevronLeft, ChevronRight, Users, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { NotificationBell } from '@/components/notifications';
-import { useAuth } from '@/contexts/AuthContext';
 import { useSettings } from '@/contexts/SettingsContext';
-import { toast } from 'sonner';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
@@ -44,13 +27,11 @@ const navigation = [
 /**
  * Sidebar component for desktop navigation
  * Persists collapsed state in localStorage
- * IMP-003: Now starts from top (no header on desktop) and includes notifications/user menu
+ * Status, notifications, and user menu are now in DesktopToolbar
  */
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, logout, isAuthenticated } = useAuth();
-  const { settings } = useSettings(); // BUG-003: Get system name from settings
+  const { settings } = useSettings();
 
   // Load collapsed state from localStorage on mount - only once
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -66,17 +47,6 @@ export function Sidebar() {
     const newState = !isCollapsed;
     setIsCollapsed(newState);
     localStorage.setItem('sidebar-collapsed', String(newState));
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      toast.success('Logged out successfully');
-      router.push('/login');
-    } catch (error) {
-      console.error('Logout error:', error);
-      router.push('/login');
-    }
   };
 
   return (
@@ -129,85 +99,6 @@ export function Sidebar() {
             );
           })}
         </nav>
-
-        {/* IMP-003: Status, Notifications, and User Menu (moved from header) */}
-        <div className={cn(
-          "p-3 border-t space-y-2",
-          isCollapsed ? "flex flex-col items-center" : ""
-        )}>
-          {/* System Status */}
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className={cn(
-                  "flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-muted/50",
-                  isCollapsed ? "justify-center" : ""
-                )}>
-                  <Circle className="h-2 w-2 fill-green-500 text-green-500" aria-hidden="true" />
-                  {!isCollapsed && <span className="text-xs font-medium">Healthy</span>}
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <p className="text-xs">System Status: Healthy</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          {/* Notifications */}
-          <div className={cn(isCollapsed ? "flex justify-center" : "")}>
-            <NotificationBell />
-          </div>
-
-          {/* User Menu */}
-          {isAuthenticated && user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={cn(
-                    "w-full",
-                    isCollapsed ? "px-0 justify-center" : "justify-start"
-                  )}
-                  aria-label={`User menu for ${user.username}`}
-                  aria-haspopup="menu"
-                >
-                  <User className="h-4 w-4" aria-hidden="true" />
-                  {!isCollapsed && <span className="ml-2 truncate">{user.username}</span>}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="right" className="w-56">
-                <DropdownMenuLabel>
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{user.username}</p>
-                    <p className="text-xs text-muted-foreground">Logged in</p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/settings" className="flex items-center gap-2 cursor-pointer">
-                    <Settings className="h-4 w-4" aria-hidden="true" />
-                    Settings
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings?tab=security" className="flex items-center gap-2 cursor-pointer">
-                    <KeyRound className="h-4 w-4" aria-hidden="true" />
-                    Change Password
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={handleLogout}
-                  className="flex items-center gap-2 cursor-pointer text-red-600 dark:text-red-400"
-                >
-                  <LogOut className="h-4 w-4" aria-hidden="true" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
 
         {/* Collapse/Expand Button */}
         <div className="p-3 border-t">
