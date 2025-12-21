@@ -649,7 +649,7 @@ export const apiClient = {
       if (params?.provider) searchParams.set('provider', params.provider);
       if (params?.camera_id) searchParams.set('camera_id', String(params.camera_id));
       const queryString = searchParams.toString();
-      return apiFetch(`/ai/usage${queryString ? `?${queryString}` : ''}`);
+      return apiFetch(`/system/ai-usage${queryString ? `?${queryString}` : ''}`);
     },
 
     /**
