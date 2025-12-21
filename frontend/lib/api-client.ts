@@ -586,13 +586,14 @@ export const apiClient = {
     },
 
     /**
-     * Get full URL for an event frame image (Story P8-2.2)
+     * Get URL for an event frame image (Story P8-2.2)
+     * Returns relative URL to go through Next.js proxy and avoid CORS issues
      * @param eventId Event ID (UUID string)
      * @param frameNumber 1-indexed frame number
-     * @returns Full URL to the frame image
+     * @returns Relative URL to the frame image
      */
     getFrameUrl: (eventId: string, frameNumber: number): string => {
-      return `${API_BASE_URL}${API_V1_PREFIX}/events/${eventId}/frames/${frameNumber}`;
+      return `${API_V1_PREFIX}/events/${eventId}/frames/${frameNumber}`;
     },
   },
 
