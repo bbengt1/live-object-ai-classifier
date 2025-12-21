@@ -57,6 +57,9 @@ CHECK_ONLY=false
 SERVICES_ONLY=false
 VERBOSE=false
 
+# Server configuration (set during installation)
+SERVER_HOSTNAME=""
+
 #-------------------------------------------------------------------------------
 # Helper Functions
 #-------------------------------------------------------------------------------
@@ -97,7 +100,7 @@ version_gte() {
 
 show_help() {
     cat << EOF
-Live Object AI Classifier - Installation Script
+ArgusAI - Installation Script
 
 Usage: ./install.sh [OPTIONS]
 
@@ -118,6 +121,60 @@ Examples:
 For more information, see README.md
 EOF
     exit 0
+}
+
+#-------------------------------------------------------------------------------
+# Server Configuration Prompts
+#-------------------------------------------------------------------------------
+
+prompt_server_hostname() {
+    print_header "Server Configuration"
+
+    # Try to detect hostname
+    local detected_hostname=""
+    if command -v hostname &> /dev/null; then
+        detected_hostname=$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "")
+    fi
+
+    # If we couldn't detect, try to get IP
+    if [ -z "$detected_hostname" ] || [ "$detected_hostname" = "localhost" ]; then
+        if command -v ip &> /dev/null; then
+            detected_hostname=$(ip route get 1 2>/dev/null | awk '{print $7; exit}' || echo "")
+        elif command -v ifconfig &> /dev/null; then
+            detected_hostname=$(ifconfig 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | head -1 | awk '{print $2}' || echo "")
+        fi
+    fi
+
+    # Default to localhost if nothing detected
+    if [ -z "$detected_hostname" ]; then
+        detected_hostname="localhost"
+    fi
+
+    echo "ArgusAI needs to know how you'll access it from your browser."
+    echo ""
+    echo "This should be the hostname, domain name, or IP address that you'll"
+    echo "use to access the web interface (e.g., 'argusai.local', '192.168.1.100')."
+    echo ""
+
+    if [ "$detected_hostname" != "localhost" ]; then
+        print_info "Detected: $detected_hostname"
+    fi
+
+    echo ""
+    read -p "Enter server hostname/IP [$detected_hostname]: " input_hostname
+
+    # Use detected hostname if user just pressed enter
+    SERVER_HOSTNAME="${input_hostname:-$detected_hostname}"
+
+    # Remove any protocol prefix if user accidentally included it
+    SERVER_HOSTNAME=$(echo "$SERVER_HOSTNAME" | sed 's|^https\?://||' | sed 's|/.*$||')
+
+    echo ""
+    print_success "Server hostname set to: $SERVER_HOSTNAME"
+    echo ""
+    print_info "Frontend will be accessible at: http://$SERVER_HOSTNAME:3000"
+    print_info "Backend API will be at: http://$SERVER_HOSTNAME:8000"
+    echo ""
 }
 
 #-------------------------------------------------------------------------------
@@ -354,6 +411,18 @@ setup_backend() {
         print_success "Environment configured with new encryption key"
     fi
 
+    # Configure CORS origins with server hostname
+    if [ -n "$SERVER_HOSTNAME" ] && [ "$SERVER_HOSTNAME" != "localhost" ]; then
+        print_step "Configuring CORS for $SERVER_HOSTNAME..."
+        local cors_origins="http://localhost:3000,http://localhost:8000,http://$SERVER_HOSTNAME:3000,http://$SERVER_HOSTNAME:8000"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|^CORS_ORIGINS=.*|CORS_ORIGINS=$cors_origins|" .env
+        else
+            sed -i "s|^CORS_ORIGINS=.*|CORS_ORIGINS=$cors_origins|" .env
+        fi
+        print_success "CORS configured for $SERVER_HOSTNAME"
+    fi
+
     # Run database migrations
     print_step "Running database migrations..."
     alembic upgrade head
@@ -377,13 +446,26 @@ setup_frontend() {
     npm install --silent
     print_success "Node.js dependencies installed"
 
-    # Create .env.local if it doesn't exist
+    # Configure .env.local with API URL
     print_step "Configuring environment..."
+    local api_host="${SERVER_HOSTNAME:-localhost}"
+    local api_url="http://$api_host:8000"
+
     if [ -f ".env.local" ]; then
-        print_warning ".env.local already exists, preserving existing configuration"
+        # Update existing file with new API URL
+        if grep -q "^NEXT_PUBLIC_API_URL=" .env.local; then
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=$api_url|" .env.local
+            else
+                sed -i "s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=$api_url|" .env.local
+            fi
+        else
+            echo "NEXT_PUBLIC_API_URL=$api_url" >> .env.local
+        fi
+        print_success "Environment updated with API URL: $api_url"
     else
-        echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
-        print_success "Environment configured"
+        echo "NEXT_PUBLIC_API_URL=$api_url" > .env.local
+        print_success "Environment configured with API URL: $api_url"
     fi
 
     # Build frontend
@@ -583,7 +665,7 @@ generate_nginx_config() {
 
     print_step "Creating nginx configuration..."
     cat > "$CONFIG_DIR/nginx-live-object.conf" << 'EOF'
-# Live Object AI Classifier - nginx Reverse Proxy Configuration
+# ArgusAI - nginx Reverse Proxy Configuration
 #
 # This configuration provides:
 # - Reverse proxy to frontend (Next.js) and backend (FastAPI)
@@ -741,7 +823,7 @@ generate_all_services() {
 print_summary() {
     print_header "Installation Complete!"
 
-    echo -e "${GREEN}The Live Object AI Classifier has been installed successfully.${NC}"
+    echo -e "${GREEN}ArgusAI has been installed successfully.${NC}"
     echo ""
     echo "Next Steps:"
     echo ""
@@ -821,7 +903,7 @@ main() {
     # Print banner
     echo ""
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║       Live Object AI Classifier - Installation Script         ║${NC}"
+    echo -e "${CYAN}║              ArgusAI - Installation Script                     ║${NC}"
     echo -e "${CYAN}╚═══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 
@@ -841,6 +923,9 @@ main() {
     if [ "$CHECK_ONLY" = true ]; then
         exit 0
     fi
+
+    # Prompt for server hostname
+    prompt_server_hostname
 
     # Configure Linux system (firewall, SELinux)
     configure_linux_system
