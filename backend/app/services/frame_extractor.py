@@ -27,6 +27,10 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# Similarity filtering configuration (Story P9-2.2)
+SIMILARITY_THRESHOLD = 0.95  # SSIM threshold for filtering similar frames
+SIMILARITY_RESIZE_DIM = 256  # Resize frames for faster SSIM comparison
+
 # Frame extraction configuration (Story P3-2.1, FR8, P8-2.3)
 FRAME_EXTRACT_DEFAULT_COUNT = 10  # Story P8-2.3: Changed from 5 to 10
 FRAME_EXTRACT_MIN_COUNT = 3
@@ -166,6 +170,157 @@ class FrameExtractor:
         laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
 
         return float(laplacian_var)
+
+    def _calculate_ssim(
+        self,
+        frame1: np.ndarray,
+        frame2: np.ndarray,
+        resize_dim: int = SIMILARITY_RESIZE_DIM
+    ) -> float:
+        """
+        Calculate Structural Similarity Index (SSIM) between two frames (Story P9-2.2).
+
+        Implements SSIM for perceptual similarity measurement. Frames are resized
+        for faster comparison.
+
+        Args:
+            frame1: First frame as RGB numpy array (H, W, 3)
+            frame2: Second frame as RGB numpy array (H, W, 3)
+            resize_dim: Dimension to resize frames to for comparison (default 256)
+
+        Returns:
+            SSIM score between 0.0 and 1.0
+            - 1.0 = identical images
+            - 0.0 = completely different images
+        """
+        # Convert to grayscale
+        gray1 = cv2.cvtColor(frame1, cv2.COLOR_RGB2GRAY)
+        gray2 = cv2.cvtColor(frame2, cv2.COLOR_RGB2GRAY)
+
+        # Resize for faster comparison
+        gray1 = cv2.resize(gray1, (resize_dim, resize_dim))
+        gray2 = cv2.resize(gray2, (resize_dim, resize_dim))
+
+        # SSIM constants
+        C1 = (0.01 * 255) ** 2
+        C2 = (0.03 * 255) ** 2
+
+        # Convert to float
+        img1 = gray1.astype(np.float64)
+        img2 = gray2.astype(np.float64)
+
+        # Calculate means using Gaussian blur
+        mu1 = cv2.GaussianBlur(img1, (11, 11), 1.5)
+        mu2 = cv2.GaussianBlur(img2, (11, 11), 1.5)
+
+        mu1_sq = mu1 ** 2
+        mu2_sq = mu2 ** 2
+        mu1_mu2 = mu1 * mu2
+
+        # Calculate variances and covariance
+        sigma1_sq = cv2.GaussianBlur(img1 ** 2, (11, 11), 1.5) - mu1_sq
+        sigma2_sq = cv2.GaussianBlur(img2 ** 2, (11, 11), 1.5) - mu2_sq
+        sigma12 = cv2.GaussianBlur(img1 * img2, (11, 11), 1.5) - mu1_mu2
+
+        # Calculate SSIM
+        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
+                   ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+
+        ssim = float(np.mean(ssim_map))
+        return max(0.0, min(1.0, ssim))
+
+    def is_similar(
+        self,
+        frame1: np.ndarray,
+        frame2: np.ndarray,
+        threshold: float = SIMILARITY_THRESHOLD
+    ) -> bool:
+        """
+        Check if two frames are too similar using SSIM (Story P9-2.2).
+
+        Args:
+            frame1: First frame as RGB numpy array
+            frame2: Second frame as RGB numpy array
+            threshold: SSIM threshold (default 0.95). Frames above this are similar.
+
+        Returns:
+            True if frames are too similar (SSIM > threshold), False otherwise
+        """
+        ssim = self._calculate_ssim(frame1, frame2)
+        return ssim > threshold
+
+    def filter_similar_frames(
+        self,
+        frames: List[np.ndarray],
+        threshold: float = SIMILARITY_THRESHOLD,
+        indices: Optional[List[int]] = None
+    ) -> Tuple[List[np.ndarray], List[int]]:
+        """
+        Filter out consecutive frames that are too similar (Story P9-2.2).
+
+        Compares each frame to the last kept frame. If similarity > threshold,
+        the frame is discarded. Always keeps the first frame.
+
+        Args:
+            frames: List of frames as RGB numpy arrays
+            threshold: SSIM threshold (default 0.95). Frames above this are filtered.
+            indices: Optional list of original frame indices. If provided, filtered
+                    indices are returned alongside filtered frames.
+
+        Returns:
+            Tuple of (filtered_frames, filtered_indices)
+            - filtered_frames: List of unique frames
+            - filtered_indices: List of original indices for kept frames
+
+        Example:
+            100 raw frames → filter_similar_frames() → 45 unique frames
+        """
+        import time
+        start_time = time.time()
+
+        if not frames:
+            logger.warning(
+                "No frames provided to filter_similar_frames",
+                extra={"event_type": "similarity_filter_empty_input"}
+            )
+            return [], []
+
+        input_count = len(frames)
+
+        # Generate indices if not provided
+        if indices is None:
+            indices = list(range(len(frames)))
+
+        # Always keep the first frame
+        filtered_frames = [frames[0]]
+        filtered_indices = [indices[0]]
+        last_kept_frame = frames[0]
+
+        # Compare each subsequent frame to the last kept frame
+        for i in range(1, len(frames)):
+            if not self.is_similar(frames[i], last_kept_frame, threshold):
+                # Frame is different enough, keep it
+                filtered_frames.append(frames[i])
+                filtered_indices.append(indices[i])
+                last_kept_frame = frames[i]
+
+        output_count = len(filtered_frames)
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        # AC-2.2.4: Log filter ratio
+        logger.info(
+            f"Filtered {input_count}→{output_count} frames (threshold={threshold})",
+            extra={
+                "event_type": "similarity_filter_complete",
+                "input_count": input_count,
+                "output_count": output_count,
+                "filtered_count": input_count - output_count,
+                "threshold": threshold,
+                "elapsed_ms": round(elapsed_ms, 2)
+            }
+        )
+
+        return filtered_frames, filtered_indices
 
     def _is_frame_usable(self, frame: np.ndarray) -> bool:
         """
