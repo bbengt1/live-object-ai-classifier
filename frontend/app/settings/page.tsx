@@ -558,6 +558,43 @@ export default function SettingsPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Story P9-3.2: OCR Frame Overlay Extraction */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="attempt-ocr-extraction" className="text-sm font-medium">
+                          OCR Frame Overlay Extraction
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          Attempt to extract timestamp and camera name from video frame overlays using OCR.
+                        </p>
+                      </div>
+                      <Switch
+                        id="attempt-ocr-extraction"
+                        checked={form.watch('attempt_ocr_extraction') || false}
+                        onCheckedChange={async (checked) => {
+                          try {
+                            await apiClient.settings.update({ attempt_ocr_extraction: checked });
+                            form.setValue('attempt_ocr_extraction', checked, { shouldDirty: false });
+                            toast.success(checked ? 'OCR extraction enabled' : 'OCR extraction disabled');
+                          } catch (error) {
+                            console.error('Failed to save OCR setting:', error);
+                            toast.error('Failed to save setting');
+                          }
+                        }}
+                      />
+                    </div>
+                    {form.watch('attempt_ocr_extraction') && (
+                      <div className="p-3 rounded-md bg-muted/50 border">
+                        <p className="text-xs text-muted-foreground">
+                          <strong>Note:</strong> OCR extraction is CPU-intensive and requires Tesseract to be installed
+                          on the server. This feature attempts to read embedded timestamps and camera names from
+                          security camera overlays, supplementing database metadata for more accurate context.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
 

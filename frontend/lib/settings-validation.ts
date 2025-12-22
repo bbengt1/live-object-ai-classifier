@@ -20,6 +20,8 @@ export const generalSettingsSchema = z.object({
   // Story P8-3.2: Full motion video storage
   store_motion_videos: z.boolean().optional(),
   video_retention_days: z.number().min(1).max(365).optional(),
+  // Story P9-3.2: OCR frame overlay extraction
+  attempt_ocr_extraction: z.boolean().optional(),
 });
 
 // AI Models Settings Schema

@@ -56,6 +56,9 @@ export interface SystemSettings {
   // Story P8-3.2: Full Motion Video Storage
   store_motion_videos?: boolean;  // Download and store full motion videos (default: false)
   video_retention_days?: number;  // Days to retain videos (default: 30)
+
+  // Story P9-3.2: OCR Frame Overlay Extraction
+  attempt_ocr_extraction?: boolean;  // Attempt OCR on frame overlays (default: false)
 }
 
 export interface StorageStats {

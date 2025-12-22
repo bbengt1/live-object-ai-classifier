@@ -198,6 +198,12 @@ class SystemSettings(BaseModel):
         description="Number of days to retain stored videos (separate from event retention)"
     )
 
+    # Story P9-3.2: OCR Frame Overlay Extraction
+    attempt_ocr_extraction: bool = Field(
+        default=False,
+        description="Attempt to extract timestamp/camera name from video frame overlays using OCR (CPU intensive, requires tesseract)"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -339,6 +345,11 @@ class SystemSettingsUpdate(BaseModel):
     )
     video_retention_days: Optional[int] = Field(
         None, ge=1, le=365, description="Number of days to retain stored videos (default: 30)"
+    )
+
+    # Story P9-3.2: OCR Frame Overlay Extraction
+    attempt_ocr_extraction: Optional[bool] = Field(
+        None, description="Attempt to extract timestamp/camera name from video frame overlays using OCR (default: false)"
     )
 
 
