@@ -1,6 +1,6 @@
 # Story P9-3.6: Include Summary Feedback in AI Accuracy Stats
 
-Status: ready for review
+Status: done
 
 ## Story
 

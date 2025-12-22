@@ -523,7 +523,7 @@ development_status:
   p9-3-3-implement-package-false-positive-feedback: done
   p9-3-4-add-summary-feedback-buttons: done
   p9-3-5-add-summary-prompt-customization: done
-  p9-3-6-include-summary-feedback-in-ai-accuracy-stats: backlog
+  p9-3-6-include-summary-feedback-in-ai-accuracy-stats: done  # PR #144
   epic-p9-3-retrospective: optional
 
   # Epic P9-4: Entity Management
