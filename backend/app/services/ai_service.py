@@ -38,6 +38,7 @@ from app.utils.encryption import decrypt_password
 from app.models.system_setting import SystemSetting
 from app.models.ai_usage import AIUsage
 from app.services.cost_tracker import get_cost_tracker
+from app.services.ocr_service import OCRResult, extract_overlay_text, is_ocr_available
 
 logger = logging.getLogger(__name__)
 
@@ -185,15 +186,21 @@ def get_time_of_day_category(hour: int) -> str:
         return "night"
 
 
-def build_context_prompt(camera_name: str, timestamp: str) -> str:
-    """Build human-readable context prompt for AI (Story P9-3.1)
+def build_context_prompt(
+    camera_name: str,
+    timestamp: str,
+    ocr_result: Optional[OCRResult] = None
+) -> str:
+    """Build human-readable context prompt for AI (Story P9-3.1, P9-3.2)
 
     Formats camera name and timestamp into a natural context string that
-    the AI can reference in its descriptions.
+    the AI can reference in its descriptions. When OCR data is available,
+    it supplements or validates the database metadata.
 
     Args:
-        camera_name: Name of the camera (e.g., "Front Door")
+        camera_name: Name of the camera from database (e.g., "Front Door")
         timestamp: ISO 8601 timestamp string (e.g., "2025-12-22T07:15:00+00:00")
+        ocr_result: Optional OCR extraction result from frame overlay (Story P9-3.2)
 
     Returns:
         Context string like:
@@ -206,6 +213,18 @@ def build_context_prompt(camera_name: str, timestamp: str) -> str:
         >>> build_context_prompt("Backyard", "2025-12-22T22:30:00+00:00")
         'Context: This footage is from the "Backyard" camera at 10:30 PM on Sunday, December 22, 2025 (night).'
     """
+    # Story P9-3.2: Use OCR data to supplement database metadata when available
+    effective_camera_name = camera_name
+    if ocr_result and ocr_result.camera_name:
+        # OCR found camera name - use it if database name is generic
+        if camera_name.lower() in ['camera', 'camera 1', 'cam', 'ch1', 'channel 1']:
+            effective_camera_name = ocr_result.camera_name
+            logger.debug(f"Using OCR camera name '{ocr_result.camera_name}' instead of generic '{camera_name}'")
+        else:
+            # Log if OCR name differs (for debugging)
+            if ocr_result.camera_name.lower() != camera_name.lower():
+                logger.debug(f"OCR camera name '{ocr_result.camera_name}' differs from DB '{camera_name}'")
+
     try:
         # Parse ISO 8601 timestamp
         dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
@@ -219,12 +238,16 @@ def build_context_prompt(camera_name: str, timestamp: str) -> str:
         # Get time of day category
         time_category = get_time_of_day_category(dt.hour)
 
-        return f'Context: This footage is from the "{camera_name}" camera at {time_str} on {date_str} ({time_category}).'
+        # Story P9-3.2: Note if OCR provided supplementary timestamp
+        if ocr_result and ocr_result.timestamp:
+            logger.debug(f"OCR timestamp '{ocr_result.timestamp}' found (using DB timestamp for reliability)")
+
+        return f'Context: This footage is from the "{effective_camera_name}" camera at {time_str} on {date_str} ({time_category}).'
 
     except (ValueError, AttributeError) as e:
         # Fallback to simple format if parsing fails
         logger.warning(f"Failed to parse timestamp '{timestamp}': {e}")
-        return f'Context: This footage is from the "{camera_name}" camera at {timestamp}.'
+        return f'Context: This footage is from the "{effective_camera_name}" camera at {timestamp}.'
 
 
 class AIProvider(Enum):
