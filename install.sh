@@ -329,14 +329,19 @@ configure_linux_system() {
         print_step "Configuring firewall ports..."
         # Check if firewalld is running
         if systemctl is-active --quiet firewalld 2>/dev/null; then
-            # Add ports
+            # Add ports for frontend and backend
             firewall-cmd --add-port=3000/tcp --permanent 2>/dev/null || \
                 print_warning "Could not add port 3000 (may need root)"
             firewall-cmd --add-port=8000/tcp --permanent 2>/dev/null || \
                 print_warning "Could not add port 8000 (may need root)"
+            # Add HomeKit port and mDNS for Apple Home integration
+            firewall-cmd --add-port=51826/tcp --permanent 2>/dev/null || \
+                print_warning "Could not add port 51826/HomeKit (may need root)"
+            firewall-cmd --add-service=mdns --permanent 2>/dev/null || \
+                print_warning "Could not add mDNS service (may need root)"
             firewall-cmd --reload 2>/dev/null || \
                 print_warning "Could not reload firewall (may need root)"
-            print_success "Firewall ports 3000 and 8000 opened"
+            print_success "Firewall ports opened: 3000, 8000, 51826 (HomeKit), mDNS"
         else
             print_info "firewalld is not running, skipping firewall configuration"
         fi
@@ -344,7 +349,10 @@ configure_linux_system() {
         print_step "Configuring UFW firewall..."
         ufw allow 3000/tcp 2>/dev/null || print_warning "Could not add port 3000 (may need root)"
         ufw allow 8000/tcp 2>/dev/null || print_warning "Could not add port 8000 (may need root)"
-        print_success "Firewall ports 3000 and 8000 opened"
+        # Add HomeKit port and mDNS for Apple Home integration
+        ufw allow 51826/tcp 2>/dev/null || print_warning "Could not add port 51826/HomeKit (may need root)"
+        ufw allow 5353/udp 2>/dev/null || print_warning "Could not add port 5353/mDNS (may need root)"
+        print_success "Firewall ports opened: 3000, 8000, 51826 (HomeKit), 5353 (mDNS)"
     else
         print_info "No firewall detected, skipping firewall configuration"
     fi
