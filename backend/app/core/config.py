@@ -30,6 +30,12 @@ class Settings(BaseSettings):
         """Parse CORS_ORIGINS from comma-separated string"""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
+    # Cookie Settings (for HTTP vs HTTPS deployments)
+    # For HTTPS: COOKIE_SECURE=true, COOKIE_SAMESITE=none
+    # For HTTP:  COOKIE_SECURE=false, COOKIE_SAMESITE=lax
+    COOKIE_SECURE: bool = True  # Set to False for HTTP-only deployments
+    COOKIE_SAMESITE: str = "none"  # Use "lax" for HTTP-only deployments
+
     # Camera Settings
     MAX_CAMERAS: int = 1  # MVP limitation
     DEFAULT_FRAME_RATE: int = 5
