@@ -157,7 +157,7 @@ export function EventDetailModal({
 
   // Determine image source
   // thumbnail_path from DB is already full API path like "/api/v1/thumbnails/2025-11-25/uuid.jpg"
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
   const imageSrc = event.thumbnail_base64
     ? `data:image/jpeg;base64,${event.thumbnail_base64}`
     : event.thumbnail_path

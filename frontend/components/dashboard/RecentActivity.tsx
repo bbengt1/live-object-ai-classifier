@@ -99,7 +99,7 @@ export function RecentActivity() {
               >
                 {/* Thumbnail */}
                 {(() => {
-                  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+                  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
                   // thumbnail_path from DB is already full API path like "/api/v1/thumbnails/2025-11-25/uuid.jpg"
                   const src = event.thumbnail_base64
                     ? event.thumbnail_base64.startsWith('data:')

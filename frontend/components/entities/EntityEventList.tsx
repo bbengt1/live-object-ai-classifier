@@ -52,7 +52,7 @@ function parseUTCTimestamp(timestamp: string): Date {
  * EntityEventList component with pagination and remove functionality
  */
 export function EntityEventList({ entityId, onEventClick }: EntityEventListProps) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
   const [page, setPage] = useState(1);
   const limit = 20;
 

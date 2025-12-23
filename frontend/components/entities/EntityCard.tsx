@@ -79,7 +79,7 @@ export const EntityCard = memo(function EntityCard({
   onSelect,
   selectionDisabled = false,
 }: EntityCardProps) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
 
   // Story P7-4.3: Modal state for EntityAlertModal (AC1)
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);

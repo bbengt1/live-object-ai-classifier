@@ -134,7 +134,7 @@ export function useEntityEvents(
         };
       }
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/context/entities/${entityId}/events?page=${page}&limit=${limit}`,
+        `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/v1/context/entities/${entityId}/events?page=${page}&limit=${limit}`,
         { credentials: 'include' }
       );
       if (!response.ok) {
@@ -171,7 +171,7 @@ export function useUnlinkEvent() {
       eventId: string;
     }): Promise<UnlinkEventResponse> => {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/context/entities/${entityId}/events/${eventId}`,
+        `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/v1/context/entities/${entityId}/events/${eventId}`,
         {
           method: 'DELETE',
           credentials: 'include',
@@ -222,7 +222,7 @@ export function useAssignEventToEntity() {
       entityId: string;
     }): Promise<AssignEventResponse> => {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/context/events/${eventId}/entity`,
+        `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/v1/context/events/${eventId}/entity`,
         {
           method: 'POST',
           credentials: 'include',
@@ -281,7 +281,7 @@ export function useMergeEntities() {
       secondaryEntityId: string;
     }): Promise<MergeEntitiesResponse> => {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/context/entities/merge`,
+        `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/v1/context/entities/merge`,
         {
           method: 'POST',
           credentials: 'include',

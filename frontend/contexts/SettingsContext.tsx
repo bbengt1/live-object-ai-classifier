@@ -45,7 +45,7 @@ const defaultSettings: SystemSettings = {
   defaultMotionSensitivity: 'medium',
   theme: 'system',
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  backendUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  backendUrl: process.env.NEXT_PUBLIC_API_URL ?? '',
   systemName: 'ArgusAI', // BUG-003: Default system name
 };
 

@@ -89,7 +89,9 @@ import type {
   ITestConnectionResponse,
 } from '@/types/discovery';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Use empty string for relative URLs when proxying through Next.js rewrites
+// Set NEXT_PUBLIC_API_URL='' to use relative URLs (recommended for SSL frontend + non-SSL backend)
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 const API_V1_PREFIX = '/api/v1';
 
 // Exported types for Protect cameras

@@ -67,7 +67,7 @@ export function EntityDetail({
   onClose,
   onDelete,
 }: EntityDetailProps) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
 
   // Fetch full entity detail with recent events
   const { data: entityDetail, isLoading } = useEntity(entity?.id ?? null, 20);

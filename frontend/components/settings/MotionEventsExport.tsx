@@ -82,7 +82,7 @@ export function MotionEventsExport() {
 
       // Make the API request
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/motion-events/export?${params.toString()}`,
+        `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/v1/motion-events/export?${params.toString()}`,
         {
           method: 'GET',
           headers: {

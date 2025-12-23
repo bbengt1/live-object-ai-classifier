@@ -8,12 +8,17 @@ const nextConfig: NextConfig = {
     dangerouslyAllowSVG: true,
   },
   // Proxy API requests to backend to avoid CORS issues
+  // Uses BACKEND_URL (server-side only) for internal proxying
   async rewrites() {
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     return [
       {
         source: '/api/v1/:path*',
         destination: `${backendUrl}/api/v1/:path*`,
+      },
+      {
+        source: '/ws/:path*',
+        destination: `${backendUrl}/ws/:path*`,
       },
     ];
   },

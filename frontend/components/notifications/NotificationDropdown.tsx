@@ -140,7 +140,7 @@ interface NotificationItemProps {
 }
 
 function NotificationItem({ notification, onClick, onDelete }: NotificationItemProps) {
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
   const isDoorbellRing = notification.is_doorbell_ring;
 
   // Format relative timestamp

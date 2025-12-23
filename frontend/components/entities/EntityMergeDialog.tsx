@@ -63,7 +63,7 @@ function EntityPreview({
   isSelected: boolean;
   onClick: () => void;
 }) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
   const thumbnailUrl = entity.thumbnail_path
     ? entity.thumbnail_path.startsWith('http')
       ? entity.thumbnail_path

@@ -61,7 +61,7 @@ export const DoorbellEventCard = memo(function DoorbellEventCard({
   const relativeTime = formatRelativeTime(eventDate);
 
   // Determine thumbnail source
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
   const thumbnailSrc = event.thumbnail_base64
     ? `data:image/jpeg;base64,${event.thumbnail_base64}`
     : event.thumbnail_path
