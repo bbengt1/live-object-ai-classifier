@@ -5,18 +5,24 @@ This module provides entity matching functionality for identifying and tracking
 recurring visitors using CLIP embeddings. It enables recognition of familiar
 faces/vehicles with "first seen", "last seen", and visit count.
 
+Story P9-4.1: Added vehicle entity extraction with signature-based matching
+for improved vehicle separation based on color, make, and model.
+
 Architecture:
     - Uses SimilarityService for batch cosine similarity calculations
     - Caches entity embeddings in memory for fast matching
     - Configurable similarity threshold (default 0.75)
     - SQLite-compatible (no pgvector required)
+    - P9-4.1: Signature-based matching for vehicles takes priority over embeddings
 
 Flow:
     Event → EmbeddingService (P4-3.1) → EntityService.match_or_create_entity()
                                                ↓
                                     Load entity embeddings (cache or DB)
                                                ↓
-                                    Batch cosine similarity
+                        [Vehicle?] → Try signature-based matching first (P9-4.1)
+                                               ↓
+                                    Batch cosine similarity (fallback)
                                                ↓
                               ┌───────────────┴───────────────┐
                               │                               │
@@ -32,6 +38,7 @@ Flow:
 """
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -48,6 +55,203 @@ from app.services.similarity_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Story P9-4.1: Vehicle extraction constants
+VEHICLE_COLORS = [
+    "white", "black", "silver", "gray", "grey", "red", "blue",
+    "green", "brown", "tan", "beige", "gold", "yellow", "orange",
+    "purple", "maroon", "navy", "dark", "light", "bright"
+]
+
+VEHICLE_MAKES = [
+    # American
+    "ford", "chevrolet", "chevy", "gmc", "dodge", "ram", "jeep", "chrysler",
+    "lincoln", "cadillac", "buick", "tesla", "rivian",
+    # Japanese
+    "toyota", "honda", "nissan", "mazda", "subaru", "mitsubishi", "lexus",
+    "acura", "infiniti", "suzuki",
+    # Korean
+    "hyundai", "kia", "genesis",
+    # German
+    "bmw", "mercedes", "mercedes-benz", "audi", "volkswagen", "vw", "porsche",
+    # European
+    "volvo", "jaguar", "land rover", "range rover", "mini", "fiat", "alfa romeo",
+]
+
+# Common vehicle models for extraction
+VEHICLE_MODELS = [
+    # Toyota
+    "camry", "corolla", "rav4", "highlander", "tacoma", "tundra", "prius", "4runner",
+    # Honda
+    "civic", "accord", "cr-v", "pilot", "odyssey", "fit", "hr-v",
+    # Ford
+    "f-150", "f150", "f-250", "f250", "mustang", "explorer", "escape", "bronco", "ranger",
+    # Chevrolet
+    "silverado", "malibu", "equinox", "tahoe", "suburban", "colorado", "camaro", "corvette",
+    # Nissan
+    "altima", "sentra", "rogue", "pathfinder", "frontier", "maxima", "murano",
+    # BMW
+    "3 series", "5 series", "x3", "x5", "m3", "m5",
+    # Tesla
+    "model 3", "model s", "model x", "model y", "cybertruck",
+    # Jeep
+    "wrangler", "grand cherokee", "cherokee", "compass", "gladiator",
+    # Others
+    "outback", "forester", "cx-5", "cx-9", "elantra", "sonata", "tucson", "santa fe",
+]
+
+# Words to skip when extracting models (common words that aren't models)
+SKIP_WORDS = [
+    # Vehicle types
+    "car", "truck", "van", "suv", "vehicle", "auto", "sedan", "coupe",
+    "hatchback", "convertible", "wagon", "crossover", "pickup", "minivan",
+    # Verbs/actions
+    "pulling", "parked", "driving", "arrived", "leaving", "stopped",
+    "turning", "moving", "approaching", "backing", "entering", "exiting",
+    # Common words
+    "is", "was", "has", "had", "the", "at", "in", "on", "to", "from",
+    "just", "still", "now", "then", "here", "there", "this", "that",
+    # Adjectives
+    "small", "large", "big", "old", "new", "used", "nice", "beautiful",
+]
+
+
+@dataclass
+class VehicleEntityInfo:
+    """Extracted vehicle entity information from AI description."""
+    color: Optional[str]
+    make: Optional[str]
+    model: Optional[str]
+    signature: Optional[str]
+
+    def is_valid(self) -> bool:
+        """Check if minimum data requirements are met (color+make OR make+model)."""
+        has_color = self.color is not None
+        has_make = self.make is not None
+        has_model = self.model is not None
+        return (has_color and has_make) or (has_make and has_model)
+
+
+def extract_vehicle_entity(description: str) -> Optional[VehicleEntityInfo]:
+    """
+    Extract vehicle details from AI description (Story P9-4.1).
+
+    Args:
+        description: AI-generated event description
+
+    Returns:
+        VehicleEntityInfo with color, make, model, signature if sufficient data.
+        None if insufficient data (need color+make OR make+model).
+
+    Examples:
+        >>> extract_vehicle_entity("A white Toyota Camry pulled into the driveway")
+        VehicleEntityInfo(color='white', make='toyota', model='camry', signature='white-toyota-camry')
+
+        >>> extract_vehicle_entity("Black Ford F-150 parked on street")
+        VehicleEntityInfo(color='black', make='ford', model='f150', signature='black-ford-f150')
+
+        >>> extract_vehicle_entity("A red car passed by")  # Only color, no make/model
+        None
+    """
+    if not description:
+        return None
+
+    desc_lower = description.lower()
+
+    # Extract color
+    extracted_color = None
+    for color in VEHICLE_COLORS:
+        if re.search(rf'\b{color}\b', desc_lower):
+            # Normalize gray/grey
+            if color == "grey":
+                color = "gray"
+            extracted_color = color
+            break
+
+    # Extract make - find first occurrence in text
+    extracted_make = None
+    earliest_pos = len(desc_lower) + 1
+
+    for make in VEHICLE_MAKES:
+        match = re.search(rf'\b{re.escape(make)}\b', desc_lower)
+        if match and match.start() < earliest_pos:
+            earliest_pos = match.start()
+            # Normalize make names
+            if make in ["chevy"]:
+                extracted_make = "chevrolet"
+            elif make in ["vw"]:
+                extracted_make = "volkswagen"
+            elif make in ["mercedes-benz"]:
+                extracted_make = "mercedes"
+            elif make in ["range rover"]:
+                extracted_make = "land rover"
+            else:
+                extracted_make = make
+
+    # Extract model from known models list
+    extracted_model = None
+    for model in VEHICLE_MODELS:
+        # Handle models with special chars like F-150
+        model_pattern = re.escape(model).replace(r'\-', r'[-\s]?')
+        if re.search(rf'\b{model_pattern}\b', desc_lower):
+            # Normalize model names (remove hyphens, standardize)
+            normalized_model = model.replace("-", "").replace(" ", "")
+            extracted_model = normalized_model
+            break
+
+    # If no model from known list, try pattern-based extraction
+    if not extracted_model and extracted_make:
+        # Try to match "make model" pattern
+        make_pattern = re.escape(extracted_make)
+        pattern = rf'\b{make_pattern}\s+(\w+[-\w]*)\b'
+        match = re.search(pattern, desc_lower)
+        if match:
+            potential_model = match.group(1)
+            if potential_model not in SKIP_WORDS and len(potential_model) >= 2:
+                extracted_model = potential_model.replace("-", "")
+
+    # Build VehicleEntityInfo
+    info = VehicleEntityInfo(
+        color=extracted_color,
+        make=extracted_make,
+        model=extracted_model,
+        signature=None
+    )
+
+    # Only set signature if minimum data requirements met
+    if info.is_valid():
+        # Build signature from parts
+        signature_parts = []
+        if info.color:
+            signature_parts.append(info.color.lower())
+        if info.make:
+            signature_parts.append(info.make.lower())
+        if info.model:
+            signature_parts.append(info.model.lower())
+        info.signature = "-".join(signature_parts)
+
+        logger.debug(
+            f"Vehicle entity extracted: {info.signature}",
+            extra={
+                "event_type": "vehicle_entity_extracted",
+                "color": info.color,
+                "make": info.make,
+                "model": info.model,
+                "signature": info.signature,
+            }
+        )
+        return info
+
+    logger.debug(
+        f"Insufficient vehicle data for entity: color={extracted_color}, make={extracted_make}, model={extracted_model}",
+        extra={
+            "event_type": "vehicle_entity_insufficient_data",
+            "color": extracted_color,
+            "make": extracted_make,
+            "model": extracted_model,
+        }
+    )
+    return None
 
 
 @dataclass
@@ -352,6 +556,170 @@ class EntityService:
             )
             return None
 
+    def _find_entity_by_vehicle_signature(
+        self,
+        db: Session,
+        signature: str,
+    ) -> Optional[str]:
+        """
+        Find a vehicle entity by its signature (Story P9-4.1).
+
+        Args:
+            db: SQLAlchemy database session
+            signature: Vehicle signature string (e.g., "white-toyota-camry")
+
+        Returns:
+            Entity ID if found, None otherwise
+        """
+        from app.models.recognized_entity import RecognizedEntity
+
+        entity = db.query(RecognizedEntity.id).filter(
+            RecognizedEntity.entity_type == "vehicle",
+            RecognizedEntity.vehicle_signature == signature
+        ).first()
+
+        if entity:
+            logger.debug(
+                f"Found vehicle entity by signature: {signature} -> {entity.id}",
+                extra={
+                    "event_type": "vehicle_signature_match",
+                    "signature": signature,
+                    "entity_id": entity.id,
+                }
+            )
+            return entity.id
+        return None
+
+    async def match_or_create_vehicle_entity(
+        self,
+        db: Session,
+        event_id: str,
+        embedding: list[float],
+        description: Optional[str] = None,
+        threshold: float = DEFAULT_THRESHOLD,
+    ) -> EntityMatchResult:
+        """
+        Match or create a vehicle entity with signature-based matching (Story P9-4.1).
+
+        This method first attempts signature-based matching before falling back to
+        embedding-based matching. This ensures vehicles with the same color/make/model
+        are grouped together even if their embeddings differ slightly.
+
+        Args:
+            db: SQLAlchemy database session
+            event_id: UUID of the event being matched
+            embedding: CLIP embedding vector (512-dim)
+            description: AI-generated event description for vehicle extraction
+            threshold: Minimum similarity score for embedding matching (default 0.75)
+
+        Returns:
+            EntityMatchResult with entity details and match info
+        """
+        from app.models.recognized_entity import RecognizedEntity, EntityEvent
+        from app.models.event import Event
+
+        start_time = time.time()
+
+        # Get event timestamp
+        event = db.query(Event.timestamp).filter(Event.id == event_id).first()
+        event_timestamp = event.timestamp if event else datetime.now(timezone.utc)
+
+        # Try to extract vehicle info from description
+        vehicle_info = None
+        if description:
+            vehicle_info = extract_vehicle_entity(description)
+
+        # Priority 1: Signature-based matching (P9-4.1)
+        if vehicle_info and vehicle_info.signature:
+            existing_entity_id = self._find_entity_by_vehicle_signature(
+                db, vehicle_info.signature
+            )
+            if existing_entity_id:
+                result = await self._update_existing_entity(
+                    db, existing_entity_id, event_id, 0.95, event_timestamp
+                )
+                match_time_ms = (time.time() - start_time) * 1000
+                logger.info(
+                    f"Vehicle matched by signature: {vehicle_info.signature}",
+                    extra={
+                        "event_type": "vehicle_signature_matched",
+                        "event_id": event_id,
+                        "entity_id": existing_entity_id,
+                        "signature": vehicle_info.signature,
+                        "match_time_ms": round(match_time_ms, 2),
+                    }
+                )
+                return result
+
+        # Priority 2: Embedding-based matching (fallback)
+        if not self._cache_loaded:
+            self._load_entity_cache(db)
+
+        # If no entities exist, create first one
+        if not self._entity_cache:
+            result = await self._create_new_entity(
+                db, event_id, embedding, "vehicle", event_timestamp, vehicle_info
+            )
+            match_time_ms = (time.time() - start_time) * 1000
+            logger.info(
+                f"First vehicle entity created for event {event_id}",
+                extra={
+                    "event_type": "vehicle_entity_created_first",
+                    "event_id": event_id,
+                    "entity_id": result.entity_id,
+                    "signature": vehicle_info.signature if vehicle_info else None,
+                    "match_time_ms": round(match_time_ms, 2),
+                }
+            )
+            return result
+
+        # Calculate similarity with all existing entities
+        entity_ids = list(self._entity_cache.keys())
+        entity_embeddings = [self._entity_cache[eid] for eid in entity_ids]
+        similarities = batch_cosine_similarity(embedding, entity_embeddings)
+
+        # Find best match above threshold
+        best_idx = -1
+        best_score = -1.0
+        for i, score in enumerate(similarities):
+            if score >= threshold and score > best_score:
+                best_idx = i
+                best_score = score
+
+        match_time_ms = (time.time() - start_time) * 1000
+
+        if best_idx >= 0:
+            matched_entity_id = entity_ids[best_idx]
+            result = await self._update_existing_entity(
+                db, matched_entity_id, event_id, best_score, event_timestamp
+            )
+            logger.info(
+                f"Vehicle matched by embedding for event {event_id}",
+                extra={
+                    "event_type": "vehicle_embedding_matched",
+                    "event_id": event_id,
+                    "entity_id": matched_entity_id,
+                    "similarity_score": round(best_score, 4),
+                    "match_time_ms": round(match_time_ms, 2),
+                }
+            )
+            return result
+        else:
+            result = await self._create_new_entity(
+                db, event_id, embedding, "vehicle", event_timestamp, vehicle_info
+            )
+            logger.info(
+                f"New vehicle entity created for event {event_id}",
+                extra={
+                    "event_type": "vehicle_entity_created_new",
+                    "event_id": event_id,
+                    "entity_id": result.entity_id,
+                    "signature": vehicle_info.signature if vehicle_info else None,
+                    "match_time_ms": round(match_time_ms, 2),
+                }
+            )
+            return result
+
     async def _create_new_entity(
         self,
         db: Session,
@@ -359,6 +727,7 @@ class EntityService:
         embedding: list[float],
         entity_type: str,
         event_timestamp: datetime,
+        vehicle_info: Optional[VehicleEntityInfo] = None,
     ) -> EntityMatchResult:
         """Create a new entity and link it to the event."""
         from app.models.recognized_entity import RecognizedEntity, EntityEvent
@@ -366,7 +735,7 @@ class EntityService:
         entity_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
 
-        # Create entity
+        # Create entity with vehicle fields if applicable (P9-4.1)
         new_entity = RecognizedEntity(
             id=entity_id,
             entity_type=entity_type,
@@ -378,6 +747,14 @@ class EntityService:
             created_at=now,
             updated_at=now,
         )
+
+        # Set vehicle-specific fields if available
+        if vehicle_info and entity_type == "vehicle":
+            new_entity.vehicle_color = vehicle_info.color
+            new_entity.vehicle_make = vehicle_info.make
+            new_entity.vehicle_model = vehicle_info.model
+            new_entity.vehicle_signature = vehicle_info.signature
+
         db.add(new_entity)
 
         # Create entity-event link (similarity 1.0 for first occurrence)

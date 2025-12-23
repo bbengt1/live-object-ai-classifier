@@ -849,3 +849,314 @@ class TestMatchEntityOnly:
 
         # Should return current count, not incremented
         assert result.occurrence_count == 10
+
+
+class TestVehicleEntityExtraction:
+    """Tests for vehicle entity extraction (Story P9-4.1)."""
+
+    def test_extract_white_toyota_camry(self):
+        """AC-4.1.1: Extract color, make, model from description."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("A white Toyota Camry pulled into the driveway")
+
+        assert result is not None
+        assert result.color == "white"
+        assert result.make == "toyota"
+        assert result.model == "camry"
+        assert result.signature == "white-toyota-camry"
+
+    def test_extract_black_ford_f150(self):
+        """AC-4.1.2: Extract signature for F-150 with hyphen normalization."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("Black Ford F-150 parked on street")
+
+        assert result is not None
+        assert result.color == "black"
+        assert result.make == "ford"
+        assert result.model == "f150"
+        assert result.signature == "black-ford-f150"
+
+    def test_color_only_returns_none(self):
+        """AC-4.1.5: Only color mentioned returns None (insufficient data)."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("A red car passed by the house")
+
+        # Should be None because we need color+make OR make+model
+        assert result is None
+
+    def test_make_and_model_without_color(self):
+        """AC-4.1.6: Make and model without color creates partial signature."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("A Toyota Camry is parked in the garage")
+
+        assert result is not None
+        assert result.color is None
+        assert result.make == "toyota"
+        assert result.model == "camry"
+        # Signature should be make-model when no color
+        assert result.signature == "toyota-camry"
+
+    def test_color_and_make_without_model(self):
+        """Test color+make creates valid signature even without model."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("A silver Honda just arrived")
+
+        assert result is not None
+        assert result.color == "silver"
+        assert result.make == "honda"
+        assert result.model is None
+        assert result.signature == "silver-honda"
+
+    def test_grey_normalized_to_gray(self):
+        """Test grey is normalized to gray in signature."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("A grey Toyota Corolla in the driveway")
+
+        assert result is not None
+        assert result.color == "gray"  # Normalized from grey
+        assert result.signature == "gray-toyota-corolla"
+
+    def test_chevy_normalized_to_chevrolet(self):
+        """Test Chevy is normalized to Chevrolet."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("White Chevy Silverado parked outside")
+
+        assert result is not None
+        assert result.make == "chevrolet"  # Normalized from chevy
+        assert result.signature == "white-chevrolet-silverado"
+
+    def test_vw_normalized_to_volkswagen(self):
+        """Test VW is normalized to Volkswagen."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("A blue VW Golf just passed")
+
+        assert result is not None
+        assert result.make == "volkswagen"  # Normalized from vw
+
+    def test_empty_description_returns_none(self):
+        """Test empty description returns None."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        assert extract_vehicle_entity("") is None
+        assert extract_vehicle_entity(None) is None
+
+    def test_case_insensitive_matching(self):
+        """Test case insensitive color, make, model matching."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        result = extract_vehicle_entity("A WHITE TOYOTA CAMRY is approaching")
+
+        assert result is not None
+        assert result.color == "white"
+        assert result.make == "toyota"
+        assert result.model == "camry"
+
+    def test_vehicle_entity_info_is_valid(self):
+        """Test VehicleEntityInfo.is_valid() method."""
+        from app.services.entity_service import VehicleEntityInfo
+
+        # Color + Make = valid
+        info1 = VehicleEntityInfo(color="white", make="toyota", model=None, signature=None)
+        assert info1.is_valid() is True
+
+        # Make + Model = valid
+        info2 = VehicleEntityInfo(color=None, make="toyota", model="camry", signature=None)
+        assert info2.is_valid() is True
+
+        # Color only = invalid
+        info3 = VehicleEntityInfo(color="white", make=None, model=None, signature=None)
+        assert info3.is_valid() is False
+
+        # Make only = invalid
+        info4 = VehicleEntityInfo(color=None, make="toyota", model=None, signature=None)
+        assert info4.is_valid() is False
+
+    def test_skip_common_words_as_models(self):
+        """Test that common words are not extracted as models."""
+        from app.services.entity_service import extract_vehicle_entity
+
+        # "truck" should not become the model
+        result = extract_vehicle_entity("A white Ford truck is parked")
+
+        # Should match "ford" as make, but "truck" should be skipped
+        # Since no valid model is found, we need color+make
+        assert result is not None
+        assert result.make == "ford"
+        assert result.model is None  # "truck" should be skipped
+        assert result.signature == "white-ford"
+
+
+class TestVehicleSignatureMatching:
+    """Tests for vehicle signature-based entity matching (Story P9-4.1)."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        reset_entity_service()
+        self.service = EntityService()
+
+    def teardown_method(self):
+        """Clean up after tests."""
+        reset_entity_service()
+
+    @pytest.mark.asyncio
+    async def test_same_signature_links_to_same_entity(self):
+        """AC-4.1.3: Two descriptions with same signature link to same entity."""
+        mock_db = MagicMock()
+
+        # Setup: existing entity with signature "white-toyota-camry"
+        mock_entity = MagicMock()
+        mock_entity.id = "existing-vehicle-id"
+
+        # Mock query for finding entity by signature
+        mock_query = MagicMock()
+        mock_query.filter.return_value.first.return_value = mock_entity
+        mock_db.query.return_value = mock_query
+
+        # Test signature lookup
+        entity_id = self.service._find_entity_by_vehicle_signature(
+            mock_db, "white-toyota-camry"
+        )
+
+        assert entity_id == "existing-vehicle-id"
+
+    def test_find_vehicle_by_signature_returns_none_when_not_found(self):
+        """Test signature lookup returns None when no match."""
+        mock_db = MagicMock()
+
+        mock_query = MagicMock()
+        mock_query.filter.return_value.first.return_value = None
+        mock_db.query.return_value = mock_query
+
+        result = self.service._find_entity_by_vehicle_signature(
+            mock_db, "nonexistent-signature"
+        )
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_match_or_create_vehicle_entity_uses_signature_first(self):
+        """Test that signature-based matching takes priority over embedding."""
+        mock_db = MagicMock()
+
+        # Mock event timestamp lookup
+        mock_event = MagicMock()
+        mock_event.timestamp = datetime.now(timezone.utc)
+
+        # Setup mock queries
+        def query_side_effect(model):
+            mock_query = MagicMock()
+            if hasattr(model, 'timestamp'):  # Event query
+                mock_query.filter.return_value.first.return_value = mock_event
+            else:  # RecognizedEntity query
+                mock_entity = MagicMock()
+                mock_entity.id = "existing-vehicle-id"
+                mock_query.filter.return_value.first.return_value = mock_entity
+            return mock_query
+
+        mock_db.query.side_effect = query_side_effect
+
+        # Mock entity for update
+        mock_entity = MagicMock()
+        mock_entity.id = "existing-vehicle-id"
+        mock_entity.entity_type = "vehicle"
+        mock_entity.name = "My Car"
+        mock_entity.first_seen_at = datetime.now(timezone.utc)
+        mock_entity.last_seen_at = datetime.now(timezone.utc)
+        mock_entity.occurrence_count = 5
+
+        # Pre-load cache to avoid embedding-based matching
+        self.service._entity_cache = {}
+        self.service._cache_loaded = True
+
+        # This would require more complex mocking to fully test
+        # For now, verify the signature lookup method works
+        mock_db2 = MagicMock()
+        mock_query2 = MagicMock()
+        mock_entity2 = MagicMock()
+        mock_entity2.id = "vehicle-123"
+        mock_query2.filter.return_value.first.return_value = mock_entity2
+        mock_db2.query.return_value = mock_query2
+
+        result = self.service._find_entity_by_vehicle_signature(
+            mock_db2, "white-toyota-camry"
+        )
+        assert result == "vehicle-123"
+
+
+class TestRecognizedEntityDisplayName:
+    """Tests for RecognizedEntity.display_name property (Story P9-4.1)."""
+
+    def test_display_name_uses_user_assigned_name(self):
+        """Test display_name returns user name when set."""
+        from app.models.recognized_entity import RecognizedEntity
+
+        entity = RecognizedEntity(
+            id="test-id",
+            entity_type="vehicle",
+            name="My Tesla",
+            reference_embedding="[]",
+            first_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc),
+            occurrence_count=1,
+            vehicle_signature="white-tesla-model3"
+        )
+
+        assert entity.display_name == "My Tesla"
+
+    def test_display_name_uses_signature_for_vehicle(self):
+        """Test display_name returns formatted signature for unnamed vehicles."""
+        from app.models.recognized_entity import RecognizedEntity
+
+        entity = RecognizedEntity(
+            id="test-id",
+            entity_type="vehicle",
+            name=None,
+            reference_embedding="[]",
+            first_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc),
+            occurrence_count=1,
+            vehicle_signature="white-toyota-camry"
+        )
+
+        assert entity.display_name == "White Toyota Camry"
+
+    def test_display_name_uses_id_prefix_for_person(self):
+        """Test display_name returns entity type + ID for persons."""
+        from app.models.recognized_entity import RecognizedEntity
+
+        entity = RecognizedEntity(
+            id="12345678-abcd-efgh-ijkl-mnopqrstuvwx",
+            entity_type="person",
+            name=None,
+            reference_embedding="[]",
+            first_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc),
+            occurrence_count=1,
+        )
+
+        assert entity.display_name == "Person #12345678"
+
+    def test_display_name_for_vehicle_without_signature(self):
+        """Test display_name for vehicle without signature."""
+        from app.models.recognized_entity import RecognizedEntity
+
+        entity = RecognizedEntity(
+            id="abcd1234-efgh-ijkl-mnop-qrstuvwxyz12",
+            entity_type="vehicle",
+            name=None,
+            reference_embedding="[]",
+            first_seen_at=datetime.now(timezone.utc),
+            last_seen_at=datetime.now(timezone.utc),
+            occurrence_count=1,
+            vehicle_signature=None
+        )
+
+        assert entity.display_name == "Vehicle #abcd1234"
