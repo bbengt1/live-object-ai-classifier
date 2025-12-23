@@ -719,11 +719,20 @@ async def get_thumbnail(date: str, filename: str, request: Request):
     thumbnail_dir = os.path.join(os.path.dirname(__file__), 'data', 'thumbnails')
     file_path = os.path.join(thumbnail_dir, date, filename)
 
-    # Get origin for CORS
-    origin = request.headers.get("origin", "http://localhost:3000")
+    # Get origin for CORS - validate against allowed origins
+    origin = request.headers.get("origin", "")
+    if origin and origin in settings.cors_origins_list:
+        allowed_origin = origin
+    elif origin:
+        # Origin provided but not in allowed list - use first allowed origin
+        allowed_origin = settings.cors_origins_list[0] if settings.cors_origins_list else "*"
+    else:
+        # No origin header (direct image load) - allow all
+        allowed_origin = "*"
+
     cors_headers = {
-        "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Origin": allowed_origin,
+        "Access-Control-Allow-Credentials": "true" if allowed_origin != "*" else "false",
         "Cache-Control": "public, max-age=86400"
     }
 
