@@ -1563,6 +1563,129 @@ class EntityService:
             "entity_name": target_entity.name,
         }
 
+    async def merge_entities(
+        self,
+        db: Session,
+        primary_entity_id: str,
+        secondary_entity_id: str,
+    ) -> dict:
+        """
+        Merge two entities into one (Story P9-4.5).
+
+        Moves all events from the secondary entity to the primary entity,
+        creates EntityAdjustment records for ML training, updates occurrence
+        counts, and deletes the secondary entity.
+
+        Args:
+            db: SQLAlchemy database session
+            primary_entity_id: UUID of the entity to keep (receives all events)
+            secondary_entity_id: UUID of the entity to merge and delete
+
+        Returns:
+            Dict with success status, merged entity info, events moved count
+
+        Raises:
+            ValueError: If entities not found or are the same
+        """
+        from app.models.recognized_entity import RecognizedEntity, EntityEvent
+        from app.models.entity_adjustment import EntityAdjustment
+        from app.models.event import Event
+
+        # Validate inputs
+        if primary_entity_id == secondary_entity_id:
+            raise ValueError("Cannot merge an entity with itself")
+
+        # Get both entities
+        primary = db.query(RecognizedEntity).filter(
+            RecognizedEntity.id == primary_entity_id
+        ).first()
+        if not primary:
+            raise ValueError(f"Primary entity not found: {primary_entity_id}")
+
+        secondary = db.query(RecognizedEntity).filter(
+            RecognizedEntity.id == secondary_entity_id
+        ).first()
+        if not secondary:
+            raise ValueError(f"Secondary entity not found: {secondary_entity_id}")
+
+        # Get all events linked to secondary entity
+        secondary_event_links = db.query(EntityEvent).filter(
+            EntityEvent.entity_id == secondary_entity_id
+        ).all()
+
+        events_moved = 0
+        now = datetime.now(timezone.utc)
+
+        # Move each event and create adjustment records
+        for link in secondary_event_links:
+            # Get event description for ML training
+            event = db.query(Event.description).filter(
+                Event.id == link.event_id
+            ).first()
+            event_description = event.description if event else None
+
+            # Create EntityAdjustment record for merge operation
+            adjustment = EntityAdjustment(
+                event_id=link.event_id,
+                old_entity_id=secondary_entity_id,
+                new_entity_id=primary_entity_id,
+                action="merge",
+                event_description=event_description,
+            )
+            db.add(adjustment)
+
+            # Update the link to point to primary entity
+            link.entity_id = primary_entity_id
+            link.created_at = now  # Update timestamp
+
+            events_moved += 1
+
+        # Update primary entity occurrence count
+        primary.occurrence_count += secondary.occurrence_count
+        primary.updated_at = now
+
+        # Update last_seen_at if secondary was seen more recently
+        if secondary.last_seen_at > primary.last_seen_at:
+            primary.last_seen_at = secondary.last_seen_at
+
+        # Update first_seen_at if secondary was seen earlier
+        if secondary.first_seen_at < primary.first_seen_at:
+            primary.first_seen_at = secondary.first_seen_at
+
+        # Store secondary info before deletion
+        secondary_id = secondary.id
+        secondary_name = secondary.name
+
+        # Delete secondary entity (EntityEvent links already moved)
+        db.delete(secondary)
+
+        db.commit()
+
+        # Remove secondary from cache
+        if secondary_id in self._entity_cache:
+            del self._entity_cache[secondary_id]
+
+        logger.info(
+            f"Entities merged: {secondary_id} -> {primary_entity_id}",
+            extra={
+                "event_type": "entities_merged",
+                "primary_entity_id": primary_entity_id,
+                "secondary_entity_id": secondary_id,
+                "events_moved": events_moved,
+                "new_occurrence_count": primary.occurrence_count,
+            }
+        )
+
+        return {
+            "success": True,
+            "merged_entity_id": primary_entity_id,
+            "merged_entity_name": primary.name,
+            "events_moved": events_moved,
+            "deleted_entity_id": secondary_id,
+            "deleted_entity_name": secondary_name,
+            "message": f"Merged {events_moved} event(s) into {primary.name or 'entity'}",
+        }
+
 
 # Global singleton instance
 _entity_service: Optional[EntityService] = None

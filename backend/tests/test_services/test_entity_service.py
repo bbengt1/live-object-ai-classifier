@@ -1160,3 +1160,285 @@ class TestRecognizedEntityDisplayName:
         )
 
         assert entity.display_name == "Vehicle #abcd1234"
+
+
+class TestEntityServiceMerge:
+    """Tests for EntityService.merge_entities (Story P9-4.5)."""
+
+    @pytest.fixture
+    def mock_db(self):
+        """Create a mock database session."""
+        return MagicMock()
+
+    @pytest.fixture
+    def entity_service(self):
+        """Create an EntityService instance."""
+        return EntityService()
+
+    @pytest.mark.asyncio
+    async def test_merge_entities_success(self, entity_service, mock_db):
+        """Test successful merge of two entities (AC-4.5.5, AC-4.5.6).
+
+        This test verifies the core merge logic by mocking the database queries
+        to return controlled entity and event data.
+        """
+        from app.models.recognized_entity import RecognizedEntity, EntityEvent
+        from app.models.entity_adjustment import EntityAdjustment
+        from app.models.event import Event
+
+        # Create primary and secondary entities as MagicMock
+        now = datetime.now(timezone.utc)
+        primary = MagicMock()
+        primary.id = "primary-entity-id"
+        primary.name = "Primary Person"
+        primary.occurrence_count = 5
+        primary.first_seen_at = now - timedelta(days=10)
+        primary.last_seen_at = now - timedelta(days=2)
+        primary.updated_at = now
+
+        secondary = MagicMock()
+        secondary.id = "secondary-entity-id"
+        secondary.name = "Secondary Person"
+        secondary.occurrence_count = 3
+        secondary.first_seen_at = now - timedelta(days=5)
+        secondary.last_seen_at = now - timedelta(days=1)  # More recent
+
+        # Create event links for secondary entity
+        event_link = MagicMock()
+        event_link.entity_id = "secondary-entity-id"
+        event_link.event_id = "event-1"
+        event_link.created_at = now
+
+        # Mock event for description snapshot
+        mock_event_desc = MagicMock()
+        mock_event_desc.description = "Person walking"
+
+        # Track query call order with mutable container
+        call_order = {'count': 0}
+
+        def query_side_effect(*args):
+            query_mock = MagicMock()
+            filter_mock = MagicMock()
+            query_mock.filter.return_value = filter_mock
+
+            call_order['count'] += 1
+            call_num = call_order['count']
+
+            # Query 1: Get primary entity (RecognizedEntity)
+            if call_num == 1:
+                filter_mock.first.return_value = primary
+            # Query 2: Get secondary entity (RecognizedEntity)
+            elif call_num == 2:
+                filter_mock.first.return_value = secondary
+            # Query 3: Get event links (EntityEvent)
+            elif call_num == 3:
+                filter_mock.all.return_value = [event_link]
+            # Query 4+: Get event descriptions (Event.description)
+            else:
+                filter_mock.first.return_value = mock_event_desc
+
+            return query_mock
+
+        mock_db.query.side_effect = query_side_effect
+
+        # Execute merge
+        result = await entity_service.merge_entities(
+            db=mock_db,
+            primary_entity_id="primary-entity-id",
+            secondary_entity_id="secondary-entity-id",
+        )
+
+        # Verify result
+        assert result["success"] is True
+        assert result["merged_entity_id"] == "primary-entity-id"
+        assert result["events_moved"] == 1
+        assert result["deleted_entity_id"] == "secondary-entity-id"
+
+        # Verify primary occurrence count was updated
+        assert primary.occurrence_count == 8  # 5 + 3
+
+        # Verify event link was moved
+        assert event_link.entity_id == "primary-entity-id"
+
+        # Verify secondary was deleted
+        mock_db.delete.assert_called_with(secondary)
+        mock_db.commit.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_merge_entities_same_entity_error(self, entity_service, mock_db):
+        """Test error when trying to merge entity with itself (AC validation)."""
+        with pytest.raises(ValueError, match="Cannot merge an entity with itself"):
+            await entity_service.merge_entities(
+                db=mock_db,
+                primary_entity_id="same-entity-id",
+                secondary_entity_id="same-entity-id",
+            )
+
+    @pytest.mark.asyncio
+    async def test_merge_entities_primary_not_found(self, entity_service, mock_db):
+        """Test error when primary entity not found (AC validation)."""
+        mock_query = MagicMock()
+        mock_db.query.return_value = mock_query
+        mock_filter = MagicMock()
+        mock_query.filter.return_value = mock_filter
+        mock_filter.first.return_value = None
+
+        with pytest.raises(ValueError, match="Primary entity not found"):
+            await entity_service.merge_entities(
+                db=mock_db,
+                primary_entity_id="nonexistent-primary",
+                secondary_entity_id="secondary-entity-id",
+            )
+
+    @pytest.mark.asyncio
+    async def test_merge_entities_secondary_not_found(self, entity_service, mock_db):
+        """Test error when secondary entity not found (AC validation)."""
+        from app.models.recognized_entity import RecognizedEntity
+
+        primary = MagicMock(spec=RecognizedEntity)
+        primary.id = "primary-entity-id"
+
+        call_count = [0]
+
+        def query_side_effect(model):
+            query_mock = MagicMock()
+            filter_mock = MagicMock()
+            query_mock.filter.return_value = filter_mock
+
+            call_count[0] += 1
+            if call_count[0] == 1:
+                filter_mock.first.return_value = primary
+            else:
+                filter_mock.first.return_value = None
+
+            return query_mock
+
+        mock_db.query.side_effect = query_side_effect
+
+        with pytest.raises(ValueError, match="Secondary entity not found"):
+            await entity_service.merge_entities(
+                db=mock_db,
+                primary_entity_id="primary-entity-id",
+                secondary_entity_id="nonexistent-secondary",
+            )
+
+    @pytest.mark.asyncio
+    async def test_merge_entities_creates_adjustment_records(self, entity_service, mock_db):
+        """Test that merge creates EntityAdjustment records for ML training (AC-4.5.6)."""
+        from app.models.recognized_entity import RecognizedEntity, EntityEvent
+        from app.models.entity_adjustment import EntityAdjustment
+
+        now = datetime.now(timezone.utc)
+        primary = MagicMock(spec=RecognizedEntity)
+        primary.id = "primary-id"
+        primary.name = "Primary"
+        primary.occurrence_count = 2
+        primary.first_seen_at = now - timedelta(days=5)
+        primary.last_seen_at = now
+
+        secondary = MagicMock(spec=RecognizedEntity)
+        secondary.id = "secondary-id"
+        secondary.name = "Secondary"
+        secondary.occurrence_count = 3
+        secondary.first_seen_at = now - timedelta(days=10)
+        secondary.last_seen_at = now - timedelta(days=1)
+
+        # Multiple event links
+        event_links = [
+            MagicMock(spec=EntityEvent, entity_id="secondary-id", event_id=f"event-{i}")
+            for i in range(3)
+        ]
+
+        mock_event = MagicMock()
+        mock_event.description = "Test event"
+
+        call_count = [0]
+
+        def query_side_effect(model):
+            query_mock = MagicMock()
+            filter_mock = MagicMock()
+            query_mock.filter.return_value = filter_mock
+
+            call_count[0] += 1
+            if call_count[0] == 1:
+                filter_mock.first.return_value = primary
+            elif call_count[0] == 2:
+                filter_mock.first.return_value = secondary
+            elif call_count[0] == 3:
+                filter_mock.all.return_value = event_links
+            else:
+                filter_mock.first.return_value = mock_event
+
+            return query_mock
+
+        mock_db.query.side_effect = query_side_effect
+
+        added_adjustments = []
+        original_add = mock_db.add
+
+        def capture_add(obj):
+            added_adjustments.append(obj)
+
+        mock_db.add.side_effect = capture_add
+
+        result = await entity_service.merge_entities(
+            db=mock_db,
+            primary_entity_id="primary-id",
+            secondary_entity_id="secondary-id",
+        )
+
+        # Verify adjustment records were created
+        assert result["events_moved"] == 3
+        # Each event should have an adjustment record added
+        assert mock_db.add.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_merge_entities_updates_timestamps(self, entity_service, mock_db):
+        """Test that merge updates primary entity timestamps correctly."""
+        from app.models.recognized_entity import RecognizedEntity, EntityEvent
+
+        now = datetime.now(timezone.utc)
+
+        # Primary seen later, secondary seen earlier - should update first_seen
+        primary = MagicMock(spec=RecognizedEntity)
+        primary.id = "primary-id"
+        primary.name = "Primary"
+        primary.occurrence_count = 2
+        primary.first_seen_at = now - timedelta(days=5)  # Later
+        primary.last_seen_at = now - timedelta(days=2)   # Earlier
+
+        secondary = MagicMock(spec=RecognizedEntity)
+        secondary.id = "secondary-id"
+        secondary.name = "Secondary"
+        secondary.occurrence_count = 1
+        secondary.first_seen_at = now - timedelta(days=10)  # Earlier - should update primary
+        secondary.last_seen_at = now - timedelta(days=1)    # Later - should update primary
+
+        call_count = [0]
+
+        def query_side_effect(model):
+            query_mock = MagicMock()
+            filter_mock = MagicMock()
+            query_mock.filter.return_value = filter_mock
+
+            call_count[0] += 1
+            if call_count[0] == 1:
+                filter_mock.first.return_value = primary
+            elif call_count[0] == 2:
+                filter_mock.first.return_value = secondary
+            elif call_count[0] == 3:
+                filter_mock.all.return_value = []
+
+            return query_mock
+
+        mock_db.query.side_effect = query_side_effect
+
+        await entity_service.merge_entities(
+            db=mock_db,
+            primary_entity_id="primary-id",
+            secondary_entity_id="secondary-id",
+        )
+
+        # Verify primary timestamps were updated
+        assert primary.first_seen_at == secondary.first_seen_at
+        assert primary.last_seen_at == secondary.last_seen_at

@@ -1165,6 +1165,72 @@ async def delete_entity(
     # Return 204 No Content on success (implicit)
 
 
+# Story P9-4.5: Merge Entities Request/Response Models
+class MergeEntitiesRequest(BaseModel):
+    """Request model for merging two entities (Story P9-4.5)."""
+    primary_entity_id: str = Field(
+        description="UUID of the entity to keep (receives all events)"
+    )
+    secondary_entity_id: str = Field(
+        description="UUID of the entity to merge into primary and delete"
+    )
+
+
+class MergeEntitiesResponse(BaseModel):
+    """Response model for entity merge operation (Story P9-4.5)."""
+    success: bool = Field(description="Whether the merge succeeded")
+    merged_entity_id: str = Field(description="UUID of the primary entity that was kept")
+    merged_entity_name: Optional[str] = Field(
+        default=None, description="Name of the primary entity"
+    )
+    events_moved: int = Field(description="Number of events moved to primary entity")
+    deleted_entity_id: str = Field(description="UUID of the deleted secondary entity")
+    deleted_entity_name: Optional[str] = Field(
+        default=None, description="Name of the deleted entity"
+    )
+    message: str = Field(description="Human-readable result message")
+
+
+@router.post("/entities/merge", response_model=MergeEntitiesResponse)
+async def merge_entities(
+    request: MergeEntitiesRequest,
+    db: Session = Depends(get_db),
+    entity_service: EntityService = Depends(get_entity_service),
+):
+    """
+    Merge two entities into one (Story P9-4.5).
+
+    Moves all events from the secondary entity to the primary entity,
+    creates adjustment records for ML training, updates occurrence counts,
+    and deletes the secondary entity.
+
+    Args:
+        request: Merge request with primary and secondary entity IDs
+        db: Database session
+        entity_service: Entity service instance
+
+    Returns:
+        MergeEntitiesResponse with merge results
+
+    Raises:
+        400: If attempting to merge an entity with itself
+        404: If either entity not found
+    """
+    try:
+        result = await entity_service.merge_entities(
+            db=db,
+            primary_entity_id=request.primary_entity_id,
+            secondary_entity_id=request.secondary_entity_id,
+        )
+        return MergeEntitiesResponse(**result)
+    except ValueError as e:
+        error_msg = str(e)
+        if "not found" in error_msg:
+            raise HTTPException(status_code=404, detail=error_msg)
+        else:
+            raise HTTPException(status_code=400, detail=error_msg)
+
+
 # Story P4-3.5: Pattern Detection Response Models
 # Story P4-7.1: Extended with object type distribution
 class PatternResponse(BaseModel):

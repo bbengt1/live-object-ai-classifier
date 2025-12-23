@@ -249,6 +249,67 @@ export function useAssignEventToEntity() {
 }
 
 /**
+ * Response type for merge entities operation (Story P9-4.5)
+ */
+export interface MergeEntitiesResponse {
+  success: boolean;
+  merged_entity_id: string;
+  merged_entity_name: string | null;
+  events_moved: number;
+  deleted_entity_id: string;
+  deleted_entity_name: string | null;
+  message: string;
+}
+
+/**
+ * Hook to merge two entities (Story P9-4.5)
+ * Moves all events from secondary entity to primary and deletes secondary.
+ * @returns Mutation for merging entities
+ */
+export function useMergeEntities() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      primaryEntityId,
+      secondaryEntityId,
+    }: {
+      primaryEntityId: string;
+      secondaryEntityId: string;
+    }): Promise<MergeEntitiesResponse> => {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/context/entities/merge`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            primary_entity_id: primaryEntityId,
+            secondary_entity_id: secondaryEntityId,
+          }),
+        }
+      );
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to merge entities');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // Invalidate entity list to refresh after merge
+      queryClient.invalidateQueries({ queryKey: ['entities'] });
+      // Invalidate the merged entity to get updated occurrence count
+      queryClient.invalidateQueries({ queryKey: ['entities', data.merged_entity_id] });
+      // Remove the deleted entity from cache
+      queryClient.removeQueries({ queryKey: ['entities', data.deleted_entity_id] });
+      // Invalidate events queries to refresh any entity associations
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+    },
+  });
+}
+
+/**
  * Error type guard for API errors
  */
 export function isApiError(error: unknown): error is ApiError {
