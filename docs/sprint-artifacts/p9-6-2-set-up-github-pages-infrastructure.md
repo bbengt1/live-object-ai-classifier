@@ -1,6 +1,6 @@
 # Story P9-6.2: Set Up GitHub Pages Infrastructure
 
-Status: review
+Status: done
 
 ## Story
 
