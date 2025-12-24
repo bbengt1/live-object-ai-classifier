@@ -1,6 +1,6 @@
 # Story P10-2.6: Add nginx Reverse Proxy with SSL
 
-Status: review
+Status: done
 
 ## Story
 
