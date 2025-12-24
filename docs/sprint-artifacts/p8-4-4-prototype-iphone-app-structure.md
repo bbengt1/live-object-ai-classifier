@@ -1,6 +1,6 @@
 # Story P8-4.4: Prototype iPhone App Structure
 
-Status: review
+Status: done
 
 ## Story
 
