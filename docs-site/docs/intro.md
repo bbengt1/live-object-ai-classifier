@@ -16,6 +16,29 @@ ArgusAI is an **AI-powered event detection system** for home security. It analyz
 
 ## Quick Start
 
+### Docker (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/bbengt1/ArgusAI.git
+cd ArgusAI
+
+# Copy and configure environment
+cp .env.example .env
+
+# Start with Docker Compose
+docker-compose up -d
+```
+
+Access ArgusAI at `http://localhost:3000`
+
+For production deployments with SSL:
+```bash
+docker-compose --profile ssl up -d
+```
+
+### Manual Installation
+
 ```bash
 # Clone the repository
 git clone https://github.com/bbengt1/argusai.git
@@ -27,6 +50,12 @@ cd argusai
 
 ## System Requirements
 
+### Docker Deployment
+- **Docker Engine**: 20.10 or higher
+- **Docker Compose**: V2 or higher
+- **Optional**: SSL certificates for HTTPS
+
+### Manual Installation
 - **Python**: 3.11 or higher
 - **Node.js**: 18 or higher
 - **Database**: SQLite (default) or PostgreSQL
@@ -40,6 +69,7 @@ Camera Capture → Motion Detection → Event Queue → AI Description → Datab
 
 ## Next Steps
 
-- [Installation Guide](./getting-started/installation) - Set up ArgusAI on your system
+- [Docker Deployment](./getting-started/docker-deployment) - Deploy with Docker Compose (recommended)
+- [Installation Guide](./getting-started/installation) - Manual installation options
 - [Configuration](./getting-started/configuration) - Configure cameras and AI providers
 - [Features](./features/ai-analysis) - Learn about all the features

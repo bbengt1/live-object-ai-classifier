@@ -6,18 +6,27 @@ sidebar_position: 1
 
 This guide will help you install ArgusAI on your system.
 
-## Prerequisites
+## Choose Your Installation Method
 
-Before installing ArgusAI, ensure you have the following:
+| Method | Best For | Requirements |
+|--------|----------|--------------|
+| [Docker Deployment](./docker-deployment) | Production, Easy setup | Docker, Docker Compose |
+| Manual Installation | Development, Customization | Python 3.11+, Node.js 18+ |
+
+:::tip Recommended
+For most users, we recommend [Docker Deployment](./docker-deployment) for the easiest setup and production-ready configuration.
+:::
+
+## Prerequisites (Manual Installation)
+
+Before installing ArgusAI manually, ensure you have the following:
 
 - **Python 3.11+** - Required for the backend
 - **Node.js 18+** - Required for the frontend
 - **Git** - For cloning the repository
 - **SQLite** or **PostgreSQL** - Database (SQLite is default)
 
-## Quick Installation
-
-The easiest way to install ArgusAI is using the installation script:
+## Quick Installation (Script)
 
 ```bash
 # Clone the repository

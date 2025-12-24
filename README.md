@@ -2,9 +2,16 @@
 
 AI-powered event detection and monitoring for home security. Analyzes video feeds from multiple camera sources, detects motion and smart events, and uses AI to generate natural language descriptions of what's happening.
 
-## What's New (Phase 9 In Progress)
+## What's New (Phase 10 In Progress)
 
-### Phase 9 (Current)
+### Phase 10 (Current)
+- **Docker Containerization** - Single-command deployment with docker-compose
+- **Multi-stage Dockerfiles** - Optimized backend and frontend images
+- **Optional PostgreSQL** - Production database with `--profile postgres`
+- **nginx SSL Reverse Proxy** - Secure HTTPS deployment with `--profile ssl`
+- **Compose Profiles** - Flexible service selection for different deployment scenarios
+
+### Phase 9 (Complete)
 - **SSL/HTTPS Support** - Secure connections with certificate generation in install script
 - **Frame Gallery Modal** - View all frames analyzed by AI for each event
 - **Adaptive Frame Sampling** - Motion-based and similarity filtering for better frame selection
@@ -281,6 +288,119 @@ npm run dev
 ```
 
 Frontend runs at: `http://localhost:3000`
+
+### Docker Deployment (Recommended for Production)
+
+The easiest way to deploy ArgusAI is using Docker Compose:
+
+#### Prerequisites
+
+- Docker Engine 20.10+
+- Docker Compose V2+
+
+#### Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/bbengt1/ArgusAI.git
+cd ArgusAI
+
+# Copy environment template
+cp .env.example .env
+
+# Generate required secrets
+python -c "from cryptography.fernet import Fernet; print(f'ENCRYPTION_KEY={Fernet.generate_key().decode()}')" >> .env
+openssl rand -hex 32 | xargs -I {} echo "JWT_SECRET_KEY={}" >> .env
+
+# Start the application
+docker-compose up -d
+```
+
+Access the application at `http://localhost:3000`
+
+#### Deployment Options
+
+| Command | Description |
+|---------|-------------|
+| `docker-compose up -d` | Start with SQLite (default) |
+| `docker-compose --profile postgres up -d` | Start with PostgreSQL |
+| `docker-compose --profile ssl up -d` | Start with nginx SSL reverse proxy |
+| `docker-compose --profile postgres --profile ssl up -d` | PostgreSQL + SSL |
+
+#### Using PostgreSQL
+
+For production deployments, PostgreSQL is recommended:
+
+```bash
+# Set PostgreSQL password
+echo "POSTGRES_PASSWORD=your-secure-password" >> .env
+echo "DATABASE_URL=postgresql://argusai:your-secure-password@postgres:5432/argusai" >> .env
+
+# Start with PostgreSQL
+docker-compose --profile postgres up -d
+```
+
+#### Using SSL/HTTPS (nginx Reverse Proxy)
+
+For secure deployments with HTTPS:
+
+```bash
+# Create certificates directory
+mkdir -p data/certs
+
+# Generate self-signed certificate (for testing)
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout data/certs/key.pem \
+  -out data/certs/cert.pem \
+  -subj "/CN=localhost"
+
+# Or use your own certificates:
+# cp /path/to/your/cert.pem data/certs/cert.pem
+# cp /path/to/your/key.pem data/certs/key.pem
+
+# Start with SSL
+docker-compose --profile ssl up -d
+```
+
+Access the application at `https://localhost`
+
+The nginx reverse proxy provides:
+- TLS 1.2/1.3 with modern cipher suite
+- HTTP to HTTPS automatic redirect
+- WebSocket proxy for real-time events
+- Optimized routing for API and frontend
+
+#### Docker Compose Management
+
+```bash
+# View logs
+docker-compose logs -f
+
+# View specific service logs
+docker-compose logs -f backend
+
+# Stop containers (preserves data)
+docker-compose down
+
+# Stop and remove volumes (WARNING: deletes all data)
+docker-compose down -v
+
+# Rebuild images
+docker-compose build --no-cache
+
+# Update to latest images
+docker-compose pull
+docker-compose up -d
+```
+
+#### Data Persistence
+
+All persistent data is stored in Docker volumes:
+
+| Volume | Contents |
+|--------|----------|
+| `argusai-data` | SQLite database, thumbnails, frames, certificates |
+| `pgdata` | PostgreSQL data (when using `--profile postgres`) |
 
 #### Available Scripts
 
@@ -640,7 +760,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - ✅ Native Apple apps technology research (SwiftUI selected)
 - ✅ Cloud relay architecture design (Cloudflare Tunnel)
 
-**Phase 9: AI Accuracy & Entity Management** (In Progress)
+**Phase 9: AI Accuracy & Entity Management** (Complete)
 - ✅ SSL/HTTPS support with certificate generation
 - ✅ Frame capture timing optimization
 - ✅ Camera and time context in AI prompts
@@ -652,7 +772,18 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - ✅ Documentation updates (README refactor, GitHub Pages)
 - ✅ GitHub Pages project site with landing page and docs
 
-**Phase 10: Native Apple Apps** (Planned)
+**Phase 10: Docker & Kubernetes** (In Progress)
+- ✅ Backend Dockerfile with multi-stage build
+- ✅ Frontend Dockerfile with Next.js standalone output
+- ✅ Docker Compose for single-command deployment
+- ✅ Environment configuration and volumes
+- ✅ Optional PostgreSQL with `--profile postgres`
+- ✅ nginx SSL reverse proxy with `--profile ssl`
+- 📋 Kubernetes deployment manifests
+- 📋 Helm chart for configurable deployments
+- 📋 Container CI/CD pipeline
+
+**Phase 11: Native Apple Apps** (Planned)
 - ✅ SwiftUI technology decision (research complete)
 - ✅ Cloud relay architecture design (Cloudflare Tunnel)
 - ✅ Mobile API specification
