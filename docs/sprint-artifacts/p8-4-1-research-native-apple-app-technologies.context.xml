@@ -1,0 +1,112 @@
+<story-context id="p8-4-1-research-native-apple-app-technologies" v="1.0">
+  <metadata>
+    <epicId>P8-4</epicId>
+    <storyId>4.1</storyId>
+    <title>Research Native Apple App Technologies</title>
+    <status>drafted</status>
+    <generatedAt>2025-12-24</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p8-4-1-research-native-apple-app-technologies.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>product team</asA>
+    <iWant>a comprehensive research document on Apple app development approaches</iWant>
+    <soThat>we can make informed decisions about technology choices for native iOS, macOS, watchOS, and tvOS apps</soThat>
+    <tasks>
+      <task id="1" status="pending">Research and compare development frameworks (AC: 1, 3)
+        <subtask>Evaluate SwiftUI (native Apple)</subtask>
+        <subtask>Evaluate React Native (cross-platform)</subtask>
+        <subtask>Evaluate Flutter (cross-platform)</subtask>
+        <subtask>Create comparison matrix with pros/cons</subtask>
+      </task>
+      <task id="2" status="pending">Document per-platform considerations (AC: 2)
+        <subtask>iPhone considerations</subtask>
+        <subtask>iPad considerations</subtask>
+        <subtask>Apple Watch considerations</subtask>
+        <subtask>Apple TV considerations</subtask>
+        <subtask>macOS considerations</subtask>
+      </task>
+      <task id="3" status="pending">Analyze API and connectivity requirements (AC: 1, 3)
+        <subtask>Authentication mechanisms for mobile</subtask>
+        <subtask>Real-time updates strategy</subtask>
+        <subtask>Image/video streaming approach</subtask>
+        <subtask>Offline capability requirements</subtask>
+      </task>
+      <task id="4" status="pending">Provide development effort estimates (AC: 4)</task>
+      <task id="5" status="pending">Document recommendation with rationale (AC: 5)</task>
+      <task id="6" status="pending">Save document to docs/research/apple-apps-technology.md (AC: 6)</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC1.1">Given research complete, when document reviewed, then SwiftUI vs React Native vs Flutter comparison included</criterion>
+    <criterion id="AC1.2">Given research complete, when document reviewed, then per-platform considerations documented (iPhone, iPad, Watch, TV, macOS)</criterion>
+    <criterion id="AC1.3">Given research complete, when document reviewed, then pros/cons table for each approach included</criterion>
+    <criterion id="AC1.4">Given research complete, when document reviewed, then development effort estimates per platform provided</criterion>
+    <criterion id="AC1.5">Given research complete, when document reviewed, then clear recommendation with rationale documented</criterion>
+    <criterion id="AC1.6">Given research complete, then document saved to docs/research/apple-apps-technology.md</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-P8-4.md</path>
+        <title>Epic Technical Specification: Native Apple Apps Foundation</title>
+        <section>P8-4.1: Research Native Apple App Technologies</section>
+        <snippet>This epic establishes the foundation for native Apple device applications. Research story documents technology options for Apple app development including SwiftUI vs React Native vs Flutter comparison.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics-phase8.md</path>
+        <title>Phase 8 Epic Breakdown</title>
+        <section>Epic P8-4: Native Apple Apps Foundation</section>
+        <snippet>Epic P8-4 contains four stories for native Apple app development research, cloud relay design, API specification, and iPhone prototype.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture-phase8.md</path>
+        <title>Phase 8 Architecture</title>
+        <section>Mobile Apps Architecture</section>
+        <snippet>Architecture decisions include SwiftUI native (iOS 17+), device pairing codes for auth, and Cloudflare Tunnel for cloud relay.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <file>
+        <path>docs/research/</path>
+        <kind>directory</kind>
+        <reason>Output directory for research document - may need to be created</reason>
+      </file>
+    </code>
+    <dependencies>
+      <note>This is a documentation/research story with no code dependencies. Output is a markdown document.</note>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint type="architecture">SwiftUI has been pre-decided as the technology choice per architecture-phase8.md</constraint>
+    <constraint type="platform">iOS 17+ minimum target for SwiftUI features</constraint>
+    <constraint type="output">Document must be saved to docs/research/apple-apps-technology.md</constraint>
+    <constraint type="content">Must include comparison tables, platform considerations, effort estimates, and clear recommendation</constraint>
+  </constraints>
+
+  <interfaces>
+    <note>No API interfaces - this is a documentation story</note>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Research documentation stories are validated through manual review against acceptance criteria checklist.
+      No automated tests - document completeness verification.
+    </standards>
+    <locations>
+      <location>Manual review of docs/research/apple-apps-technology.md</location>
+    </locations>
+    <ideas>
+      <idea ac="AC1.1">Verify document contains SwiftUI vs React Native vs Flutter comparison section</idea>
+      <idea ac="AC1.2">Verify document contains sections for iPhone, iPad, Watch, TV, macOS considerations</idea>
+      <idea ac="AC1.3">Verify pros/cons table exists for each framework</idea>
+      <idea ac="AC1.4">Verify development effort estimates are provided per platform</idea>
+      <idea ac="AC1.5">Verify clear recommendation section with rationale exists</idea>
+      <idea ac="AC1.6">Verify file exists at docs/research/apple-apps-technology.md</idea>
+    </ideas>
+  </tests>
+</story-context>
