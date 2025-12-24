@@ -187,12 +187,12 @@ export function EntityDetail({
               </div>
             </div>
 
-            {/* Events List (Story P9-4.2) */}
-            <div className="flex-1 overflow-hidden pt-4 flex flex-col min-h-0">
+            {/* Events List (Story P9-4.2, P10-1.5: Fixed scrolling) */}
+            <div className="flex-1 pt-4 flex flex-col min-h-0">
               <h4 className="font-medium text-sm mb-3 flex-shrink-0">
                 Events ({entityDetail.occurrence_count})
               </h4>
-              <div className="flex-1 min-h-0">
+              <div className="flex-1 min-h-0 overflow-hidden">
                 <EntityEventList entityId={entityDetail.id} />
               </div>
             </div>
