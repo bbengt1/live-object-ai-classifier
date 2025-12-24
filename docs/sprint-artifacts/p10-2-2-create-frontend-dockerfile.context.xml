@@ -1,0 +1,158 @@
+<story-context id="p10-2-2-create-frontend-dockerfile" v="1.0">
+  <metadata>
+    <epicId>P10-2</epicId>
+    <storyId>2.2</storyId>
+    <title>Create Frontend Dockerfile</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-24</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p10-2-2-create-frontend-dockerfile.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer</asA>
+    <iWant>a Docker container for the Next.js frontend</iWant>
+    <soThat>I can deploy the frontend consistently</soThat>
+    <tasks>
+      <task id="1" ac="1">Configure Next.js for standalone output
+        <subtask id="1.1">Add output: 'standalone' to next.config.ts</subtask>
+        <subtask id="1.2">Verify next.config.ts changes don't break development</subtask>
+      </task>
+      <task id="2" ac="1,2">Create multi-stage Dockerfile
+        <subtask id="2.1">Create deps stage with node:20-alpine for installing dependencies</subtask>
+        <subtask id="2.2">Create builder stage for production build</subtask>
+        <subtask id="2.3">Create runner stage with minimal runtime</subtask>
+        <subtask id="2.4">Configure ARG for NEXT_PUBLIC_API_URL build-time injection</subtask>
+      </task>
+      <task id="3" ac="1">Configure container security
+        <subtask id="3.1">Create non-root user (nextjs, uid 1001)</subtask>
+        <subtask id="3.2">Set appropriate file permissions</subtask>
+        <subtask id="3.3">Set NODE_ENV=production environment variable</subtask>
+        <subtask id="3.4">Disable Next.js telemetry (NEXT_TELEMETRY_DISABLED=1)</subtask>
+      </task>
+      <task id="4" ac="1">Add health check configuration
+        <subtask id="4.1">Configure HEALTHCHECK instruction using wget</subtask>
+        <subtask id="4.2">Health check verifies frontend is accessible</subtask>
+      </task>
+      <task id="5" ac="1">Create .dockerignore for frontend
+        <subtask id="5.1">Exclude node_modules, .next (build artifacts), .git</subtask>
+        <subtask id="5.2">Exclude development files (*.md, tests, coverage)</subtask>
+      </task>
+      <task id="6" ac="1,2">Test and validate
+        <subtask id="6.1">Verify Dockerfile syntax is valid</subtask>
+        <subtask id="6.2">Document build and run commands</subtask>
+      </task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="1">Given the Dockerfile is built, when the container starts, then the Next.js production build is served and the frontend is accessible on port 3000</criterion>
+    <criterion id="2">Given I need to configure the API URL, when I set NEXT_PUBLIC_API_URL environment variable, then the frontend connects to the specified backend</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/sprint-artifacts/tech-spec-epic-P10-2.md</path>
+        <title>Epic Technical Specification: Docker Containerization</title>
+        <section>Story P10-2.2: Frontend Dockerfile</section>
+        <snippet>Three-stage build for minimal image (~150MB). Use node:20-alpine base. Standalone output mode for self-contained deployment. Build-time API URL injection via ARG.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/deployment-architecture.md</path>
+        <title>Deployment Architecture</title>
+        <section>Production Deployment (Docker)</section>
+        <snippet>Basic Dockerfile template exists. Frontend runs on port 3000. Uses Next.js for server-side rendering.</snippet>
+      </doc>
+      <doc>
+        <path>docs/epics-phase10.md</path>
+        <title>ArgusAI Phase 10 - Epic Breakdown</title>
+        <section>Story P10-2.2: Create Frontend Dockerfile</section>
+        <snippet>Use Node 20 alpine base image. Multi-stage build with deps, builder, runner stages. Standalone output mode. Minimize image size.</snippet>
+      </doc>
+    </docs>
+
+    <code>
+      <artifact>
+        <path>frontend/next.config.ts</path>
+        <kind>config</kind>
+        <symbol>nextConfig</symbol>
+        <lines>1-27</lines>
+        <reason>Must add output: 'standalone' to enable standalone mode required for Docker deployment</reason>
+      </artifact>
+      <artifact>
+        <path>frontend/package.json</path>
+        <kind>config</kind>
+        <symbol>scripts.build</symbol>
+        <lines>1-75</lines>
+        <reason>Contains build scripts and dependencies. Next.js version 16.0.10 with React 19.2.0</reason>
+      </artifact>
+      <artifact>
+        <path>backend/Dockerfile</path>
+        <kind>dockerfile</kind>
+        <symbol>multi-stage build</symbol>
+        <lines>1-77</lines>
+        <reason>Reference implementation from P10-2.1. Follow similar patterns for multi-stage build, non-root user, health checks</reason>
+      </artifact>
+      <artifact>
+        <path>backend/.dockerignore</path>
+        <kind>config</kind>
+        <symbol>.dockerignore</symbol>
+        <lines>1-74</lines>
+        <reason>Reference for .dockerignore patterns. Adapt for Node.js/frontend context</reason>
+      </artifact>
+    </code>
+
+    <dependencies>
+      <node>
+        <package name="next" version="^16.0.10" />
+        <package name="react" version="19.2.0" />
+        <package name="react-dom" version="19.2.0" />
+        <package name="@tanstack/react-query" version="^5.90.10" />
+        <package name="typescript" version="^5" />
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint source="tech-spec">Use node:20-alpine as base image for minimal size</constraint>
+    <constraint source="tech-spec">Multi-stage build: deps, builder, runner stages</constraint>
+    <constraint source="tech-spec">Enable standalone output mode in next.config.ts</constraint>
+    <constraint source="tech-spec">Target image size under 200MB</constraint>
+    <constraint source="security">Non-root user (nextjs, uid 1001)</constraint>
+    <constraint source="security">No secrets baked into image</constraint>
+    <constraint source="docker">NEXT_PUBLIC_* variables must be passed as ARG at build time</constraint>
+    <constraint source="docker">Health check using wget (available in alpine)</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>Frontend Health Check</name>
+      <kind>HTTP endpoint</kind>
+      <signature>GET / -> HTTP 200</signature>
+      <path>frontend/app/page.tsx</path>
+    </interface>
+    <interface>
+      <name>API Proxy Rewrite</name>
+      <kind>Next.js rewrite</kind>
+      <signature>/api/v1/* -> ${BACKEND_URL}/api/v1/*</signature>
+      <path>frontend/next.config.ts</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>Frontend uses vitest for unit testing with React Testing Library. Tests are in __tests__ directory. ESLint for linting. TypeScript for type checking.</standards>
+    <locations>
+      <location>frontend/__tests__/</location>
+      <location>frontend/vitest.config.ts</location>
+    </locations>
+    <ideas>
+      <idea ac="1">Verify Dockerfile builds without errors using docker build</idea>
+      <idea ac="1">Verify container starts and serves frontend on port 3000</idea>
+      <idea ac="2">Verify NEXT_PUBLIC_API_URL is correctly injected at build time</idea>
+      <idea ac="1">Verify health check passes with wget</idea>
+      <idea ac="1">Verify image size is under 200MB</idea>
+      <idea ac="1">Verify standalone output is generated correctly</idea>
+    </ideas>
+  </tests>
+</story-context>

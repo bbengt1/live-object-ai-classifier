@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Enable standalone output for Docker deployment (Story P10-2.2)
+  // Creates a minimal production bundle that includes only necessary files
+  output: 'standalone',
   images: {
     // Disable image optimization for self-hosted deployments
     // This allows images from any hostname (localhost, IP, custom domain)
