@@ -676,38 +676,40 @@ export function MQTTSettings() {
                     </div>
                   )}
                 </div>
+
+                {/* Info Alert - Story P9-6.6: Only visible when MQTT enabled */}
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Home Assistant Integration</AlertTitle>
+                  <AlertDescription>
+                    When enabled, detected events are published to MQTT and cameras are auto-discovered
+                    as sensors in Home Assistant. Events include camera name, description, timestamp,
+                    and detection type.
+                  </AlertDescription>
+                </Alert>
               </div>
             </div>
           </div>
 
-          {/* Info Alert - Always visible */}
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertTitle>Home Assistant Integration</AlertTitle>
-            <AlertDescription>
-              When enabled, detected events are published to MQTT and cameras are auto-discovered
-              as sensors in Home Assistant. Events include camera name, description, timestamp,
-              and detection type.
-            </AlertDescription>
-          </Alert>
-
-          {/* Save Button (AC 5) - Always visible */}
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              onClick={form.handleSubmit(handleSave)}
-              disabled={saveMutation.isPending || !isDirty}
-            >
-              {saveMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                'Save Changes'
-              )}
-            </Button>
-          </div>
+          {/* Save Button (AC 5) - Story P9-6.6: Only visible when MQTT enabled or form is dirty */}
+          {(form.watch('enabled') || isDirty) && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                onClick={form.handleSubmit(handleSave)}
+                disabled={saveMutation.isPending || !isDirty}
+              >
+                {saveMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

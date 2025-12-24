@@ -776,11 +776,11 @@ describe('MQTTSettings', () => {
         expect(screen.getByLabelText(/enable mqtt integration/i)).toBeInTheDocument();
       });
 
-      // Info alert should always be visible
+      // Info alert should be visible when MQTT is enabled
       expect(screen.getByText('Home Assistant Integration')).toBeInTheDocument();
     });
 
-    it('always shows Save button regardless of toggle state', async () => {
+    it('hides Save button and Info alert when MQTT is disabled (Story P9-6.6)', async () => {
       // Mock config with enabled=false
       vi.mocked(apiClient.mqtt.getConfig).mockResolvedValue({
         ...mockConfig,
@@ -794,8 +794,8 @@ describe('MQTTSettings', () => {
         expect(screen.getByLabelText(/enable mqtt integration/i)).toBeInTheDocument();
       });
 
-      // Save button should always be visible
-      expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+      // Save button should NOT be visible when disabled and form is not dirty
+      expect(screen.queryByRole('button', { name: /save changes/i })).not.toBeInTheDocument();
     });
 
     it('rapid toggle does not cause state issues', async () => {
