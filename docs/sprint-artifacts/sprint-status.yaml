@@ -621,7 +621,7 @@ development_status:
   p10-5-1-generate-openapi-3-0-specification: done
   p10-5-2-document-mobile-authentication-flow: done
   p10-5-3-design-cloud-relay-architecture: done
-  p10-5-4-define-mobile-push-architecture: backlog
+  p10-5-4-define-mobile-push-architecture: done
   epic-p10-5-retrospective: optional
 
   # Epic P10-6: AI & Quality Improvements

@@ -1,0 +1,194 @@
+<story-context id="p10-5-4-define-mobile-push-architecture" v="1.0">
+  <metadata>
+    <epicId>P10-5</epicId>
+    <storyId>P10-5.4</storyId>
+    <title>Define Mobile Push Architecture</title>
+    <status>ready-for-dev</status>
+    <generatedAt>2025-12-25</generatedAt>
+    <generator>BMAD Story Context Workflow</generator>
+    <sourceStoryPath>docs/sprint-artifacts/p10-5-4-define-mobile-push-architecture.md</sourceStoryPath>
+  </metadata>
+
+  <story>
+    <asA>developer building mobile apps for ArgusAI</asA>
+    <iWant>documented push notification architecture for iOS/iPadOS, watchOS, and Android</iWant>
+    <soThat>mobile devices receive real-time security alerts through native platform push services</soThat>
+    <tasks>
+      <task n="1">Document APNS Integration (AC: 1, 5)
+        - Document APNS certificate/key requirements (p8 auth key vs certificate)
+        - Define APNS token registration flow from iOS/watchOS devices
+        - Document APNS payload format with ArgusAI notification structure
+        - Address APNS token refresh and invalidation handling
+        - Document sandbox vs production environment handling</task>
+      <task n="2">Document FCM Integration (AC: 1, 5)
+        - Document Firebase project setup requirements
+        - Define FCM token registration flow from Android devices
+        - Document FCM payload format (data vs notification messages)
+        - Address FCM token refresh handling
+        - Consider FCM for Apple devices as alternative to direct APNS</task>
+      <task n="3">Design Device Token Storage Model (AC: 2, 4)
+        - Define database schema for mobile push tokens
+        - Document relationship between users, devices, and tokens
+        - Design token uniqueness and deduplication strategy
+        - Document device metadata storage (platform, model, app version)</task>
+      <task n="4">Define Notification Payload Structure (AC: 3)
+        - Document unified payload format compatible with web push
+        - Define APNS-specific payload adaptations (aps dictionary)
+        - Define FCM-specific payload adaptations
+        - Include thumbnail URL handling for rich notifications
+        - Document notification categories and actions</task>
+      <task n="5">Document Notification Preferences (AC: 6)
+        - Define per-device preference storage
+        - Document camera-specific notification settings
+        - Document object type filtering (person, vehicle, package, etc.)
+        - Document quiet hours/do-not-disturb handling
+        - Cross-reference with existing web push preferences API</task>
+      <task n="6">Create Architecture Document (AC: 1-6)
+        - Create docs/api/mobile-push-architecture.md
+        - Include sequence diagrams (Mermaid) for registration and delivery flows
+        - Document API endpoints for mobile token management
+        - Include implementation recommendations
+        - Cross-reference with mobile-auth-flow.md and cloud-relay-architecture.md</task>
+    </tasks>
+  </story>
+
+  <acceptanceCriteria>
+    <criterion id="AC-5.4.1">Given I read the architecture document, when I understand the push notification flow, then I know how device tokens are registered and managed for both APNS (Apple) and FCM (Google/Android)</criterion>
+    <criterion id="AC-5.4.2">Given the architecture documents token storage, when I implement the mobile app, then I understand the device token data model and how tokens are associated with users</criterion>
+    <criterion id="AC-5.4.3">Given the architecture defines notification payloads, when I receive a push notification, then I know the exact JSON structure matching the existing web push format</criterion>
+    <criterion id="AC-5.4.4">Given multiple devices per user are supported, when a security event occurs, then all registered devices for that user receive alerts</criterion>
+    <criterion id="AC-5.4.5">Given the architecture addresses token lifecycle, when tokens expire or change, then I understand the refresh/update flow to maintain notification delivery</criterion>
+    <criterion id="AC-5.4.6">Given notification preferences are documented, when users configure per-device settings, then I understand how preferences affect delivery to each device</criterion>
+  </acceptanceCriteria>
+
+  <artifacts>
+    <docs>
+      <doc>
+        <path>docs/epics-phase10.md</path>
+        <title>Phase 10 Epic Breakdown</title>
+        <section>Story P10-5.4: Define Mobile Push Architecture</section>
+        <snippet>Document APNS (Apple) integration, FCM (Google) integration, device token storage model, notification payload structure, and notification preferences for mobile apps.</snippet>
+      </doc>
+      <doc>
+        <path>docs/api/mobile-auth-flow.md</path>
+        <title>Mobile Authentication Flow</title>
+        <section>Push Notification Token Management</section>
+        <snippet>Documents APNS registration flow, VAPID key retrieval, subscription API endpoints, and iOS Swift implementation patterns for push notification registration.</snippet>
+      </doc>
+      <doc>
+        <path>docs/architecture/cloud-relay-architecture.md</path>
+        <title>Cloud Relay Architecture</title>
+        <section>Device Pairing Flow</section>
+        <snippet>Defines device pairing with QR code/PIN approach, device management endpoints (/api/v1/devices), and push notification considerations for remote access.</snippet>
+      </doc>
+    </docs>
+    <code>
+      <file>
+        <path>backend/app/api/v1/push.py</path>
+        <kind>api-router</kind>
+        <symbol>router</symbol>
+        <lines>1-931</lines>
+        <reason>Complete push notification API: subscribe, unsubscribe, preferences, test endpoints. Defines SubscribeRequest, NotificationPreferencesUpdate schemas.</reason>
+      </file>
+      <file>
+        <path>backend/app/services/push_notification_service.py</path>
+        <kind>service</kind>
+        <symbol>PushNotificationService</symbol>
+        <lines>1-988</lines>
+        <reason>Web Push service using pywebpush with VAPID. Has broadcast_event_notification with preference filtering, format_rich_notification helper. Model for extending to APNS/FCM.</reason>
+      </file>
+      <file>
+        <path>backend/app/models/push_subscription.py</path>
+        <kind>model</kind>
+        <symbol>PushSubscription</symbol>
+        <lines>1-99</lines>
+        <reason>Current Web Push subscription model with endpoint, p256dh_key, auth_key. Reference for mobile token schema design.</reason>
+      </file>
+      <file>
+        <path>backend/app/models/notification_preference.py</path>
+        <kind>model</kind>
+        <symbol>NotificationPreference</symbol>
+        <reason>Per-subscription notification preferences: enabled_cameras, enabled_object_types, quiet_hours. Reuse for mobile devices.</reason>
+      </file>
+      <file>
+        <path>backend/app/utils/vapid.py</path>
+        <kind>utility</kind>
+        <symbol>ensure_vapid_keys, get_vapid_public_key</symbol>
+        <reason>VAPID key management for Web Push. APNS uses different auth (p8 key), FCM uses service account.</reason>
+      </file>
+    </code>
+    <dependencies>
+      <python>
+        <package name="pywebpush" version=">=2.0.0">Web Push with VAPID authentication (current implementation)</package>
+        <package name="paho-mqtt" version=">=2.0.0">MQTT for Home Assistant (not for mobile push)</package>
+        <!-- Future packages for APNS/FCM (not yet installed) -->
+        <!-- apns2 or aioapns for APNS -->
+        <!-- firebase-admin for FCM -->
+      </python>
+      <node>
+        <package name="next" version="^16.0.10">Next.js App Router</package>
+        <package name="@tanstack/react-query" version="^5.90.10">Server state management</package>
+      </node>
+    </dependencies>
+  </artifacts>
+
+  <constraints>
+    <constraint>Documentation-only story - no code implementation required</constraint>
+    <constraint>Must align with existing Web Push subscription model patterns</constraint>
+    <constraint>Must reference and cross-link with mobile-auth-flow.md from P10-5.2</constraint>
+    <constraint>Must reference cloud-relay-architecture.md from P10-5.3 for device pairing</constraint>
+    <constraint>Use Mermaid diagrams consistent with prior P10-5.x stories</constraint>
+    <constraint>Payload format must be compatible with existing format_rich_notification</constraint>
+    <constraint>Preference filtering must align with existing NotificationPreference model</constraint>
+  </constraints>
+
+  <interfaces>
+    <interface>
+      <name>POST /api/v1/push/subscribe</name>
+      <kind>REST endpoint</kind>
+      <signature>POST /api/v1/push/subscribe - Register web push subscription {endpoint, keys: {p256dh, auth}, user_agent}</signature>
+      <path>backend/app/api/v1/push.py:224</path>
+    </interface>
+    <interface>
+      <name>GET /api/v1/push/vapid-public-key</name>
+      <kind>REST endpoint</kind>
+      <signature>GET /api/v1/push/vapid-public-key - Returns {public_key} for Web Push</signature>
+      <path>backend/app/api/v1/push.py:141</path>
+    </interface>
+    <interface>
+      <name>PUT /api/v1/push/preferences</name>
+      <kind>REST endpoint</kind>
+      <signature>PUT /api/v1/push/preferences - Update notification preferences {endpoint, enabled_cameras, enabled_object_types, quiet_hours_*, timezone, sound_enabled}</signature>
+      <path>backend/app/api/v1/push.py:787</path>
+    </interface>
+    <interface>
+      <name>format_rich_notification</name>
+      <kind>function</kind>
+      <signature>format_rich_notification(event_id, camera_id, camera_name, description, thumbnail_url, smart_detection_type, ...) -> Dict</signature>
+      <path>backend/app/services/push_notification_service.py:707</path>
+    </interface>
+    <interface>
+      <name>Device Management Endpoints (Planned)</name>
+      <kind>REST endpoint</kind>
+      <signature>GET/POST/DELETE /api/v1/devices - List, pair, revoke devices (from cloud-relay-architecture.md)</signature>
+      <path>docs/architecture/cloud-relay-architecture.md</path>
+    </interface>
+  </interfaces>
+
+  <tests>
+    <standards>
+      Testing in ArgusAI uses pytest for backend with pytest-asyncio for async tests.
+      Frontend uses Vitest with React Testing Library. Tests located in backend/tests/ and frontend/tests/.
+      This story is documentation-only, so no tests are required for implementation.
+      Future implementation stories will need tests for APNS/FCM services.
+    </standards>
+    <locations>
+      <location>backend/tests/test_api/test_push.py</location>
+      <location>backend/tests/test_services/test_push_notification_service.py</location>
+    </locations>
+    <ideas>
+      <idea ac="N/A">Documentation review - ensure all sequence diagrams are valid Mermaid syntax</idea>
+      <idea ac="N/A">Cross-reference validation - verify all links to mobile-auth-flow.md and cloud-relay-architecture.md are valid</idea>
+    </ideas>
+  </tests>
+</story-context>
