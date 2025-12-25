@@ -397,7 +397,7 @@ async def test_mqtt_connection(test_request: MQTTTestRequest):
             "event_type": "mqtt_test_connection",
             "broker": f"{test_request.broker_host}:{test_request.broker_port}",
             "success": result["success"],
-            "message": result["message"]
+            "result_message": result["message"]
         }
     )
 
