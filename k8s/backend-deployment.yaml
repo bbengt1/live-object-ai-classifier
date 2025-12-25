@@ -5,6 +5,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: argusai-backend
+  namespace: argusai
   labels:
     app: argusai
     component: backend

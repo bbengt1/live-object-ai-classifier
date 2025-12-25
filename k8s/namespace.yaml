@@ -1,0 +1,11 @@
+# ArgusAI Namespace
+# Creates the dedicated namespace for ArgusAI resources
+# Apply first before other resources: kubectl apply -f k8s/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argusai
+  labels:
+    app: argusai
+    app.kubernetes.io/name: argusai
+    app.kubernetes.io/managed-by: kubectl

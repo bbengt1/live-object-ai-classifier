@@ -5,6 +5,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: argusai-config
+  namespace: argusai
   labels:
     app: argusai
     app.kubernetes.io/name: argusai
