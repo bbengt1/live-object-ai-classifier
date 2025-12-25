@@ -1072,7 +1072,7 @@ class EntityService:
                 "event_type": "entity_created_manual",
                 "entity_id": entity_id,
                 "entity_type": entity_type,
-                "name": name,
+                "entity_name": name,
                 "vehicle_signature": vehicle_signature,
             }
         )
