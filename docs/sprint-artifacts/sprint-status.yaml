@@ -691,9 +691,9 @@ development_status:
   # Priority: P3
   # Focus: Select relevant frames for targeted re-analysis
   epic-p11-4: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P11-4.md
-  p11-4-1-add-text-encoding-to-embeddingservice: backlog
-  p11-4-2-implement-frame-embedding-storage-and-generation: backlog
-  p11-4-3-create-smart-reanalyze-endpoint-with-query-matching: backlog
+  p11-4-1-add-text-encoding-to-embeddingservice: done
+  p11-4-2-implement-frame-embedding-storage-and-generation: done
+  p11-4-3-create-smart-reanalyze-endpoint-with-query-matching: done
   epic-p11-4-retrospective: optional
 
   # Epic P11-5: Platform Polish & Documentation
