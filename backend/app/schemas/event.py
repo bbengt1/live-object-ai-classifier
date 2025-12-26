@@ -363,6 +363,82 @@ class ReanalyzeRequest(BaseModel):
     }
 
 
+class SmartReanalyzeRequest(BaseModel):
+    """Schema for smart re-analysis request with query-adaptive frame selection (Story P11-4.3)
+
+    Used by POST /api/v1/events/{id}/smart-reanalyze endpoint.
+    Selects frames most relevant to the user's query before AI analysis.
+    """
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Natural language query to focus the analysis (e.g., 'Was there a package delivery?')"
+    )
+    top_k: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Maximum number of frames to select for analysis (1-10)"
+    )
+    min_similarity: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity threshold for frame selection (0.0-1.0)"
+    )
+    analysis_mode: Literal["single_frame", "multi_frame", "video_native"] = Field(
+        default="multi_frame",
+        description="Analysis mode to use for AI analysis"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "query": "Was there a package delivery?",
+                    "top_k": 5,
+                    "min_similarity": 0.2,
+                    "analysis_mode": "multi_frame"
+                },
+                {
+                    "query": "person with dog",
+                    "top_k": 3
+                }
+            ]
+        }
+    }
+
+
+class SmartReanalyzeResponse(BaseModel):
+    """Response schema for smart re-analysis (Story P11-4.3)"""
+    event_id: str = Field(..., description="Event UUID")
+    description: str = Field(..., description="Updated AI description focused on query")
+    query: str = Field(..., description="Original query")
+    frames_selected: int = Field(..., description="Number of frames selected for analysis")
+    frames_available: int = Field(..., description="Total frames with embeddings")
+    top_frame_score: float = Field(..., description="Highest frame similarity score")
+    query_time_ms: float = Field(..., description="Time to encode query (ms)")
+    scoring_time_ms: float = Field(..., description="Time to score frames (ms)")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "event_id": "abc123",
+                    "description": "A package delivery was detected. A delivery person in brown uniform placed a medium-sized cardboard box on the doorstep.",
+                    "query": "Was there a package delivery?",
+                    "frames_selected": 5,
+                    "frames_available": 10,
+                    "top_frame_score": 0.78,
+                    "query_time_ms": 45.2,
+                    "scoring_time_ms": 2.3
+                }
+            ]
+        }
+    }
+
+
 # Story P7-2.4: Package Delivery Dashboard Widget Schemas
 class PackageEventSummary(BaseModel):
     """Summary of a package delivery event for dashboard widget"""

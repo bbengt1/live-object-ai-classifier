@@ -124,6 +124,8 @@ class Event(Base):
     vehicle_embeddings = relationship("VehicleEmbedding", back_populates="event", cascade="all, delete-orphan")
     # Story P8-2.1: Analysis frames (frames extracted for AI multi-frame analysis)
     frames = relationship("EventFrame", back_populates="event", cascade="all, delete-orphan")
+    # Story P11-4.2: Per-frame embeddings for query-adaptive frame selection
+    frame_embeddings = relationship("FrameEmbedding", back_populates="event", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint('confidence >= 0 AND confidence <= 100', name='check_confidence_range'),

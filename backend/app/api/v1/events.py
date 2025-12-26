@@ -33,7 +33,9 @@ from app.schemas.event import (
     EventListResponse,
     EventStatsResponse,
     EventFilterParams,
-    ReanalyzeRequest
+    ReanalyzeRequest,
+    SmartReanalyzeRequest,
+    SmartReanalyzeResponse
 )
 from app.schemas.system import CleanupResponse
 from app.services.cleanup_service import get_cleanup_service
@@ -1739,6 +1741,209 @@ async def reanalyze_event(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Re-analysis failed. Please try again or contact support if the issue persists."
+        )
+
+
+@router.post("/{event_id}/smart-reanalyze", response_model=SmartReanalyzeResponse)
+async def smart_reanalyze_event(
+    event_id: str,
+    request: SmartReanalyzeRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Query-adaptive re-analysis of an event (Story P11-4.3)
+
+    Selects the most relevant frames based on semantic similarity to the query,
+    then performs AI analysis focused on answering the user's question.
+
+    Args:
+        event_id: Event UUID to re-analyze
+        request: SmartReanalyzeRequest with query and optional parameters
+        db: Database session
+
+    Returns:
+        SmartReanalyzeResponse with updated description and metrics
+
+    Raises:
+        404: Event not found
+        400: No frame embeddings available (requires frame embedding generation)
+        500: Re-analysis failed
+
+    Example:
+        POST /events/123e4567-e89b-12d3-a456-426614174000/smart-reanalyze
+        {"query": "Was there a package delivery?", "top_k": 5}
+    """
+    from app.services.smart_reanalyze_service import get_smart_reanalyze_service
+    from app.services.ai_service import AIService
+    from app.models.event_frame import EventFrame
+    import cv2
+    import numpy as np
+    from pathlib import Path
+
+    try:
+        # 1. Find the event
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Event {event_id} not found"
+            )
+
+        # 2. Get camera info
+        camera = db.query(Camera).filter(Camera.id == event.camera_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Camera {event.camera_id} not found"
+            )
+
+        # 3. Select relevant frames using SmartReanalyzeService
+        smart_service = get_smart_reanalyze_service()
+        selection_result = await smart_service.select_relevant_frames(
+            db=db,
+            event_id=event_id,
+            query=request.query,
+            top_k=request.top_k,
+            min_similarity=request.min_similarity,
+        )
+
+        # 4. Get total frame embeddings count for response
+        from app.models.frame_embedding import FrameEmbedding
+        total_frame_embeddings = db.query(FrameEmbedding).filter(
+            FrameEmbedding.event_id == event_id
+        ).count()
+
+        # 5. If no frames selected, fall back to thumbnail or return error
+        if not selection_result.selected_frames:
+            # Check if we have any frame embeddings at all
+            if total_frame_embeddings == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No frame embeddings available for this event. "
+                           "Frame embeddings must be generated during event processing."
+                )
+
+            # All frames below threshold - use thumbnail for fallback
+            logger.info(
+                f"No frames above similarity threshold for event {event_id}, using fallback",
+                extra={
+                    "event_type": "smart_reanalyze_fallback",
+                    "event_id": event_id,
+                    "query": request.query,
+                }
+            )
+            # Use stored thumbnail for analysis
+            selected_frame_indices = [0]  # Use first frame as fallback
+        else:
+            selected_frame_indices = selection_result.selected_frames
+
+        # 6. Get EventFrame records for selected frames
+        event_frames = db.query(EventFrame).filter(
+            EventFrame.event_id == event_id,
+            EventFrame.frame_index.in_(selected_frame_indices)
+        ).order_by(EventFrame.frame_index).all()
+
+        # 7. Load frames for AI analysis
+        frames_base64 = []
+
+        for ef in event_frames:
+            frame_path = ef.frame_path
+            if frame_path and os.path.exists(frame_path):
+                with open(frame_path, 'rb') as f:
+                    frame_data = f.read()
+                    frames_base64.append(base64.b64encode(frame_data).decode('utf-8'))
+
+        # Fallback to thumbnail if no EventFrame records
+        if not frames_base64:
+            if event.thumbnail_base64:
+                frames_base64.append(event.thumbnail_base64)
+            elif event.thumbnail_path:
+                thumb_path = _normalize_thumbnail_path(event.thumbnail_path)
+                thumbnail_full_path = os.path.join(THUMBNAIL_DIR, thumb_path)
+                if os.path.exists(thumbnail_full_path):
+                    with open(thumbnail_full_path, 'rb') as f:
+                        frames_base64.append(base64.b64encode(f.read()).decode('utf-8'))
+
+        if not frames_base64:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No frame data available for analysis"
+            )
+
+        # 8. Initialize AI service with query context
+        ai_service = AIService()
+        await ai_service.load_api_keys_from_db(db)
+
+        # 9. Perform AI analysis with query context
+        detected_objects = json.loads(event.objects_detected) if isinstance(event.objects_detected, str) else event.objects_detected
+
+        # Add query context to AI prompt
+        query_context = f"Focus on: {request.query}"
+
+        result = await ai_service.describe_images(
+            images_base64=frames_base64,
+            camera_name=camera.name,
+            timestamp=event.timestamp.isoformat(),
+            detected_objects=detected_objects,
+            additional_context=query_context
+        )
+
+        if not result or not result.success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="AI analysis failed"
+            )
+
+        # 10. Update event with new description
+        event.description = result.description
+        event.ai_confidence = result.ai_confidence
+        event.provider_used = result.provider
+        event.reanalyzed_at = datetime.now(timezone.utc)
+        event.reanalysis_count = (event.reanalysis_count or 0) + 1
+
+        db.commit()
+
+        logger.info(
+            f"Smart re-analysis completed for event {event_id}",
+            extra={
+                "event_type": "smart_reanalyze_complete",
+                "event_id": event_id,
+                "query": request.query,
+                "frames_selected": len(selected_frame_indices),
+                "frames_available": total_frame_embeddings,
+                "top_score": selection_result.frame_scores[0].similarity_score if selection_result.frame_scores else 0,
+            }
+        )
+
+        # 11. Build response
+        return SmartReanalyzeResponse(
+            event_id=event_id,
+            description=result.description,
+            query=request.query,
+            frames_selected=len(selected_frame_indices),
+            frames_available=total_frame_embeddings,
+            top_frame_score=selection_result.frame_scores[0].similarity_score if selection_result.frame_scores else 0,
+            query_time_ms=selection_result.query_embedding_time_ms,
+            scoring_time_ms=selection_result.frame_scoring_time_ms,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to smart re-analyze event {event_id}: {e}",
+            exc_info=True,
+            extra={
+                "event_type": "smart_reanalyze_error",
+                "event_id": event_id,
+                "query": request.query,
+                "error_type": type(e).__name__,
+                "error_message": str(e)
+            }
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Smart re-analysis failed. Please try again or contact support if the issue persists."
         )
 
 
