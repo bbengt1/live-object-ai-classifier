@@ -658,7 +658,7 @@ development_status:
   # Epic P11-1: Remote Access via Cloudflare Tunnel
   # Priority: P1
   # Focus: Secure remote access without VPN or port forwarding
-  epic-p11-1: backlog
+  epic-p11-1: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P11-1.md
   p11-1-1-implement-cloudflare-tunnel-integration: backlog
   p11-1-2-add-tunnel-status-monitoring-and-auto-reconnect: backlog
   p11-1-3-create-settings-ui-for-tunnel-configuration: backlog
@@ -668,7 +668,7 @@ development_status:
   # Epic P11-2: Mobile Push Notifications
   # Priority: P1
   # Focus: APNS (iOS) and FCM (Android) push notifications
-  epic-p11-2: backlog
+  epic-p11-2: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P11-2.md
   p11-2-1-implement-apns-provider-for-ios-push: backlog
   p11-2-2-implement-fcm-provider-for-android-push: backlog
   p11-2-3-create-unified-push-dispatch-service: backlog
@@ -680,7 +680,7 @@ development_status:
   # Epic P11-3: AI Context Enhancement (MCP)
   # Priority: P2
   # Focus: Improve AI accuracy through accumulated context
-  epic-p11-3: backlog
+  epic-p11-3: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P11-3.md
   p11-3-1-implement-mcpcontextprovider-mvp-with-feedback-context: backlog
   p11-3-2-add-entity-match-context-to-provider: backlog
   p11-3-3-integrate-camera-and-time-pattern-context: backlog
@@ -690,7 +690,7 @@ development_status:
   # Epic P11-4: Query-Adaptive Frame Selection
   # Priority: P3
   # Focus: Select relevant frames for targeted re-analysis
-  epic-p11-4: backlog
+  epic-p11-4: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P11-4.md
   p11-4-1-add-text-encoding-to-embeddingservice: backlog
   p11-4-2-implement-frame-embedding-storage-and-generation: backlog
   p11-4-3-create-smart-reanalyze-endpoint-with-query-matching: backlog
@@ -699,7 +699,7 @@ development_status:
   # Epic P11-5: Platform Polish & Documentation
   # Priority: P3
   # Focus: Performance, UX, and documentation
-  epic-p11-5: backlog
+  epic-p11-5: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P11-5.md
   p11-5-1-optimize-camera-list-performance: backlog
   p11-5-2-add-test-connection-before-camera-save: backlog
   p11-5-3-create-github-pages-documentation-site: backlog
