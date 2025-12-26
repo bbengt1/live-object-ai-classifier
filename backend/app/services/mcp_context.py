@@ -1,5 +1,5 @@
 """
-MCPContextProvider for AI Context Enhancement (Story P11-3.1, P11-3.2, P11-3.3)
+MCPContextProvider for AI Context Enhancement (Story P11-3.1, P11-3.2, P11-3.3, P11-3.4)
 
 This module provides the MCPContextProvider class that gathers context
 from user feedback history, known entities, camera patterns, and time patterns
@@ -10,6 +10,7 @@ Architecture:
     - Queries RecognizedEntity for entity context (P11-3.2)
     - Queries Camera and Event for camera patterns (P11-3.3)
     - Calculates time-of-day activity patterns (P11-3.3)
+    - Caches context with 60-second TTL for performance (P11-3.4)
     - Calculates camera-specific accuracy rates
     - Extracts common correction patterns
     - Formats context for AI prompt injection
@@ -17,6 +18,10 @@ Architecture:
 
 Flow:
     Event → MCPContextProvider.get_context(camera_id, event_time, entity_id)
+                                    ↓
+                      Check cache for camera:hour key
+                                    ↓
+                      If cached and not expired → return cached
                                     ↓
                       Query recent feedback (last 50)
                                     ↓
@@ -28,7 +33,7 @@ Flow:
                                     ↓
                       Build FeedbackContext, EntityContext, CameraContext, TimePatternContext
                                     ↓
-                      Return AIContext
+                      Cache and return AIContext
 """
 import asyncio
 import logging
@@ -39,11 +44,28 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 
+from prometheus_client import Counter as PromCounter, Histogram
 from sqlalchemy import desc, select, func, extract
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+# Prometheus metrics for context gathering (Story P11-3.4)
+MCP_CONTEXT_LATENCY = Histogram(
+    'argusai_mcp_context_latency_seconds',
+    'Time to gather MCP context',
+    ['cached'],
+    buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
+)
+MCP_CACHE_HITS = PromCounter(
+    'argusai_mcp_cache_hits_total',
+    'Number of MCP context cache hits'
+)
+MCP_CACHE_MISSES = PromCounter(
+    'argusai_mcp_cache_misses_total',
+    'Number of MCP context cache misses'
+)
 
 
 @dataclass
@@ -94,6 +116,22 @@ class AIContext:
     time_pattern: Optional[TimePatternContext] = None
 
 
+@dataclass
+class CachedContext:
+    """Cached context with TTL tracking (Story P11-3.4)."""
+    context: AIContext
+    created_at: datetime
+
+    def is_expired(self, ttl_seconds: int = 60) -> bool:
+        """Check if cached context has expired."""
+        now = datetime.now(timezone.utc)
+        # Handle timezone-naive created_at
+        created = self.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        return (now - created).total_seconds() > ttl_seconds
+
+
 class MCPContextProvider:
     """
     Provides context for AI prompts based on accumulated feedback, entities, and patterns.
@@ -103,6 +141,7 @@ class MCPContextProvider:
     - Entity context (P11-3.2): known people/vehicles and similar entities
     - Camera context (P11-3.3): location hints and typical objects
     - Time pattern context (P11-3.3): activity levels and unusual timing flags
+    - Context caching (P11-3.4): 60-second TTL cache for performance
 
     Attributes:
         FEEDBACK_LIMIT: Number of recent feedback items to query (50)
@@ -111,6 +150,8 @@ class MCPContextProvider:
         EVENT_HISTORY_DAYS: Days of event history to analyze for patterns (30)
         MAX_TYPICAL_OBJECTS: Maximum typical objects to include (3)
         MAX_FALSE_POSITIVES: Maximum false positive patterns to include (3)
+        CACHE_TTL_SECONDS: Cache TTL in seconds (60)
+        SLOW_QUERY_THRESHOLD_MS: Threshold for slow query warning (50)
     """
 
     FEEDBACK_LIMIT = 50
@@ -119,6 +160,8 @@ class MCPContextProvider:
     EVENT_HISTORY_DAYS = 30
     MAX_TYPICAL_OBJECTS = 3
     MAX_FALSE_POSITIVES = 3
+    CACHE_TTL_SECONDS = 60
+    SLOW_QUERY_THRESHOLD_MS = 50
 
     def __init__(self, db: Session = None):
         """
@@ -128,9 +171,35 @@ class MCPContextProvider:
             db: Optional SQLAlchemy session. If None, must be provided to get_context().
         """
         self._db = db
+        self._cache: Dict[str, CachedContext] = {}
         logger.info(
             "MCPContextProvider initialized",
             extra={"event_type": "mcp_context_provider_init"}
+        )
+
+    def _get_cache_key(self, camera_id: str, event_time: datetime) -> str:
+        """
+        Generate cache key from camera ID and hour (Story P11-3.4 AC-3.4.2).
+
+        Args:
+            camera_id: UUID of the camera
+            event_time: When the event occurred
+
+        Returns:
+            Cache key in format "{camera_id}:{hour}"
+        """
+        return f"{camera_id}:{event_time.hour}"
+
+    def clear_cache(self) -> None:
+        """
+        Clear the context cache (Story P11-3.4).
+
+        Useful for testing and manual cache invalidation.
+        """
+        self._cache.clear()
+        logger.debug(
+            "MCP context cache cleared",
+            extra={"event_type": "mcp.cache_cleared"}
         )
 
     async def get_context(
@@ -143,6 +212,7 @@ class MCPContextProvider:
         """
         Gather context for AI prompt generation.
 
+        Uses caching with 60-second TTL for performance (Story P11-3.4).
         Uses fail-open design: if any context component fails, returns
         partial context with None for failed components.
 
@@ -165,7 +235,51 @@ class MCPContextProvider:
             )
             return AIContext()
 
-        # Gather context components in parallel (fail-open)
+        # Check cache first (Story P11-3.4 AC-3.4.1)
+        cache_key = self._get_cache_key(camera_id, event_time)
+        cached = self._cache.get(cache_key)
+
+        if cached and not cached.is_expired(self.CACHE_TTL_SECONDS):
+            # Cache hit
+            context_gather_time_ms = (time.time() - start_time) * 1000
+            MCP_CACHE_HITS.inc()
+            MCP_CONTEXT_LATENCY.labels(cached="true").observe(context_gather_time_ms / 1000)
+
+            logger.debug(
+                f"MCP context cache hit for camera {camera_id}",
+                extra={
+                    "event_type": "mcp.cache_hit",
+                    "camera_id": camera_id,
+                    "cache_key": cache_key,
+                    "duration_ms": round(context_gather_time_ms, 2),
+                }
+            )
+
+            # Entity context is not cached (depends on entity_id), fetch if needed
+            if entity_id:
+                entity_ctx = await self._safe_get_entity_context(session, entity_id)
+                return AIContext(
+                    feedback=cached.context.feedback,
+                    entity=entity_ctx,
+                    camera=cached.context.camera,
+                    time_pattern=cached.context.time_pattern,
+                )
+
+            return cached.context
+
+        # Cache miss - gather all context components
+        MCP_CACHE_MISSES.inc()
+
+        logger.debug(
+            f"MCP context cache miss for camera {camera_id}",
+            extra={
+                "event_type": "mcp.cache_miss",
+                "camera_id": camera_id,
+                "cache_key": cache_key,
+            }
+        )
+
+        # Gather context components (fail-open)
         feedback_ctx = await self._safe_get_feedback_context(session, camera_id)
 
         # Entity context (P11-3.2) - only if entity_id provided
@@ -181,6 +295,41 @@ class MCPContextProvider:
 
         context_gather_time_ms = (time.time() - start_time) * 1000
 
+        # Record metrics (Story P11-3.4 AC-3.4.4)
+        MCP_CONTEXT_LATENCY.labels(cached="false").observe(context_gather_time_ms / 1000)
+
+        # Warn if slow (Story P11-3.4 AC-3.4.3)
+        if context_gather_time_ms > self.SLOW_QUERY_THRESHOLD_MS:
+            logger.warning(
+                f"MCP context gathering exceeded {self.SLOW_QUERY_THRESHOLD_MS}ms threshold",
+                extra={
+                    "event_type": "mcp.slow_query",
+                    "camera_id": camera_id,
+                    "duration_ms": round(context_gather_time_ms, 2),
+                    "threshold_ms": self.SLOW_QUERY_THRESHOLD_MS,
+                }
+            )
+
+        # Build context
+        context = AIContext(
+            feedback=feedback_ctx,
+            entity=entity_ctx,
+            camera=camera_ctx,
+            time_pattern=time_ctx,
+        )
+
+        # Cache context (without entity, which is request-specific)
+        cached_context = AIContext(
+            feedback=feedback_ctx,
+            entity=None,  # Entity is not cached
+            camera=camera_ctx,
+            time_pattern=time_ctx,
+        )
+        self._cache[cache_key] = CachedContext(
+            context=cached_context,
+            created_at=datetime.now(timezone.utc),
+        )
+
         # Log context gathering
         logger.info(
             f"MCP context gathered for camera {camera_id}",
@@ -192,15 +341,11 @@ class MCPContextProvider:
                 "has_entity": entity_ctx is not None,
                 "has_camera": camera_ctx is not None,
                 "has_time_pattern": time_ctx is not None,
+                "cached": False,
             }
         )
 
-        return AIContext(
-            feedback=feedback_ctx,
-            entity=entity_ctx,
-            camera=camera_ctx,
-            time_pattern=time_ctx,
-        )
+        return context
 
     async def _safe_get_feedback_context(
         self,
