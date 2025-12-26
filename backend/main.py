@@ -524,6 +524,76 @@ async def lifespan(app: FastAPI):
             extra={"event_type": "homekit_init_failed", "error": str(e)}
         )
 
+    # Initialize Cloudflare Tunnel (Story P11-1.1)
+    # Only starts if tunnel_enabled setting is true and token is saved
+    try:
+        from app.services.tunnel_service import get_tunnel_service
+        from app.utils.encryption import decrypt_password
+
+        tunnel_db = next(get_db())
+        try:
+            # Check if tunnel is enabled
+            tunnel_enabled_setting = tunnel_db.query(SystemSetting).filter(
+                SystemSetting.key == "settings_tunnel_enabled"
+            ).first()
+
+            tunnel_enabled = (
+                tunnel_enabled_setting
+                and tunnel_enabled_setting.value.lower() in ('true', '1', 'yes')
+            )
+
+            if tunnel_enabled:
+                # Get saved token
+                token_setting = tunnel_db.query(SystemSetting).filter(
+                    SystemSetting.key == "settings_tunnel_token"
+                ).first()
+
+                if token_setting and token_setting.value:
+                    try:
+                        # Decrypt token
+                        token = decrypt_password(token_setting.value)
+
+                        # Start tunnel
+                        tunnel_service = get_tunnel_service()
+                        success = await tunnel_service.start(token)
+
+                        if success:
+                            logger.info(
+                                "Cloudflare Tunnel started",
+                                extra={"event_type": "tunnel_init_complete"}
+                            )
+                        else:
+                            logger.warning(
+                                f"Cloudflare Tunnel failed to start: {tunnel_service.error_message}",
+                                extra={
+                                    "event_type": "tunnel_init_failed",
+                                    "error": tunnel_service.error_message
+                                }
+                            )
+                    except ValueError as e:
+                        logger.warning(
+                            f"Failed to decrypt tunnel token: {e}",
+                            extra={"event_type": "tunnel_token_decrypt_failed"}
+                        )
+                else:
+                    logger.warning(
+                        "Tunnel enabled but no token saved",
+                        extra={"event_type": "tunnel_no_token"}
+                    )
+            else:
+                logger.debug(
+                    "Cloudflare Tunnel disabled",
+                    extra={"event_type": "tunnel_disabled"}
+                )
+        finally:
+            tunnel_db.close()
+    except Exception as e:
+        # Tunnel failure should not prevent app startup
+        logger.warning(
+            f"Cloudflare Tunnel initialization failed (non-fatal): {e}",
+            extra={"event_type": "tunnel_init_failed", "error": str(e)}
+        )
+
     logger.info(
         "Application startup complete",
         extra={
@@ -567,6 +637,22 @@ async def lifespan(app: FastAPI):
         logger.error(
             f"Error stopping HomeKit service: {e}",
             extra={"event_type": "homekit_shutdown_error", "error": str(e)}
+        )
+
+    # Shutdown Cloudflare Tunnel (Story P11-1.1)
+    try:
+        from app.services.tunnel_service import get_tunnel_service
+        tunnel_service = get_tunnel_service()
+        if tunnel_service.is_running:
+            await tunnel_service.stop()
+            logger.info(
+                "Cloudflare Tunnel stopped",
+                extra={"event_type": "tunnel_shutdown_complete"}
+            )
+    except Exception as e:
+        logger.error(
+            f"Error stopping Cloudflare Tunnel: {e}",
+            extra={"event_type": "tunnel_shutdown_error", "error": str(e)}
         )
 
     # Disconnect MQTT service (Story P4-2.1)

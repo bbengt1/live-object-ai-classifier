@@ -41,6 +41,7 @@ SENSITIVE_SETTING_KEYS = [
     "ai_api_key_claude",
     "ai_api_key_gemini",
     "ai_api_key_grok",  # Story P2-5.2: xAI Grok API key
+    "settings_tunnel_token",  # Story P11-1.1: Cloudflare Tunnel token
 ]
 
 router = APIRouter(
@@ -421,8 +422,8 @@ async def get_settings(db: Session = Depends(get_db)):
         # Load all settings from database, use defaults if not set
         settings_dict = {}
 
-        # Fields that contain sensitive data (API keys)
-        sensitive_fields = ["primary_api_key", "fallback_api_key"]
+        # Fields that contain sensitive data (API keys, tunnel token)
+        sensitive_fields = ["primary_api_key", "fallback_api_key", "tunnel_token"]
 
         # Get all settings fields from the schema
         for field_name, field_info in SystemSettings.model_fields.items():
@@ -538,8 +539,8 @@ async def update_settings(
 
         for field_name, value in update_data.items():
             if value is not None:  # Only update non-None values
-                # Skip masked API key values
-                if field_name in ('primary_api_key', 'fallback_api_key') and isinstance(value, str) and value.startswith('****'):
+                # Skip masked sensitive values (API keys, tunnel token)
+                if field_name in ('primary_api_key', 'fallback_api_key', 'tunnel_token') and isinstance(value, str) and value.startswith('****'):
                     logger.debug(f"Skipping masked value for {field_name}")
                     continue
 
@@ -2036,3 +2037,217 @@ def _parse_certificate(cert_path: str) -> dict:
     except Exception as e:
         logger.error(f"Error parsing certificate {cert_path}: {e}")
         return {"valid": False, "error": str(e)}
+
+
+# Story P11-1.1: Cloudflare Tunnel Endpoints
+
+class TunnelStatusResponse(BaseModel):
+    """Response schema for tunnel status."""
+    status: str = Field(..., description="Tunnel status: disconnected, connecting, connected, error")
+    is_connected: bool = Field(..., description="Whether tunnel is currently connected")
+    is_running: bool = Field(..., description="Whether tunnel process is running")
+    hostname: Optional[str] = Field(None, description="Tunnel hostname if connected")
+    error: Optional[str] = Field(None, description="Error message if status is error")
+    enabled: bool = Field(..., description="Whether tunnel is enabled in settings")
+
+
+class TunnelStartRequest(BaseModel):
+    """Request schema to start tunnel."""
+    token: Optional[str] = Field(None, description="Tunnel token (uses saved token if not provided)")
+
+
+class TunnelActionResponse(BaseModel):
+    """Response schema for tunnel start/stop actions."""
+    success: bool
+    message: str
+    status: Optional[TunnelStatusResponse] = None
+
+
+@router.get("/tunnel/status", response_model=TunnelStatusResponse)
+async def get_tunnel_status(db: Session = Depends(get_db)):
+    """
+    Get Cloudflare Tunnel status
+
+    Returns current tunnel connection status, hostname, and configuration state.
+
+    **Response:**
+    ```json
+    {
+        "status": "connected",
+        "is_connected": true,
+        "is_running": true,
+        "hostname": "my-tunnel.trycloudflare.com",
+        "error": null,
+        "enabled": true
+    }
+    ```
+
+    **Status Codes:**
+    - 200: Success
+    """
+    from app.services.tunnel_service import get_tunnel_service
+
+    tunnel_service = get_tunnel_service()
+    status_dict = tunnel_service.get_status_dict()
+
+    # Get enabled setting from database
+    enabled_setting = _get_setting_from_db(db, f"{SETTINGS_PREFIX}tunnel_enabled", "false")
+    is_enabled = enabled_setting.lower() in ('true', '1', 'yes') if enabled_setting else False
+
+    return TunnelStatusResponse(
+        status=status_dict["status"],
+        is_connected=status_dict["is_connected"],
+        is_running=status_dict["is_running"],
+        hostname=status_dict["hostname"],
+        error=status_dict["error"],
+        enabled=is_enabled
+    )
+
+
+@router.post("/tunnel/start", response_model=TunnelActionResponse)
+async def start_tunnel(
+    request: TunnelStartRequest = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Start Cloudflare Tunnel
+
+    Starts the cloudflared tunnel process. Uses token from request body
+    or falls back to saved token in settings.
+
+    **Request Body (optional):**
+    ```json
+    {
+        "token": "your-tunnel-token"
+    }
+    ```
+
+    **Response:**
+    ```json
+    {
+        "success": true,
+        "message": "Tunnel started successfully",
+        "status": { ... }
+    }
+    ```
+
+    **Status Codes:**
+    - 200: Success
+    - 400: No token available or invalid token
+    - 500: Failed to start tunnel
+    """
+    from app.services.tunnel_service import get_tunnel_service
+
+    tunnel_service = get_tunnel_service()
+
+    # Get token from request or database
+    token = None
+    if request and request.token:
+        token = request.token
+        # Save token to database (encrypted)
+        _set_setting_in_db(db, f"{SETTINGS_PREFIX}tunnel_token", token)
+        logger.info(
+            "Tunnel token saved from start request",
+            extra={"event_type": "tunnel_token_saved"}
+        )
+    else:
+        # Get saved token
+        encrypted_token = _get_setting_from_db(db, f"{SETTINGS_PREFIX}tunnel_token")
+        if encrypted_token:
+            try:
+                token = decrypt_password(encrypted_token)
+            except ValueError:
+                logger.error(
+                    "Failed to decrypt saved tunnel token",
+                    extra={"event_type": "tunnel_token_decrypt_failed"}
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Saved tunnel token is invalid. Please provide a new token."
+                )
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No tunnel token provided and no saved token found. Please provide a token."
+        )
+
+    # Start tunnel
+    try:
+        success = await tunnel_service.start(token)
+
+        if success:
+            # Update enabled setting
+            _set_setting_in_db(db, f"{SETTINGS_PREFIX}tunnel_enabled", "true")
+
+            # Get updated status
+            status_response = await get_tunnel_status(db)
+
+            return TunnelActionResponse(
+                success=True,
+                message="Tunnel started successfully",
+                status=status_response
+            )
+        else:
+            return TunnelActionResponse(
+                success=False,
+                message=tunnel_service.error_message or "Failed to start tunnel",
+                status=await get_tunnel_status(db)
+            )
+
+    except Exception as e:
+        logger.error(
+            f"Error starting tunnel: {e}",
+            extra={"event_type": "tunnel_start_error", "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start tunnel: {str(e)}"
+        )
+
+
+@router.post("/tunnel/stop", response_model=TunnelActionResponse)
+async def stop_tunnel(db: Session = Depends(get_db)):
+    """
+    Stop Cloudflare Tunnel
+
+    Gracefully stops the cloudflared tunnel process.
+
+    **Response:**
+    ```json
+    {
+        "success": true,
+        "message": "Tunnel stopped successfully",
+        "status": { ... }
+    }
+    ```
+
+    **Status Codes:**
+    - 200: Success
+    - 500: Failed to stop tunnel
+    """
+    from app.services.tunnel_service import get_tunnel_service
+
+    tunnel_service = get_tunnel_service()
+
+    try:
+        await tunnel_service.stop()
+
+        # Update enabled setting
+        _set_setting_in_db(db, f"{SETTINGS_PREFIX}tunnel_enabled", "false")
+
+        return TunnelActionResponse(
+            success=True,
+            message="Tunnel stopped successfully",
+            status=await get_tunnel_status(db)
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Error stopping tunnel: {e}",
+            extra={"event_type": "tunnel_stop_error", "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to stop tunnel: {str(e)}"
+        )
