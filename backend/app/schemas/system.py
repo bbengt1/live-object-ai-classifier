@@ -381,6 +381,17 @@ class SystemSettingsUpdate(BaseModel):
         None, ge=0, le=10000, description="Milliseconds to skip from clip start before extracting frames (0-10000ms, default 2000ms)"
     )
 
+    # Story P11-1.1: Cloudflare Tunnel Settings
+    tunnel_enabled: Optional[bool] = Field(
+        None, description="Enable Cloudflare Tunnel for remote access (default: false)"
+    )
+    tunnel_token: Optional[str] = Field(
+        None, description="Cloudflare Tunnel token (encrypted at rest)"
+    )
+    tunnel_hostname: Optional[str] = Field(
+        None, description="Tunnel hostname for display purposes (read-only, auto-detected)"
+    )
+
 
 # Story P3-7.1: AI Usage Response Schemas for Cost Tracking
 
