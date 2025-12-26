@@ -1,5 +1,5 @@
 # Sprint Status
-# Auto-generated from epics.md, epics-phase2.md, epics-phase3.md, epics-phase4.md, epics-phase5.md, epics-phase6.md, epics-phase7.md, epics-phase8.md
+# Auto-generated from epics.md, epics-phase2.md, epics-phase3.md, epics-phase4.md, epics-phase5.md, epics-phase6.md, epics-phase7.md, epics-phase8.md, epics-phase9.md, epics-phase10.md, epics-phase11.md
 # Last updated: 2025-12-25
 
 # STATUS DEFINITIONS:
@@ -646,3 +646,62 @@ development_status:
   bug-mqtt-logging-keyerror: done  # P2: MQTT test connection 500 error - 'message' is reserved LogRecord attribute
   bug-mqtt-discovery-path: done  # P2: MQTT publish discovery 404 - frontend called wrong endpoint path
   bug-entity-modal-propagation: done  # P3: EntitySelectModal confirm button opens EventCard - event propagation issue
+
+  # ============================================================================
+  # PHASE 11: Mobile Platform & Remote Access
+  # ============================================================================
+  # Source: docs/epics-phase11.md
+  # PRD: docs/PRD-phase11.md
+  # Architecture: docs/architecture/phase-11-additions.md
+  # Backlog: docs/backlog.md (IMP-029-034, FF-022, FF-025)
+
+  # Epic P11-1: Remote Access via Cloudflare Tunnel
+  # Priority: P1
+  # Focus: Secure remote access without VPN or port forwarding
+  epic-p11-1: backlog
+  p11-1-1-implement-cloudflare-tunnel-integration: backlog
+  p11-1-2-add-tunnel-status-monitoring-and-auto-reconnect: backlog
+  p11-1-3-create-settings-ui-for-tunnel-configuration: backlog
+  p11-1-4-document-tunnel-setup-in-user-guide: backlog
+  epic-p11-1-retrospective: optional
+
+  # Epic P11-2: Mobile Push Notifications
+  # Priority: P1
+  # Focus: APNS (iOS) and FCM (Android) push notifications
+  epic-p11-2: backlog
+  p11-2-1-implement-apns-provider-for-ios-push: backlog
+  p11-2-2-implement-fcm-provider-for-android-push: backlog
+  p11-2-3-create-unified-push-dispatch-service: backlog
+  p11-2-4-implement-device-registration-and-token-management: backlog
+  p11-2-5-add-mobile-push-preferences-quiet-hours: backlog
+  p11-2-6-support-notification-thumbnails-attachments: backlog
+  epic-p11-2-retrospective: optional
+
+  # Epic P11-3: AI Context Enhancement (MCP)
+  # Priority: P2
+  # Focus: Improve AI accuracy through accumulated context
+  epic-p11-3: backlog
+  p11-3-1-implement-mcpcontextprovider-mvp-with-feedback-context: backlog
+  p11-3-2-add-entity-match-context-to-provider: backlog
+  p11-3-3-integrate-camera-and-time-pattern-context: backlog
+  p11-3-4-add-context-caching-and-performance-metrics: backlog
+  epic-p11-3-retrospective: optional
+
+  # Epic P11-4: Query-Adaptive Frame Selection
+  # Priority: P3
+  # Focus: Select relevant frames for targeted re-analysis
+  epic-p11-4: backlog
+  p11-4-1-add-text-encoding-to-embeddingservice: backlog
+  p11-4-2-implement-frame-embedding-storage-and-generation: backlog
+  p11-4-3-create-smart-reanalyze-endpoint-with-query-matching: backlog
+  epic-p11-4-retrospective: optional
+
+  # Epic P11-5: Platform Polish & Documentation
+  # Priority: P3
+  # Focus: Performance, UX, and documentation
+  epic-p11-5: backlog
+  p11-5-1-optimize-camera-list-performance: backlog
+  p11-5-2-add-test-connection-before-camera-save: backlog
+  p11-5-3-create-github-pages-documentation-site: backlog
+  p11-5-4-add-export-motion-events-to-csv: backlog
+  epic-p11-5-retrospective: optional
