@@ -1,7 +1,7 @@
 """Add entity_id and entity_match_mode to alert_rules (Story P12-1.1)
 
 Revision ID: 053_add_entity_alert_rule_fields
-Revises: 052_add_entity_adjustments_table
+Revises: f9c5d7e8a1b2
 Create Date: 2025-12-26
 
 Story P12-1.1: Add Entity Field to AlertRule Model
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '053_add_entity_alert_rule_fields'
-down_revision = '052_add_entity_adjustments_table'
+down_revision = 'f9c5d7e8a1b2'
 branch_labels = None
 depends_on = None
 
