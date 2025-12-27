@@ -108,7 +108,8 @@ export function PasswordChangeForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        {/* Note: Using div instead of form to avoid nested form issues when embedded in Settings page */}
+        <div className="space-y-4">
           {/* Current Password */}
           <div className="space-y-2">
             <Label htmlFor="currentPassword">Current Password</Label>
@@ -228,11 +229,16 @@ export function PasswordChangeForm() {
           </div>
 
           {/* Submit Button */}
-          <Button type="submit" disabled={isSubmitting} className="w-full sm:w-auto">
+          <Button
+            type="button"
+            disabled={isSubmitting}
+            className="w-full sm:w-auto"
+            onClick={handleSubmit(onSubmit)}
+          >
             {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Change Password
           </Button>
-        </form>
+        </div>
       </CardContent>
     </Card>
   );
