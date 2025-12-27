@@ -768,3 +768,20 @@ class CameraService:
                 "codec": None
             }
         return self._audio_extractor.get_buffer_status(camera_id)
+
+
+# Singleton instance
+_camera_service: Optional[CameraService] = None
+
+
+def get_camera_service() -> CameraService:
+    """
+    Get the global CameraService instance.
+
+    Returns:
+        CameraService singleton instance.
+    """
+    global _camera_service
+    if _camera_service is None:
+        _camera_service = CameraService()
+    return _camera_service

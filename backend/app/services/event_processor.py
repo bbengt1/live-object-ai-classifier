@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING
 from app.models.camera import Camera
 from app.models.event import Event
 from app.services.ai_service import AIService
-from app.services.camera_service import CameraService
+from app.services.camera_service import CameraService, get_camera_service
 from app.services.motion_detection_service import MotionDetectionService
 from app.services.cost_cap_service import get_cost_cap_service
 from app.services.cost_alert_service import get_cost_alert_service
