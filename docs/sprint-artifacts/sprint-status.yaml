@@ -728,24 +728,24 @@ development_status:
   # Epic P12-2: Mobile Device Registration
   # Priority: MEDIUM
   # Focus: Device management backend for mobile apps
-  epic-p12-2: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P12-2.md
+  epic-p12-2: done  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P12-2.md
   p12-2-1-extend-device-model-for-mobile-registration: done
   p12-2-2-implement-device-crud-endpoints: done
   p12-2-3-build-device-management-ui: done
-  p12-2-4-associate-push-tokens-with-devices: backlog  # last_seen middleware pending
+  p12-2-4-associate-push-tokens-with-devices: done  # last_seen middleware implemented
   p12-2-5-implement-device-lifecycle-tracking: done
   epic-p12-2-retrospective: optional
 
   # Epic P12-3: Mobile Authentication & Pairing
   # Priority: MEDIUM
   # Focus: Secure 6-digit pairing flow and JWT token management
-  epic-p12-3: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P12-3.md
-  p12-3-1-create-pairingcode-and-refreshtoken-models: backlog
-  p12-3-2-implement-pairing-code-generation-and-confirmation: backlog
-  p12-3-3-build-pairing-confirmation-ui: backlog
-  p12-3-4-implement-token-exchange-and-jwt-generation: backlog
-  p12-3-5-implement-token-refresh-with-rotation: backlog
-  p12-3-6-implement-token-revocation-on-security-events: backlog
+  epic-p12-3: done  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P12-3.md
+  p12-3-1-create-pairingcode-and-refreshtoken-models: done
+  p12-3-2-implement-pairing-code-generation-and-confirmation: done
+  p12-3-3-build-pairing-confirmation-ui: done
+  p12-3-4-implement-token-exchange-and-jwt-generation: done
+  p12-3-5-implement-token-refresh-with-rotation: done
+  p12-3-6-implement-token-revocation-on-security-events: done
   epic-p12-3-retrospective: optional
 
   # Epic P12-4: Query-Adaptive Optimization

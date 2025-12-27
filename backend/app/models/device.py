@@ -68,6 +68,14 @@ class Device(Base):
     # Relationship to User
     user = relationship("User", back_populates="devices")
 
+    # Story P12-3.1: Relationship to refresh tokens
+    refresh_tokens = relationship(
+        "RefreshToken",
+        back_populates="device",
+        cascade="all, delete-orphan",
+        lazy="dynamic"
+    )
+
     __table_args__ = (
         Index('idx_devices_user', 'user_id'),
         Index('idx_devices_device_id', 'device_id'),
