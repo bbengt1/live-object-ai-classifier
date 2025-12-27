@@ -20,7 +20,7 @@ vi.mock('sonner', () => ({
 // Mock API client
 const mockCreate = vi.fn();
 vi.mock('@/lib/api-client', () => ({
-  api: {
+  apiClient: {
     alertRules: {
       create: (...args: unknown[]) => mockCreate(...args),
     },

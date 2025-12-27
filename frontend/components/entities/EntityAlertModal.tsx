@@ -30,7 +30,7 @@ import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Bell, Clock, ExternalLink, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 import type { IEntity } from '@/types/entity';
 
 export interface EntityAlertModalProps {
@@ -75,7 +75,7 @@ export function EntityAlertModal({ isOpen, onClose, entity }: EntityAlertModalPr
     setIsSubmitting(true);
     try {
       // Create alert rule with entity_match_mode='specific'
-      await api.alertRules.create({
+      await apiClient.alertRules.create({
         name: `Alert: ${displayName} detected`,
         is_enabled: true,
         entity_id: entity.id,
