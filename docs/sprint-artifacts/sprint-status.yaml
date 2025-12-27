@@ -751,10 +751,10 @@ development_status:
   # Epic P12-4: Query-Adaptive Optimization
   # Priority: LOW
   # Focus: Batch embeddings, diversity filtering, query enhancements
-  epic-p12-4: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P12-4.md
-  p12-4-1-implement-batch-embedding-generation: backlog
-  p12-4-2-add-diversity-filtering-to-frame-selection: backlog
-  p12-4-3-integrate-quality-scoring-in-frame-selection: backlog
-  p12-4-4-add-query-caching-and-suggestions: backlog
-  p12-4-5-enhance-re-analyze-modal-with-relevance-scores: backlog
+  epic-p12-4: done  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P12-4.md
+  p12-4-1-implement-batch-embedding-generation: done
+  p12-4-2-add-diversity-filtering-to-frame-selection: done
+  p12-4-3-integrate-quality-scoring-in-frame-selection: done
+  p12-4-4-add-query-caching-and-suggestions: done
+  p12-4-5-enhance-re-analyze-modal-with-relevance-scores: done
   epic-p12-4-retrospective: optional
