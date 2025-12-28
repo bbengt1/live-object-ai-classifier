@@ -231,6 +231,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         Stores API key info in request.state if valid.
         """
         api_key_header = request.headers.get("X-API-Key")
+        logger.info(f"API Key header present: {bool(api_key_header)}")
         if not api_key_header:
             return False
 
@@ -238,6 +239,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         try:
             service = get_api_key_service()
             api_key = service.verify_key(db, api_key_header)
+            logger.info(f"API Key verified: {bool(api_key)}")
 
             if api_key:
                 # Store API key in request state for downstream use
