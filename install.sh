@@ -1609,12 +1609,22 @@ print_summary() {
     echo "   - RTSP Camera:   Cameras > Add Camera > RTSP"
     echo "   - USB/Webcam:    Cameras > Add Camera > USB"
     echo ""
-    echo "5. Optional - Set Up as System Service:"
+    echo "5. Optional - Enable OCR Frame Overlay Extraction:"
+    echo "   - Install tesseract for OCR support:"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "     brew install tesseract"
+    else
+        echo "     sudo apt install tesseract-ocr  # Ubuntu/Debian"
+        echo "     sudo dnf install tesseract      # Fedora/RHEL"
+    fi
+    echo "   - Enable in Settings > System > 'Attempt OCR extraction'"
+    echo ""
+    echo "6. Optional - Set Up as System Service:"
     echo "   - Run: ./install.sh --services"
     echo "   - Follow the printed instructions to install service files"
     echo ""
     if [ "$SSL_METHOD" = "skip" ] || [ -z "$SSL_METHOD" ]; then
-        echo "6. Optional - Configure SSL Later:"
+        echo "7. Optional - Configure SSL Later:"
         echo "   - Run: ./install.sh --ssl-only"
         echo "   - Required for push notifications to work"
         echo ""
