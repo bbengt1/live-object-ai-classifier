@@ -10,7 +10,7 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -132,7 +132,6 @@ export function EntityReprocessing() {
   const startMutation = useMutation({
     mutationFn: () => apiClient.reprocessing.start(filters),
     onSuccess: (job) => {
-      setLiveJob(job);
       toast.success('Reprocessing Started', {
         description: `Processing ${job.total_events} events`,
       });
@@ -148,8 +147,7 @@ export function EntityReprocessing() {
   // Cancel reprocessing mutation
   const cancelMutation = useMutation({
     mutationFn: () => apiClient.reprocessing.cancel(),
-    onSuccess: (job) => {
-      setLiveJob(job);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reprocessing-status'] });
     },
     onError: (error: Error) => {
