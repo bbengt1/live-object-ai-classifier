@@ -88,6 +88,12 @@ import type {
   IDeviceInfo,
   ITestConnectionResponse,
 } from '@/types/discovery';
+import type {
+  IAPIKeyCreateRequest,
+  IAPIKeyCreateResponse,
+  IAPIKeyListItem,
+  IAPIKeyUsage,
+} from '@/types/api-key';
 
 // Use empty string for relative URLs when proxying through Next.js rewrites
 // Set NEXT_PUBLIC_API_URL='' to use relative URLs (recommended for SSL frontend + non-SSL backend)
@@ -2390,6 +2396,62 @@ export const apiClient = {
   // ============================================================================
   // Cloudflare Tunnel (Story P11-1.3)
   // ============================================================================
+  // ============================================================================
+  // API Keys (Story P13-1.6)
+  // ============================================================================
+  apiKeys: {
+    /**
+     * List all API keys
+     * @param includeRevoked Whether to include revoked keys
+     * @returns List of API keys
+     */
+    list: async (includeRevoked = false): Promise<IAPIKeyListItem[]> => {
+      const params = includeRevoked ? '?include_revoked=true' : '';
+      return apiFetch(`/api-keys${params}`);
+    },
+
+    /**
+     * Create a new API key
+     * @param request Key creation parameters
+     * @returns Created key with full key value (only shown once)
+     */
+    create: async (request: IAPIKeyCreateRequest): Promise<IAPIKeyCreateResponse> => {
+      return apiFetch('/api-keys/', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      });
+    },
+
+    /**
+     * Get a specific API key by ID
+     * @param keyId API key UUID
+     * @returns API key details
+     */
+    get: async (keyId: string): Promise<IAPIKeyListItem> => {
+      return apiFetch(`/api-keys/${keyId}`);
+    },
+
+    /**
+     * Revoke an API key
+     * @param keyId API key UUID
+     * @returns Confirmation message
+     */
+    revoke: async (keyId: string): Promise<{ message: string }> => {
+      return apiFetch(`/api-keys/${keyId}`, {
+        method: 'DELETE',
+      });
+    },
+
+    /**
+     * Get API key usage statistics
+     * @param keyId API key UUID
+     * @returns Usage statistics
+     */
+    getUsage: async (keyId: string): Promise<IAPIKeyUsage> => {
+      return apiFetch(`/api-keys/${keyId}/usage`);
+    },
+  },
+
   tunnel: {
     /**
      * Get Cloudflare Tunnel status

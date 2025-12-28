@@ -46,6 +46,7 @@ from app.api.v1.discovery import router as discovery_router  # Story P5-2.1: ONV
 from app.api.v1.audio import router as audio_router  # Story P6-3.2: Audio Event Detection
 from app.api.v1.devices import router as devices_router  # Story P11-2.4: Device Registration
 from app.api.v1.mobile_auth import router as mobile_auth_router  # Story P12-3: Mobile Auth
+from app.api.v1.api_keys import router as api_keys_router  # Story P13-1: API Key Management
 from app.services.event_processor import initialize_event_processor, shutdown_event_processor
 from app.services.cleanup_service import get_cleanup_service
 from app.services.protect_service import get_protect_service  # Story P2-1.4: Protect WebSocket
@@ -776,6 +777,7 @@ OPENAPI_TAGS = [
     {"name": "Digests", "description": "Daily digest scheduling"},
     {"name": "Motion Events", "description": "Raw motion event tracking"},
     {"name": "System Notifications", "description": "System alerts and cost notifications"},
+    {"name": "API Keys", "description": "API key management for external integrations"},
 ]
 
 # Create FastAPI app with enhanced OpenAPI configuration
@@ -816,7 +818,7 @@ def custom_openapi():
         license_info=app.license_info,
     )
 
-    # Add security schemes (AC-5.1.3)
+    # Add security schemes (AC-5.1.3, Story P13-1.4)
     openapi_schema["components"]["securitySchemes"] = {
         "bearerAuth": {
             "type": "http",
@@ -829,13 +831,20 @@ def custom_openapi():
             "in": "cookie",
             "name": "access_token",
             "description": "JWT token stored in HTTP-only cookie (set by login endpoint)"
+        },
+        "apiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "API key for programmatic access. Create keys via POST /api/v1/api-keys/"
         }
     }
 
     # Apply security globally (endpoints can override with security=[])
     openapi_schema["security"] = [
         {"bearerAuth": []},
-        {"cookieAuth": []}
+        {"cookieAuth": []},
+        {"apiKeyAuth": []}
     ]
 
     app.openapi_schema = openapi_schema
@@ -938,6 +947,7 @@ app.include_router(homekit_router, prefix=settings.API_V1_PREFIX)  # Story P5-1.
 app.include_router(audio_router, prefix=settings.API_V1_PREFIX)  # Story P6-3.2 - Audio Event Detection
 app.include_router(devices_router, prefix=settings.API_V1_PREFIX)  # Story P11-2.4 - Device Registration
 app.include_router(mobile_auth_router, prefix=settings.API_V1_PREFIX)  # Story P12-3 - Mobile Auth
+app.include_router(api_keys_router, prefix=settings.API_V1_PREFIX)  # Story P13-1 - API Key Management
 
 # Thumbnail serving endpoint (with CORS support)
 from fastapi.responses import FileResponse, Response as FastAPIResponse

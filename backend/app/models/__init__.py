@@ -27,6 +27,7 @@ from app.models.homekit import HomeKitConfig, HomeKitAccessory
 from app.models.device import Device
 from app.models.pairing_code import PairingCode
 from app.models.refresh_token import RefreshToken
+from app.models.api_key import APIKey
 
 __all__ = [
     "ProtectController",
@@ -60,4 +61,5 @@ __all__ = [
     "Device",
     "PairingCode",
     "RefreshToken",
+    "APIKey",
 ]
