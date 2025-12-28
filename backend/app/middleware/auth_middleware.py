@@ -84,6 +84,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method
 
+        logger.warning(f"[DEBUG] AuthMiddleware dispatch: {method} {path}")
+
         # Skip auth in test mode (when running pytest)
         # Check for TestClient user-agent or TESTING environment variable
         user_agent = request.headers.get("user-agent", "")
