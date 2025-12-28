@@ -13,6 +13,7 @@ ArgusAI is an **AI-powered event detection system** for home security. It analyz
 - **Entity Recognition**: Track people, vehicles, and packages across events
 - **Smart Notifications**: Push notifications with thumbnails and configurable alert rules
 - **Home Integration**: Connect to Home Assistant and Apple HomeKit
+- **API Key Authentication**: Secure programmatic access with scoped permissions and rate limiting
 
 ## Quick Start
 

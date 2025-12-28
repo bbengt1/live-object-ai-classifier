@@ -67,7 +67,7 @@ const sidebars = {
     {
       type: 'category',
       label: 'API Reference',
-      items: ['api/overview'],
+      items: ['api/overview', 'api/api-keys'],
     },
     'troubleshooting',
   ],
