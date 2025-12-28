@@ -15,13 +15,13 @@ This document provides the complete epic and story breakdown for Phase 13, decom
 
 ### Epic Summary
 
-| Epic | Title | Stories | Priority | FRs Covered |
-|------|-------|---------|----------|-------------|
-| P13-1 | API Key Management | 6 | P2 | FR1-FR10 |
-| P13-2 | Cloud Relay | 5 | P3 | FR11-FR18 |
-| P13-3 | Entity Reprocessing | 4 | P3 | FR19-FR26 |
-| P13-4 | Branding | 3 | P3 | FR27-FR32 |
-| P13-5 | n8n Development Pipeline | 5 | P2 | FR33-FR40 |
+| Epic | Title | Stories | Priority | FRs Covered | Status |
+|------|-------|---------|----------|-------------|--------|
+| P13-1 | API Key Management | 6 | P2 | FR1-FR10 | ✅ Complete |
+| P13-2 | Cloud Relay | 5 | P3 | FR11-FR18 | Pending |
+| P13-3 | Entity Reprocessing | 4 | P3 | FR19-FR26 | Pending |
+| P13-4 | Branding | 3 | P3 | FR27-FR32 | Pending |
+| P13-5 | n8n Development Pipeline | 5 | P2 | FR33-FR40 | Pending |
 
 **Total: 5 Epics, 23 Stories**
 
@@ -95,7 +95,7 @@ This document provides the complete epic and story breakdown for Phase 13, decom
 
 ---
 
-## Epic P13-1: API Key Management
+## Epic P13-1: API Key Management ✅ COMPLETE
 
 **Goal:** Enable secure programmatic access to ArgusAI for third-party integrations, automation scripts, and external systems without exposing admin credentials.
 
@@ -103,9 +103,11 @@ This document provides the complete epic and story breakdown for Phase 13, decom
 
 **Priority:** P2
 
+**Status:** Complete (PR #257 merged 2025-12-28)
+
 ---
 
-### Story P13-1.1: Create APIKey Database Model and Migration
+### Story P13-1.1: Create APIKey Database Model and Migration ✅
 
 As an administrator,
 I want API keys stored securely in the database,
@@ -146,7 +148,7 @@ So that they persist across server restarts and can be managed.
 
 ---
 
-### Story P13-1.2: Implement API Key Generation Endpoint
+### Story P13-1.2: Implement API Key Generation Endpoint ✅
 
 As an administrator,
 I want to generate new API keys via the API,
@@ -198,7 +200,7 @@ So that I can create keys for external systems.
 
 ---
 
-### Story P13-1.3: Implement API Key List and Revoke Endpoints
+### Story P13-1.3: Implement API Key List and Revoke Endpoints ✅
 
 As an administrator,
 I want to view and revoke API keys,
@@ -243,7 +245,7 @@ So that I can manage access to the system.
 
 ---
 
-### Story P13-1.4: Implement API Key Authentication Middleware
+### Story P13-1.4: Implement API Key Authentication Middleware ✅
 
 As an external system,
 I want to authenticate using an API key,
@@ -285,7 +287,7 @@ So that I can access ArgusAI programmatically.
 
 ---
 
-### Story P13-1.5: Implement API Key Rate Limiting
+### Story P13-1.5: Implement API Key Rate Limiting ✅
 
 As a system administrator,
 I want rate limiting per API key,
@@ -319,7 +321,7 @@ So that no single integration can overwhelm the system.
 
 ---
 
-### Story P13-1.6: Create API Keys Settings UI
+### Story P13-1.6: Create API Keys Settings UI ✅
 
 As an administrator,
 I want to manage API keys through the web interface,
