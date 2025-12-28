@@ -32,7 +32,7 @@ import {
   type ReprocessingJob,
   type ReprocessingFilters,
 } from '@/lib/api-client';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWebSocket } from '@/lib/hooks/useWebSocket';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
