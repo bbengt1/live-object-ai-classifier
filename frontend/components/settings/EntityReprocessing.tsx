@@ -10,7 +10,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -32,7 +32,6 @@ import {
   type ReprocessingJob,
   type ReprocessingFilters,
 } from '@/lib/api-client';
-import { useWebSocket } from '@/lib/hooks/useWebSocket';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -73,93 +72,61 @@ export function EntityReprocessing() {
   });
   const [dateRange, setDateRange] = useState<'all' | '7d' | '30d' | '90d'>('all');
 
-  // Local job state (updated via WebSocket)
-  const [liveJob, setLiveJob] = useState<ReprocessingJob | null>(null);
-
-  // Handle WebSocket messages for real-time progress
-  const handleWebSocketNotification = useCallback((data: Record<string, unknown>) => {
-    const message = data as { type?: string; data?: Record<string, unknown> };
-
-    if (message.type === 'reprocessing_progress') {
-      const progressData = message.data as {
-        job_id: string;
-        processed: number;
-        matched: number;
-        embeddings_generated: number;
-        errors: number;
-        percent_complete: number;
-      };
-      setLiveJob((prev) => {
-        if (!prev || prev.job_id !== progressData.job_id) return prev;
-        return {
-          ...prev,
-          processed: progressData.processed,
-          matched: progressData.matched,
-          embeddings_generated: progressData.embeddings_generated,
-          errors: progressData.errors,
-          percent_complete: progressData.percent_complete,
-        };
-      });
-    } else if (message.type === 'reprocessing_complete') {
-      const completeData = message.data as {
-        job_id: string;
-        status: string;
-        total_matched: number;
-        total_processed: number;
-        duration_seconds: number;
-        error_message: string | null;
-      };
-      // Refetch status to get final state
-      queryClient.invalidateQueries({ queryKey: ['reprocessing-status'] });
-      queryClient.invalidateQueries({ queryKey: ['reprocessing-estimate'] });
-
-      if (completeData.status === 'completed') {
-        toast.success('Reprocessing Complete', {
-          description: `Matched ${completeData.total_matched} entities in ${formatDuration(completeData.duration_seconds)}`,
-        });
-      } else if (completeData.status === 'cancelled') {
-        toast.info('Reprocessing Cancelled', {
-          description: `Processed ${completeData.total_processed} events before cancellation`,
-        });
-      } else if (completeData.status === 'failed') {
-        toast.error('Reprocessing Failed', {
-          description: completeData.error_message || 'Unknown error',
-        });
-      }
-    }
-  }, [queryClient]);
-
-  // Connect to WebSocket for real-time updates
-  useWebSocket({
-    onNotification: handleWebSocketNotification,
-  });
-
   // Fetch cameras for filter
   const camerasQuery = useQuery({
     queryKey: ['cameras'],
     queryFn: () => apiClient.getCameras(),
   });
 
-  // Fetch current job status
+  // Fetch current job status (polls every 2s when running)
   const statusQuery = useQuery({
     queryKey: ['reprocessing-status'],
     queryFn: () => apiClient.reprocessing.getStatus(),
-    refetchInterval: liveJob?.status === 'running' ? 5000 : false,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data?.status === 'running' ? 2000 : false;
+    },
   });
 
   // Fetch estimate when filters change
   const estimateQuery = useQuery({
     queryKey: ['reprocessing-estimate', filters],
     queryFn: () => apiClient.reprocessing.estimate(filters),
-    enabled: !liveJob || liveJob.status !== 'running',
+    enabled: !statusQuery.data || statusQuery.data.status !== 'running',
   });
 
-  // Update liveJob when statusQuery updates
+  // Show toast when job completes
+  const prevStatusRef = useRef<string | null>(null);
   useEffect(() => {
-    if (statusQuery.data) {
-      setLiveJob(statusQuery.data);
+    const currentStatus = statusQuery.data?.status;
+    const prevStatus = prevStatusRef.current;
+
+    if (prevStatus === 'running' && currentStatus && currentStatus !== 'running') {
+      const job = statusQuery.data;
+      if (job) {
+        if (currentStatus === 'completed') {
+          toast.success('Reprocessing Complete', {
+            description: `Matched ${job.matched} entities`,
+          });
+        } else if (currentStatus === 'cancelled') {
+          toast.info('Reprocessing Cancelled', {
+            description: `Processed ${job.processed} events before cancellation`,
+          });
+        } else if (currentStatus === 'failed') {
+          toast.error('Reprocessing Failed', {
+            description: job.error_message || 'Unknown error',
+          });
+        }
+        // Refetch estimate after completion
+        queryClient.invalidateQueries({ queryKey: ['reprocessing-estimate'] });
+      }
     }
-  }, [statusQuery.data]);
+
+    prevStatusRef.current = currentStatus || null;
+  }, [statusQuery.data, queryClient]);
+
+  // Use status query data as liveJob
+  const liveJob = statusQuery.data;
 
   // Start reprocessing mutation
   const startMutation = useMutation({
