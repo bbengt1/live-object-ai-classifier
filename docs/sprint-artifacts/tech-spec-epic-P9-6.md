@@ -117,9 +117,9 @@ interface TestConnectionResponse {
 module.exports = {
   title: 'ArgusAI',
   tagline: 'AI-Powered Home Security',
-  url: 'https://bbengt1.github.io',
+  url: 'https://project-argusai.github.io',
   baseUrl: '/argusai/',
-  organizationName: 'bbengt1',
+  organizationName: 'project-argusai',
   projectName: 'argusai',
   themeConfig: {
     navbar: {
@@ -127,7 +127,7 @@ module.exports = {
       items: [
         { to: 'docs/getting-started', label: 'Docs' },
         { to: 'docs/api', label: 'API' },
-        { href: 'https://github.com/bbengt1/argusai', label: 'GitHub' }
+        { href: 'https://github.com/project-argusai/argusai', label: 'GitHub' }
       ]
     }
   }
@@ -697,7 +697,7 @@ export function CameraForm() {
 
 AI-Powered Home Security System
 
-[Features](#features) | [Installation](#installation) | [Documentation](https://bbengt1.github.io/argusai/)
+[Features](#features) | [Installation](#installation) | [Documentation](https://project-argusai.github.io/argusai/)
 
 ## Features
 
@@ -713,7 +713,7 @@ AI-Powered Home Security System
 
 ```bash
 # Clone and install
-git clone https://github.com/bbengt1/argusai.git
+git clone https://github.com/project-argusai/argusai.git
 cd argusai
 ./scripts/install.sh
 ```
@@ -727,7 +727,7 @@ cd argusai
 
 ## Documentation
 
-Full documentation available at [bbengt1.github.io/argusai](https://bbengt1.github.io/argusai/)
+Full documentation available at [project-argusai.github.io/argusai](https://project-argusai.github.io/argusai/)
 
 - [Installation Guide](docs/installation.md)
 - [Configuration](docs/configuration.md)

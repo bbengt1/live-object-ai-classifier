@@ -37,7 +37,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: backend
-          image: ghcr.io/bbengt1/argusai-backend:latest
+          image: ghcr.io/project-argusai/argusai-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

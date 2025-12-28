@@ -224,7 +224,7 @@ SSL_KEY_FILE=data/certs/key.pem
 
 If these solutions don't resolve your issue:
 
-1. Check [GitHub Issues](https://github.com/bbengt1/argusai/issues)
+1. Check [GitHub Issues](https://github.com/project-argusai/ArgusAI/issues)
 2. Search for similar problems
 3. Create a new issue with:
    - ArgusAI version

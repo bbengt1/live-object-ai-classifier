@@ -288,7 +288,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: ghcr.io/bbengt1/argusai-backend:latest
+    image: ghcr.io/project-argusai/argusai-backend:latest
     ports:
       - "8000:8000"
     environment:
@@ -326,7 +326,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: http://backend:8000
-    image: ghcr.io/bbengt1/argusai-frontend:latest
+    image: ghcr.io/project-argusai/argusai-frontend:latest
     ports:
       - "3000:3000"
     environment:

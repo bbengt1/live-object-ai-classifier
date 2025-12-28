@@ -21,7 +21,7 @@ Deploy ArgusAI to a Kubernetes cluster using raw manifests for fine-grained cont
 
 ```bash
 # Clone the repository
-git clone https://github.com/bbengt1/ArgusAI.git
+git clone https://github.com/project-argusai/ArgusAI.git
 cd ArgusAI
 
 # Create namespace

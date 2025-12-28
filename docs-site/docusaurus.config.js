@@ -8,13 +8,13 @@ const config = {
   favicon: 'img/favicon.ico',
 
   // Set the production url of your site here
-  url: 'https://bbengt1.github.io',
+  url: 'https://project-argusai.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/ArgusAI/',
 
   // GitHub pages deployment config.
-  organizationName: 'bbengt1',
+  organizationName: 'project-argusai',
   projectName: 'ArgusAI',
   trailingSlash: false,
 
@@ -58,7 +58,7 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           // Please change this to your repo.
           editUrl:
-            'https://github.com/bbengt1/argusai/tree/main/docs-site/',
+            'https://github.com/project-argusai/ArgusAI/tree/main/docs-site/',
         },
         blog: false, // Disable blog feature
         theme: {
@@ -87,7 +87,7 @@ const config = {
             label: 'Documentation',
           },
           {
-            href: 'https://github.com/bbengt1/argusai',
+            href: 'https://github.com/project-argusai/ArgusAI',
             label: 'GitHub',
             position: 'right',
           },
@@ -110,11 +110,11 @@ const config = {
             items: [
               {
                 label: 'GitHub Issues',
-                href: 'https://github.com/bbengt1/argusai/issues',
+                href: 'https://github.com/project-argusai/ArgusAI/issues',
               },
               {
                 label: 'GitHub Discussions',
-                href: 'https://github.com/bbengt1/argusai/discussions',
+                href: 'https://github.com/project-argusai/ArgusAI/discussions',
               },
             ],
           },
@@ -123,7 +123,7 @@ const config = {
             items: [
               {
                 label: 'GitHub',
-                href: 'https://github.com/bbengt1/argusai',
+                href: 'https://github.com/project-argusai/ArgusAI',
               },
             ],
           },

@@ -7,7 +7,7 @@
     <generatedAt>2025-12-24</generatedAt>
     <generator>BMAD Story Context Workflow</generator>
     <sourceStoryPath>docs/sprint-artifacts/p10-2-5-add-postgresql-service-to-docker-compose.md</sourceStoryPath>
-    <githubIssue>https://github.com/bbengt1/ArgusAI/issues/195</githubIssue>
+    <githubIssue>https://github.com/project-argusai/ArgusAI/issues/195</githubIssue>
   </metadata>
 
   <story>

@@ -789,7 +789,7 @@ app = FastAPI(
     openapi_tags=OPENAPI_TAGS,
     contact={
         "name": "ArgusAI",
-        "url": "https://github.com/bbengt1/ArgusAI",
+        "url": "https://github.com/project-argusai/ArgusAI",
     },
     license_info={
         "name": "MIT License",

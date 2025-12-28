@@ -39,7 +39,7 @@ ArgusAI's motion detection accuracy has never been systematically validated with
 **Dependencies:** None - this is a data acquisition and organization story
 
 **Backlog Reference:** TD-003
-**GitHub Issue:** [#31](https://github.com/bbengt1/ArgusAI/issues/31)
+**GitHub Issue:** [#31](https://github.com/project-argusai/ArgusAI/issues/31)
 **PRD Reference:** docs/PRD-phase5.md (FR29)
 
 ---

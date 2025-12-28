@@ -9,7 +9,7 @@ fullnameOverride: ""
 backend:
   replicaCount: 1
   image:
-    repository: ghcr.io/bbengt1/argusai-backend
+    repository: ghcr.io/project-argusai/argusai-backend
     tag: "latest"
     pullPolicy: IfNotPresent
   resources:
@@ -27,7 +27,7 @@ backend:
 frontend:
   replicaCount: 1
   image:
-    repository: ghcr.io/bbengt1/argusai-frontend
+    repository: ghcr.io/project-argusai/argusai-frontend
     tag: "latest"
     pullPolicy: IfNotPresent
   resources:

@@ -44,7 +44,7 @@ From `docs/architecture/deployment-architecture.md` and Epic P10-2 (Docker Conta
 - Frontend: Next.js standalone container on port 3000
 - Database: SQLite (data/app.db) or external PostgreSQL
 - Storage: Persistent volumes for data/thumbnails, data/frames, data/certs
-- Container Images: `ghcr.io/bbengt1/argusai-backend:latest`, `ghcr.io/bbengt1/argusai-frontend:latest`
+- Container Images: `ghcr.io/project-argusai/argusai-backend:latest`, `ghcr.io/project-argusai/argusai-frontend:latest`
 
 ### Kubernetes Architecture
 
@@ -93,8 +93,8 @@ From `docs/architecture/deployment-architecture.md` and Epic P10-2 (Docker Conta
 
 | Component | K8s Resource | Notes |
 |-----------|--------------|-------|
-| Backend Container | Deployment | ghcr.io/bbengt1/argusai-backend |
-| Frontend Container | Deployment | ghcr.io/bbengt1/argusai-frontend |
+| Backend Container | Deployment | ghcr.io/project-argusai/argusai-backend |
+| Frontend Container | Deployment | ghcr.io/project-argusai/argusai-frontend |
 | Internal Routing | Service (ClusterIP) | backend:8000, frontend:3000 |
 | External Access | Ingress (optional) | Requires ingress controller |
 | Configuration | ConfigMap | Non-sensitive settings |
@@ -136,7 +136,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: backend
-          image: ghcr.io/bbengt1/argusai-backend:latest
+          image: ghcr.io/project-argusai/argusai-backend:latest
           ports:
             - containerPort: 8000
               name: http
@@ -204,7 +204,7 @@ spec:
         runAsUser: 1001
       containers:
         - name: frontend
-          image: ghcr.io/bbengt1/argusai-frontend:latest
+          image: ghcr.io/project-argusai/argusai-frontend:latest
           ports:
             - containerPort: 3000
               name: http
@@ -454,7 +454,7 @@ fullnameOverride: ""
 backend:
   replicaCount: 1
   image:
-    repository: ghcr.io/bbengt1/argusai-backend
+    repository: ghcr.io/project-argusai/argusai-backend
     tag: "latest"
     pullPolicy: IfNotPresent
   resources:
@@ -472,7 +472,7 @@ backend:
 frontend:
   replicaCount: 1
   image:
-    repository: ghcr.io/bbengt1/argusai-frontend
+    repository: ghcr.io/project-argusai/argusai-frontend
     tag: "latest"
     pullPolicy: IfNotPresent
   resources:
@@ -789,8 +789,8 @@ No new data models required. Kubernetes resources use standard K8s API objects:
 
 | Image | Registry | Tags |
 |-------|----------|------|
-| argusai-backend | ghcr.io/bbengt1/argusai-backend | latest, main, v1.0.0, sha-abc123 |
-| argusai-frontend | ghcr.io/bbengt1/argusai-frontend | latest, main, v1.0.0, sha-abc123 |
+| argusai-backend | ghcr.io/project-argusai/argusai-backend | latest, main, v1.0.0, sha-abc123 |
+| argusai-frontend | ghcr.io/project-argusai/argusai-frontend | latest, main, v1.0.0, sha-abc123 |
 
 **Helm Commands:**
 

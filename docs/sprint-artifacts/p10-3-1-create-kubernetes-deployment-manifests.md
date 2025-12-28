@@ -37,7 +37,7 @@ So that **I can deploy to any K8s cluster**.
 
 - [x] Task 2: Create backend Deployment manifest (AC: 1, 2, 3, 4)
   - [x] Subtask 2.1: Create `k8s/backend-deployment.yaml`
-  - [x] Subtask 2.2: Configure container image reference (ghcr.io/bbengt1/argusai-backend:latest)
+  - [x] Subtask 2.2: Configure container image reference (ghcr.io/project-argusai/argusai-backend:latest)
   - [x] Subtask 2.3: Add pod labels (app: argusai, component: backend)
   - [x] Subtask 2.4: Configure security context (runAsNonRoot: true, runAsUser: 1000)
   - [x] Subtask 2.5: Add resource requests (512Mi memory, 250m CPU)
@@ -49,7 +49,7 @@ So that **I can deploy to any K8s cluster**.
 
 - [x] Task 3: Create frontend Deployment manifest (AC: 1, 2, 4)
   - [x] Subtask 3.1: Create `k8s/frontend-deployment.yaml`
-  - [x] Subtask 3.2: Configure container image reference (ghcr.io/bbengt1/argusai-frontend:latest)
+  - [x] Subtask 3.2: Configure container image reference (ghcr.io/project-argusai/argusai-frontend:latest)
   - [x] Subtask 3.3: Add pod labels (app: argusai, component: frontend)
   - [x] Subtask 3.4: Configure security context (runAsNonRoot: true, runAsUser: 1001)
   - [x] Subtask 3.5: Add resource requests (256Mi memory, 100m CPU)
@@ -110,7 +110,7 @@ k8s/
 **From Story P10-2.6 (Status: done)**
 
 - **Docker images ready**: Backend and frontend Dockerfiles created in P10-2.1 and P10-2.2
-- **Image registry**: Images at ghcr.io/bbengt1/argusai-backend and ghcr.io/bbengt1/argusai-frontend
+- **Image registry**: Images at ghcr.io/project-argusai/argusai-backend and ghcr.io/project-argusai/argusai-frontend
 - **Health endpoints**: Backend health at /api/v1/system/health, frontend at /
 - **Data volume structure**: /app/data contains app.db, thumbnails/, frames/, certs/
 - **Environment variables**: Documented in P10-2.3 - ENCRYPTION_KEY, JWT_SECRET_KEY required
@@ -152,7 +152,7 @@ Claude Opus 4.5
 
 - Created k8s/ directory structure for Kubernetes manifests
 - Created backend-deployment.yaml with:
-  - ghcr.io/bbengt1/argusai-backend:latest image
+  - ghcr.io/project-argusai/argusai-backend:latest image
   - Non-root security context (runAsUser: 1000, fsGroup: 1000)
   - Resource requests (512Mi/250m) and limits (1Gi/1000m)
   - Liveness and readiness probes on /api/v1/system/health
@@ -160,7 +160,7 @@ Claude Opus 4.5
   - PVC volume mount at /app/data
   - Rolling update strategy
 - Created frontend-deployment.yaml with:
-  - ghcr.io/bbengt1/argusai-frontend:latest image
+  - ghcr.io/project-argusai/argusai-frontend:latest image
   - Non-root security context (runAsUser: 1001)
   - Resource requests (256Mi/100m) and limits (512Mi/500m)
   - Liveness and readiness probes on / port 3000

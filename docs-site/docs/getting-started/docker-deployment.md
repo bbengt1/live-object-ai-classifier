@@ -16,7 +16,7 @@ Deploy ArgusAI using Docker Compose for the easiest production-ready setup.
 
 ```bash
 # Clone the repository
-git clone https://github.com/bbengt1/ArgusAI.git
+git clone https://github.com/project-argusai/ArgusAI.git
 cd ArgusAI
 
 # Copy environment template

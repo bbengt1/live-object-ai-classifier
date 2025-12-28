@@ -176,5 +176,5 @@ Cloudflare Tunnel was selected for:
 
 For detailed technical information, see the main repository:
 
-- [Apple Apps Technology Research](https://github.com/bbengt1/argusai/blob/main/docs/research/apple-apps-technology.md)
-- [Cloud Relay Architecture Design](https://github.com/bbengt1/argusai/blob/main/docs/architecture/cloud-relay-design.md)
+- [Apple Apps Technology Research](https://github.com/project-argusai/ArgusAI/blob/main/docs/research/apple-apps-technology.md)
+- [Cloud Relay Architecture Design](https://github.com/project-argusai/ArgusAI/blob/main/docs/architecture/cloud-relay-design.md)

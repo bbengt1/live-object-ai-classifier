@@ -20,7 +20,7 @@ ArgusAI is an **AI-powered event detection system** for home security. It analyz
 
 ```bash
 # Clone the repository
-git clone https://github.com/bbengt1/ArgusAI.git
+git clone https://github.com/project-argusai/ArgusAI.git
 cd ArgusAI
 
 # Copy and configure environment
@@ -41,7 +41,7 @@ docker-compose --profile ssl up -d
 
 ```bash
 # Clone the repository
-git clone https://github.com/bbengt1/argusai.git
+git clone https://github.com/project-argusai/ArgusAI.git
 cd argusai
 
 # Run the installation script

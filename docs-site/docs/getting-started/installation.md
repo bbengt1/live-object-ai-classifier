@@ -34,7 +34,7 @@ Before installing ArgusAI manually, ensure you have the following:
 
 ```bash
 # Clone the repository
-git clone https://github.com/bbengt1/argusai.git
+git clone https://github.com/project-argusai/ArgusAI.git
 cd argusai
 
 # Run the installation script

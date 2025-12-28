@@ -5,7 +5,7 @@
     "description": "\n## Overview\n\nArgusAI is an AI-powered event detection system for home security. It analyzes video feeds\nfrom UniFi Protect cameras, RTSP IP cameras, and USB webcams, detects motion and smart events,\nand generates natural language descriptions using multi-provider AI.\n\n## Authentication\n\nMost endpoints require authentication via JWT bearer token. Obtain a token by calling\n`POST /api/v1/auth/login` with valid credentials.\n\nInclude the token in the `Authorization` header:\n```\nAuthorization: Bearer <your_token>\n```\n\n## Key Features\n\n- **Camera Management**: Configure RTSP, USB, and UniFi Protect cameras\n- **Event Detection**: AI-powered motion and object detection with natural language descriptions\n- **Smart Detection**: Person, vehicle, package, and animal classification\n- **Entity Recognition**: Identify recurring visitors and vehicles\n- **Push Notifications**: Web push notifications for important events\n- **Home Automation**: MQTT/Home Assistant and HomeKit integration\n\n## Rate Limits\n\n- Authentication endpoints: 5 requests per 15 minutes per IP\n- General API: No rate limiting (intended for single-user deployment)\n\n## Versioning\n\nAll API endpoints are prefixed with `/api/v1`. Future breaking changes will use `/api/v2`.\n",
     "contact": {
       "name": "ArgusAI",
-      "url": "https://github.com/bbengt1/ArgusAI"
+      "url": "https://github.com/project-argusai/ArgusAI"
     },
     "license": {
       "name": "MIT License",

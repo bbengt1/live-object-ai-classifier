@@ -86,9 +86,9 @@ After the pipeline pushes images, you can use them in your deployments:
 ```yaml
 services:
   backend:
-    image: ghcr.io/bbengt1/argusai-backend:latest
+    image: ghcr.io/project-argusai/argusai-backend:latest
   frontend:
-    image: ghcr.io/bbengt1/argusai-frontend:latest
+    image: ghcr.io/project-argusai/argusai-frontend:latest
 ```
 
 ### Kubernetes
@@ -97,7 +97,7 @@ services:
 spec:
   containers:
     - name: backend
-      image: ghcr.io/bbengt1/argusai-backend:v1.2.3
+      image: ghcr.io/project-argusai/argusai-backend:v1.2.3
 ```
 
 ### Helm
@@ -156,11 +156,11 @@ git push origin v1.0.0
 
 ```bash
 # List available tags
-docker manifest inspect ghcr.io/bbengt1/argusai-backend:latest
+docker manifest inspect ghcr.io/project-argusai/argusai-backend:latest
 
 # Pull and verify
-docker pull ghcr.io/bbengt1/argusai-backend:latest
-docker inspect ghcr.io/bbengt1/argusai-backend:latest
+docker pull ghcr.io/project-argusai/argusai-backend:latest
+docker inspect ghcr.io/project-argusai/argusai-backend:latest
 ```
 
 ## GitHub Actions Used

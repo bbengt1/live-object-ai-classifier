@@ -11,13 +11,13 @@
 # Options:
 #   --push          Push images to registry after build
 #   --tag TAG       Specify image tag (default: latest)
-#   --registry REG  Specify container registry (default: ghcr.io/bbengt1)
+#   --registry REG  Specify container registry (default: ghcr.io/project-argusai)
 #   --no-cache      Build without using cache
 
 set -e
 
 # Default values
-REGISTRY="ghcr.io/bbengt1"
+REGISTRY="ghcr.io/project-argusai"
 TAG="latest"
 BUILD_FRONTEND=false
 BUILD_BACKEND=false
@@ -48,7 +48,7 @@ print_usage() {
     echo "Build options:"
     echo "  --push          Push images to registry after build"
     echo "  --tag TAG       Specify image tag (default: latest)"
-    echo "  --registry REG  Specify container registry (default: ghcr.io/bbengt1)"
+    echo "  --registry REG  Specify container registry (default: ghcr.io/project-argusai)"
     echo "  --no-cache      Build without using cache"
     echo "  --help, -h      Show this help message"
     echo ""

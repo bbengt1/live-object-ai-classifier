@@ -23,7 +23,7 @@ Deploy ArgusAI using Helm for template-based, customizable Kubernetes deployment
 
 ```bash
 # Clone the repository
-git clone https://github.com/bbengt1/ArgusAI.git
+git clone https://github.com/project-argusai/ArgusAI.git
 cd ArgusAI
 
 # Create namespace
@@ -113,7 +113,7 @@ helm install argusai ./charts/argusai \
 
 ```bash
 # Coming soon - pull from GitHub Container Registry
-helm install argusai oci://ghcr.io/bbengt1/charts/argusai \
+helm install argusai oci://ghcr.io/project-argusai/charts/argusai \
   --namespace argusai \
   --set secrets.encryptionKey="..." \
   --set secrets.jwtSecretKey="..."
@@ -134,7 +134,7 @@ helm install argusai oci://ghcr.io/bbengt1/charts/argusai \
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `backend.replicaCount` | Number of backend replicas | `1` |
-| `backend.image.repository` | Backend image repository | `ghcr.io/bbengt1/argusai-backend` |
+| `backend.image.repository` | Backend image repository | `ghcr.io/project-argusai/argusai-backend` |
 | `backend.image.tag` | Backend image tag | `latest` |
 | `backend.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `backend.resources.requests.memory` | Memory request | `512Mi` |
@@ -149,7 +149,7 @@ helm install argusai oci://ghcr.io/bbengt1/charts/argusai \
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `frontend.replicaCount` | Number of frontend replicas | `1` |
-| `frontend.image.repository` | Frontend image repository | `ghcr.io/bbengt1/argusai-frontend` |
+| `frontend.image.repository` | Frontend image repository | `ghcr.io/project-argusai/argusai-frontend` |
 | `frontend.image.tag` | Frontend image tag | `latest` |
 | `frontend.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `frontend.resources.requests.memory` | Memory request | `256Mi` |

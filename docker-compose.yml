@@ -43,7 +43,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: ghcr.io/bbengt1/argusai-backend:latest
+    image: ghcr.io/project-argusai/argusai-backend:latest
     container_name: argusai-backend
     ports:
       - "8000:8000"
@@ -102,7 +102,7 @@ services:
       args:
         # Build-time API URL for Next.js (baked into build)
         NEXT_PUBLIC_API_URL: http://backend:8000
-    image: ghcr.io/bbengt1/argusai-frontend:latest
+    image: ghcr.io/project-argusai/argusai-frontend:latest
     container_name: argusai-frontend
     ports:
       - "3000:3000"

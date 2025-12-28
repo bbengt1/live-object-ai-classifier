@@ -38,7 +38,7 @@ ArgusAI processes video from multiple camera sources (RTSP, USB, UniFi Protect),
 **Dependencies:** None - this is a documentation/measurement story
 
 **Backlog Reference:** TD-004
-**GitHub Issue:** [#32](https://github.com/bbengt1/ArgusAI/issues/32)
+**GitHub Issue:** [#32](https://github.com/project-argusai/ArgusAI/issues/32)
 **PRD Reference:** docs/PRD-phase5.md (FR27, FR28)
 
 ---

@@ -7,7 +7,7 @@
     <generatedAt>2025-12-20</generatedAt>
     <generator>BMAD Story Context Workflow</generator>
     <sourceStoryPath>docs/sprint-artifacts/p8-1-2-fix-installation-script-for-non-arm64-systems.md</sourceStoryPath>
-    <githubIssue>https://github.com/bbengt1/ArgusAI/issues/75</githubIssue>
+    <githubIssue>https://github.com/project-argusai/ArgusAI/issues/75</githubIssue>
   </metadata>
 
   <story>

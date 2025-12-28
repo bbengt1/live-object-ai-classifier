@@ -11,9 +11,9 @@ keywords:
   - unifi-protect
   - surveillance
   - event-detection
-home: https://github.com/bbengt1/ArgusAI
+home: https://github.com/project-argusai/ArgusAI
 sources:
-  - https://github.com/bbengt1/ArgusAI
+  - https://github.com/project-argusai/ArgusAI
 maintainers:
   - name: Brent Bengtson
-icon: https://raw.githubusercontent.com/bbengt1/ArgusAI/main/frontend/public/logo.png
+icon: https://raw.githubusercontent.com/project-argusai/ArgusAI/main/frontend/public/logo.png

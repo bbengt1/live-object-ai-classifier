@@ -139,7 +139,7 @@
   </artifacts>
 
   <constraints>
-    <constraint type="deployment">GitHub Pages will be deployed to https://bbengt1.github.io/argusai/</constraint>
+    <constraint type="deployment">GitHub Pages will be deployed to https://project-argusai.github.io/argusai/</constraint>
     <constraint type="configuration">baseUrl must be /argusai/ for GitHub Pages project site</constraint>
     <constraint type="workflow">Deploy workflow should only trigger on changes to docs-site/** or docs/** paths</constraint>
     <constraint type="nodejs">Use Node.js 20 for consistency with existing CI workflow</constraint>
@@ -163,9 +163,9 @@
       <signature>
         module.exports = {
           title: 'ArgusAI',
-          url: 'https://bbengt1.github.io',
+          url: 'https://project-argusai.github.io',
           baseUrl: '/argusai/',
-          organizationName: 'bbengt1',
+          organizationName: 'project-argusai',
           projectName: 'argusai'
         }
       </signature>
@@ -187,7 +187,7 @@
       <idea ac="AC-6.2.1">Manual: Push change to docs-site/, verify GitHub Actions workflow triggers and completes</idea>
       <idea ac="AC-6.2.2">Manual: Check gh-pages branch exists and contains built static files after deployment</idea>
       <idea ac="AC-6.2.3">Command: Run npm run build in docs-site/ and verify exit code 0 with no errors</idea>
-      <idea ac="AC-6.2.4">Manual: Access https://bbengt1.github.io/argusai/ and verify page loads with content</idea>
+      <idea ac="AC-6.2.4">Manual: Access https://project-argusai.github.io/argusai/ and verify page loads with content</idea>
     </ideas>
   </tests>
 </story-context>

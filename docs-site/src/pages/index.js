@@ -29,7 +29,7 @@ function HomepageHeader() {
           </Link>
           <Link
             className="button button--outline button--secondary button--lg"
-            href="https://github.com/bbengt1/argusai">
+            href="https://github.com/project-argusai/ArgusAI">
             View on GitHub
           </Link>
         </div>

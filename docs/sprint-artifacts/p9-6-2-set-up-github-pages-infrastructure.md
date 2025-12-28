@@ -86,9 +86,9 @@ From tech spec, the configuration should include:
 module.exports = {
   title: 'ArgusAI',
   tagline: 'AI-Powered Home Security',
-  url: 'https://bbengt1.github.io',
+  url: 'https://project-argusai.github.io',
   baseUrl: '/argusai/',
-  organizationName: 'bbengt1',
+  organizationName: 'project-argusai',
   projectName: 'argusai',
   themeConfig: {
     navbar: {
@@ -96,7 +96,7 @@ module.exports = {
       items: [
         { to: 'docs/getting-started', label: 'Docs' },
         { to: 'docs/api', label: 'API' },
-        { href: 'https://github.com/bbengt1/argusai', label: 'GitHub' }
+        { href: 'https://github.com/project-argusai/argusai', label: 'GitHub' }
       ]
     }
   }
@@ -140,7 +140,7 @@ jobs:
 
 - Docusaurus site will be in `docs-site/` directory at project root
 - GitHub Actions workflow in `.github/workflows/deploy-docs.yml`
-- Deployed to gh-pages branch, served at https://bbengt1.github.io/argusai/
+- Deployed to gh-pages branch, served at https://project-argusai.github.io/argusai/
 
 ### Dependencies
 

@@ -103,7 +103,7 @@ Options:
 ### Related Backlog Item
 
 - IMP-010: Events Page Button Positioning
-- GitHub Issue: [#153](https://github.com/bbengt1/ArgusAI/issues/153)
+- GitHub Issue: [#153](https://github.com/project-argusai/ArgusAI/issues/153)
 
 ### References
 

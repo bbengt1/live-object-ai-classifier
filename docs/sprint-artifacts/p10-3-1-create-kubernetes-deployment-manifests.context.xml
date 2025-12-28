@@ -20,8 +20,8 @@
 
   <architecture-context>
     <container-images>
-      <image service="backend">ghcr.io/bbengt1/argusai-backend:latest</image>
-      <image service="frontend">ghcr.io/bbengt1/argusai-frontend:latest</image>
+      <image service="backend">ghcr.io/project-argusai/argusai-backend:latest</image>
+      <image service="frontend">ghcr.io/project-argusai/argusai-frontend:latest</image>
     </container-images>
     <health-endpoints>
       <endpoint service="backend" path="/api/v1/system/health" port="8000"/>

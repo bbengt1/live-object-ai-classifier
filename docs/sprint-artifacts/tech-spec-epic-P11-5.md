@@ -324,9 +324,9 @@ docs-site/
 module.exports = {
   title: 'ArgusAI',
   tagline: 'AI-Powered Security Camera Analysis',
-  url: 'https://bbengt1.github.io',
+  url: 'https://project-argusai.github.io',
   baseUrl: '/ArgusAI/',
-  organizationName: 'bbengt1',
+  organizationName: 'project-argusai',
   projectName: 'ArgusAI',
   deploymentBranch: 'gh-pages',
 
@@ -336,7 +336,7 @@ module.exports = {
       {
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
-          editUrl: 'https://github.com/bbengt1/ArgusAI/edit/main/docs-site/',
+          editUrl: 'https://github.com/project-argusai/ArgusAI/edit/main/docs-site/',
         },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
@@ -351,7 +351,7 @@ module.exports = {
       logo: { alt: 'ArgusAI Logo', src: 'img/logo.svg' },
       items: [
         { type: 'doc', docId: 'intro', label: 'Docs' },
-        { href: 'https://github.com/bbengt1/ArgusAI', label: 'GitHub' },
+        { href: 'https://github.com/project-argusai/ArgusAI', label: 'GitHub' },
       ],
     },
     footer: {

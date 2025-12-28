@@ -94,7 +94,7 @@ This change ensures:
 ### Related Backlog Item
 
 - BUG-013: Entity Card Scrolling Issue
-- GitHub Issue: [#160](https://github.com/bbengt1/ArgusAI/issues/160)
+- GitHub Issue: [#160](https://github.com/project-argusai/ArgusAI/issues/160)
 
 ### References
 

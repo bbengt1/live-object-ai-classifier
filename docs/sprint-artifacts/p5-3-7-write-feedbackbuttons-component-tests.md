@@ -36,7 +36,7 @@ The FeedbackButtons component (Story P4-5.1) allows users to provide thumbs up/d
 - Story P5-3.3 (Vitest + React Testing Library) - DONE
 
 **Backlog Reference:** TD-002
-**GitHub Issue:** [#30](https://github.com/bbengt1/ArgusAI/issues/30)
+**GitHub Issue:** [#30](https://github.com/project-argusai/ArgusAI/issues/30)
 **PRD Reference:** docs/PRD-phase5.md (FR25)
 **Tech Spec Reference:** docs/sprint-artifacts/tech-spec-epic-p5-3.md
 

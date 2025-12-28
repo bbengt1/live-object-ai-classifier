@@ -870,7 +870,7 @@ TO_REDACT = {"api_key", "password", "host"}
 {
   "domain": "argusai",
   "name": "ArgusAI",
-  "codeowners": ["@bbengt1"],
+  "codeowners": ["@project-argusai"],
   "config_flow": true,
   "documentation": "https://github.com/project-argusai/ArgusAI",
   "integration_type": "hub",
