@@ -37,8 +37,7 @@ const STATIC_PATTERNS = [
 ];
 
 const API_PATTERNS = [
-  /^\/api\/v1\/events/,
-  /^\/api\/v1\/cameras/,
+  /^\/api\/v1\//,  // All API routes use network-first
 ];
 
 const IMAGE_PATTERNS = [
