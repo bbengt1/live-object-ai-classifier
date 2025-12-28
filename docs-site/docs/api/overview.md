@@ -19,7 +19,26 @@ https://your-domain.com/api/v1
 
 ## Authentication
 
-Currently, ArgusAI uses basic authentication. API endpoints are protected when auth is enabled.
+ArgusAI supports two authentication methods:
+
+### API Key Authentication (Recommended for Integrations)
+
+Include the `X-API-Key` header with your API key:
+
+```bash
+curl -H "X-API-Key: argus_abc123..." http://localhost:8000/api/v1/events
+```
+
+API keys provide:
+- **Scoped permissions**: `read:events`, `read:cameras`, `write:cameras`, `admin`
+- **Per-key rate limiting**: Configurable requests per minute
+- **Usage tracking**: Monitor requests and last used timestamp
+
+See [API Keys](./api-keys) for full documentation.
+
+### JWT Token Authentication (Dashboard)
+
+For browser-based access, JWT tokens are used via cookies or Authorization header.
 
 ## Common Endpoints
 
@@ -66,6 +85,16 @@ Currently, ArgusAI uses basic authentication. API endpoints are protected when a
 | GET | `/ai/providers` | List AI providers |
 | POST | `/ai/describe` | Describe image |
 | GET | `/ai/usage` | Get usage stats |
+
+### API Keys
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api-keys` | List API keys |
+| POST | `/api-keys` | Create API key |
+| GET | `/api-keys/{id}` | Get API key details |
+| DELETE | `/api-keys/{id}` | Revoke API key |
+| GET | `/api-keys/{id}/usage` | Get usage stats |
 
 ### System
 
@@ -149,7 +178,15 @@ Events:
 
 ## Rate Limiting
 
-API requests are not rate-limited by default. Consider adding rate limiting for production deployments.
+API key authenticated requests are rate-limited based on the key's configured limit. Rate limit headers are included in responses:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1735123456
+```
+
+When rate limited, the API returns `429 Too Many Requests` with a `Retry-After` header.
 
 ## OpenAPI Documentation
 

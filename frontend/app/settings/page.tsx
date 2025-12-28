@@ -66,6 +66,7 @@ import { VideoStorageWarningModal } from '@/components/settings/VideoStorageWarn
 import { FrameSamplingStrategySelector, type FrameSamplingStrategy } from '@/components/settings/FrameSamplingStrategySelector';
 import { PasswordChangeForm } from '@/components/settings/PasswordChangeForm';
 import { DeviceManager } from '@/components/settings/DeviceManager';
+import { APIKeySettings } from '@/components/settings/APIKeySettings';
 import { PairingConfirmation } from '@/components/settings/PairingConfirmation';
 import { ControllerForm, type ControllerData, DeleteControllerDialog, DiscoveredCameraList } from '@/components/protect';
 import { useQuery } from '@tanstack/react-query';
@@ -1316,9 +1317,12 @@ Keep the summary concise (2-3 paragraphs).`}
               </ErrorBoundary>
             </TabsContent>
 
-            {/* Security Tab - Story P10-1.1 */}
+            {/* Security Tab - Story P10-1.1, P13-1.6 */}
             <TabsContent value="security" className="space-y-4">
               <PasswordChangeForm />
+              <ErrorBoundary context="API Keys">
+                <APIKeySettings />
+              </ErrorBoundary>
               <DeviceManager />
             </TabsContent>
           </Tabs>
