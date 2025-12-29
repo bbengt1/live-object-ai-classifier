@@ -828,3 +828,120 @@ development_status:
   p13-5-4-create-notification-workflow: done  # Pre-existing: Slack/Discord webhook support
   p13-5-5-create-pipeline-dashboard-view: done  # Pre-existing: monitoring-dashboard.json
   epic-p13-5-retrospective: optional
+
+  # ============================================================================
+  # PHASE 14: Technical Excellence & Quality Foundation
+  # ============================================================================
+  # Source: docs/epics-phase14.md
+  # PRD: docs/PRD-phase14.md
+  # Backlog: docs/backlog.md (56 items: TD-006 through TD-035, IMP-040 through IMP-062)
+  # Focus: Technical debt paydown, test coverage, code standardization, MCP enhancement
+
+  # Epic P14-1: Critical Security & Code Fixes
+  # Priority: P1 (MUST BE FIRST)
+  # Focus: asyncio.run() misuse fix, debug endpoint removal
+  # Backlog: TD-011, TD-023
+  epic-p14-1: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P14-1.md
+  p14-1-1-fix-asyncio-run-misuse-in-mqtt-service: backlog
+  p14-1-2-remove-or-secure-debug-endpoints: backlog
+  epic-p14-1-retrospective: optional
+
+  # Epic P14-2: Backend Code Quality
+  # Priority: P2
+  # Focus: Session management, FK constraints, indexes, rate limiting
+  # Backlog: TD-012, TD-015, TD-016, TD-020, TD-021, TD-024
+  epic-p14-2: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P14-2.md
+  p14-2-1-standardize-database-session-management: backlog
+  p14-2-2-add-missing-fk-constraint: backlog
+  p14-2-3-add-missing-database-indexes: backlog
+  p14-2-4-fix-delete-endpoint-status-codes: backlog
+  p14-2-5-add-uuid-validation-on-path-parameters: backlog
+  p14-2-6-implement-api-rate-limiting: backlog
+  epic-p14-2-retrospective: optional
+
+  # Epic P14-3: Backend Testing Infrastructure
+  # Priority: P2-P3
+  # Focus: Unit tests for 6 services with 0% coverage, test fixtures, E2E tests
+  # Backlog: TD-026, TD-027, TD-028, TD-029, TD-030, TD-031, TD-032, TD-033, TD-034, TD-035
+  epic-p14-3: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P14-3.md
+  p14-3-1-add-unit-tests-for-protect-service: backlog
+  p14-3-2-add-unit-tests-for-protect-event-handler: backlog
+  p14-3-3-add-unit-tests-for-snapshot-service: backlog
+  p14-3-4-add-unit-tests-for-reprocessing-service: backlog
+  p14-3-5-add-unit-tests-for-websocket-manager: backlog
+  p14-3-6-add-unit-tests-for-api-key-service: backlog
+  p14-3-7-increase-test-parametrization: backlog
+  p14-3-8-consolidate-test-fixture-definitions: backlog
+  p14-3-9-add-missing-api-route-tests: backlog
+  p14-3-10-add-end-to-end-integration-tests: backlog
+  epic-p14-3-retrospective: optional
+
+  # Epic P14-4: Frontend Code Quality
+  # Priority: P2-P3
+  # Focus: Test fixtures, unused imports, React patterns
+  # Backlog: TD-006, TD-007, TD-008, TD-009, TD-010, IMP-040, IMP-041, IMP-042
+  epic-p14-4: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P14-4.md
+  p14-4-1-remove-debug-console-log: backlog
+  p14-4-2-fix-test-type-mismatches: backlog
+  p14-4-3-fix-failing-tunnel-settings-test: backlog
+  p14-4-4-create-shared-test-fixtures-factory: backlog
+  p14-4-5-clean-up-unused-test-imports: backlog
+  p14-4-6-clean-up-unused-component-imports: backlog
+  p14-4-7-fix-setstate-in-useeffect-anti-patterns: backlog
+  p14-4-8-extract-sorticon-component: backlog
+  epic-p14-4-retrospective: optional
+
+  # Epic P14-5: Code Standardization
+  # Priority: P3
+  # Focus: @singleton decorator, backoff utility, consistency fixes
+  # Backlog: TD-013, TD-014, TD-017, TD-018, TD-019, TD-022, TD-025, IMP-050, IMP-051, IMP-053
+  epic-p14-5: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P14-5.md
+  p14-5-1-create-singleton-decorator: backlog
+  p14-5-2-create-exponential-backoff-utility: backlog
+  p14-5-3-migrate-services-to-singleton-decorator: backlog
+  p14-5-4-migrate-services-to-backoff-utility: backlog
+  p14-5-5-fix-backref-vs-back-populates-inconsistency: backlog
+  p14-5-6-add-check-constraints-on-float-columns: backlog
+  p14-5-7-fix-timestamp-timezone-handling: backlog
+  p14-5-8-standardize-api-response-format: backlog
+  p14-5-9-add-notification-model-relationships: backlog
+  p14-5-10-improve-json-parse-error-handling: backlog
+  epic-p14-5-retrospective: optional
+
+  # Epic P14-6: MCP Context System Enhancement
+  # Priority: P2-P3
+  # Focus: Parallel queries, entity adjustments, timeout, metrics
+  # Backlog: IMP-055, IMP-056, IMP-057, IMP-058, IMP-059, IMP-060, IMP-061, IMP-062
+  epic-p14-6: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P14-6.md
+  p14-6-1-integrate-entity-adjustments-context: backlog
+  p14-6-2-implement-parallel-query-execution: backlog
+  p14-6-3-fix-async-sync-database-query-mismatch: backlog
+  p14-6-4-add-query-timeout-enforcement: backlog
+  p14-6-5-investigate-and-optimize-cache-hit-ratio: backlog
+  p14-6-6-improve-pattern-extraction-algorithm: backlog
+  p14-6-7-add-vip-blocked-entity-context: backlog
+  p14-6-8-add-context-metrics-dashboard: backlog
+  epic-p14-6-retrospective: optional
+
+  # Epic P14-7: Frontend Enhancements
+  # Priority: P3-P4
+  # Focus: Accessibility, next/image, hook tests, devtools
+  # Backlog: IMP-043, IMP-044, IMP-045, IMP-046, IMP-047, IMP-048
+  epic-p14-7: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P14-7.md
+  p14-7-1-add-alt-text-to-backup-restore-images: backlog
+  p14-7-2-replace-img-with-next-image: backlog
+  p14-7-3-enable-stricter-typescript-checks: backlog
+  p14-7-4-increase-hook-test-coverage: backlog
+  p14-7-5-add-react-query-devtools: backlog
+  p14-7-6-add-openapi-summaries-and-tags: backlog
+  epic-p14-7-retrospective: optional
+
+  # Epic P14-8: Testing & Documentation Polish
+  # Priority: P3-P4
+  # Focus: Query validation, concurrency tests, mock quality
+  # Backlog: IMP-049, IMP-052, IMP-054
+  epic-p14-8: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P14-8.md
+  p14-8-1-add-query-parameter-validation: backlog
+  p14-8-2-add-concurrency-tests: backlog
+  p14-8-3-improve-mock-quality: backlog
+  epic-p14-8-retrospective: optional
