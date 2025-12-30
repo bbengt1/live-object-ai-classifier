@@ -2,15 +2,18 @@
 
 AI-powered event detection and monitoring for home security. Analyzes video feeds from multiple camera sources, detects motion and smart events, and uses AI to generate natural language descriptions of what's happening.
 
-## What's New (Phase 14 In Progress)
+## What's New
 
-### Phase 14 (Current)
+### Phase 14 (Complete)
 - **MCP Context Enhancement** - Improved AI context with parallel queries, 80ms timeout, and fail-open behavior
 - **TF-IDF Pattern Extraction** - Smarter pattern detection with domain-specific stop words for security cameras
 - **VIP/Blocked Entity Context** - AI now knows about VIP and blocked entities for personalized descriptions
 - **Entity Adjustments** - User corrections to entity names are used to improve future descriptions
 - **Context Metrics API** - New `/api/v1/ai/context-metrics` endpoint for monitoring context system performance
 - **Cache Optimization** - Improved cache hit ratio through simplified key strategy
+- **Code Standardization** - @singleton decorator, retry utility, consistent database patterns
+- **Backend Testing** - Comprehensive test coverage for 6 previously untested services
+- **Database Integrity** - Check constraints, timezone handling, API response format documentation
 
 ### Phase 13 (Complete)
 - **API Key Management** - Create and manage API keys for external integrations
@@ -945,7 +948,12 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - ✅ Scoped permissions (read:events, read:cameras, write:cameras, admin)
 - ✅ Frontend settings UI for key management
 
-**Phase 14: Quality & Performance** (In Progress)
+**Phase 14: Technical Excellence & Quality Foundation** (Complete)
+- ✅ Critical security fixes (asyncio.run misuse, debug endpoints)
+- ✅ Backend code quality (session management, FK constraints, indexes, rate limiting)
+- ✅ Backend testing infrastructure (6 services with 0% → comprehensive coverage)
+- ✅ Frontend code quality (test fixtures, unused imports cleanup)
+- ✅ Code standardization (@singleton decorator, retry utility)
 - ✅ MCP Context System Enhancement with parallel queries
 - ✅ 80ms query timeout with fail-open behavior
 - ✅ TF-IDF pattern extraction algorithm
@@ -953,10 +961,9 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - ✅ Entity adjustments context integration
 - ✅ Context metrics API endpoint
 - ✅ Cache hit ratio optimization
-- 📋 Cloud Relay service
-- 📋 Entity reprocessing pipeline
-- 📋 Branding customization
-- 📋 n8n automation pipeline
+- ✅ Frontend enhancements (accessibility, React Query devtools, hook tests)
+- ✅ Database integrity (check constraints, timezone handling)
+- ✅ API response format documentation
 
 ### Future
 - 📋 Native Apple Apps (iPhone, iPad, Apple Watch, Apple TV, macOS)

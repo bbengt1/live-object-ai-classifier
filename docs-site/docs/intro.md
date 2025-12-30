@@ -6,6 +6,16 @@ sidebar_position: 1
 
 ArgusAI is an **AI-powered event detection system** for home security. It analyzes video feeds from UniFi Protect cameras, RTSP IP cameras, and USB webcams, detects motion and smart events, and generates natural language descriptions using multi-provider AI.
 
+## Latest Release: Phase 14 Complete
+
+**Phase 14: Technical Excellence & Quality Foundation** brings major improvements to code quality, testing, and AI context:
+
+- **MCP Context Enhancement** - Parallel queries with 80ms timeout and fail-open behavior
+- **Code Standardization** - @singleton decorator, retry utility, consistent database patterns
+- **Backend Testing** - Comprehensive test coverage for 6 previously untested services (3,100+ total tests)
+- **Database Integrity** - Check constraints, timezone handling, FK constraints, indexes
+- **Frontend Quality** - React Query devtools, hook tests, accessibility improvements
+
 ## What Can ArgusAI Do?
 
 - **Intelligent Event Detection**: Automatically detect and describe what's happening in your camera feeds
