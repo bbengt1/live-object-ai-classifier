@@ -11,7 +11,21 @@
 
 This document provides the complete epic and story breakdown for ArgusAI Phase 15, decomposing the requirements from the [PRD](./PRD-phase15.md) into implementable stories.
 
-**Living Document Notice:** This is the initial version. It will be updated after UX Design and Architecture workflows add interaction and technical details to stories.
+**Living Document Notice:** Architecture workflow completed 2025-12-30. Technical decisions and implementation patterns now incorporated.
+
+**Architecture Reference:** [Phase 15 Architecture](./architecture/phase-15-additions.md)
+
+### Key Architectural Decisions (ADRs)
+
+| ADR | Decision | Rationale |
+|-----|----------|-----------|
+| ADR-P15-001 | Session-based auth with JWT | HTTP-only cookies prevent XSS; server-side tracking enables session management |
+| ADR-P15-002 | bcrypt cost factor 12 | ~250ms hash time balances security vs UX |
+| ADR-P15-003 | Three-role RBAC | Simple model covers 95% of use cases |
+| ADR-P15-004 | Virtual scrolling (@tanstack/react-virtual) | Constant memory regardless of event count |
+| ADR-P15-005 | Explicit save pattern for settings | Predictable UX, prevents accidental changes |
+| ADR-P15-006 | Multi-entity via junction table | Supports efficient queries in both directions |
+| ADR-P15-007 | Provider-specific bounding boxes | GPT-4o/Gemini have native support; graceful degradation for others |
 
 ### Epic Summary
 
@@ -159,6 +173,18 @@ So that I can work with entities that have extensive history without performance
 - Maintain row height consistency for scroll position accuracy
 - File: `frontend/components/entities/EntityDetailModal.tsx`
 
+**Architecture Reference:** [ADR-P15-004: Virtual Scrolling](./architecture/phase-15-additions.md#adr-p15-004-virtual-scrolling-for-entity-events)
+
+**Implementation Pattern (from Architecture):**
+```tsx
+const virtualizer = useVirtualizer({
+  count: events.length,
+  getScrollElement: () => parentRef.current,
+  estimateSize: () => 80,  // Estimated row height
+  overscan: 5,             // Render 5 extra items outside viewport
+});
+```
+
 ---
 
 ### Story P15-1.3: Event Click Opens Event Detail Modal
@@ -272,6 +298,27 @@ So that the backend can store and manage user accounts.
 - Add unique constraint on email
 - File: `backend/app/models/user.py`
 
+**Architecture Reference:** [User Model Schema](./architecture/phase-15-additions.md#user-model-p15-21)
+
+**Database Schema (from Architecture):**
+```sql
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,                    -- UUID
+    email TEXT UNIQUE NOT NULL,             -- Login email (unique)
+    password_hash TEXT NOT NULL,            -- bcrypt hash (cost factor 12)
+    role TEXT NOT NULL DEFAULT 'viewer',    -- 'admin', 'operator', 'viewer'
+    is_active BOOLEAN DEFAULT TRUE,         -- Account enabled/disabled
+    must_change_password BOOLEAN DEFAULT FALSE,
+    password_expires_at TIMESTAMP,          -- For temporary passwords
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP
+);
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role ON users(role);
+```
+
 ---
 
 ### Story P15-2.2: Session Model and Tracking
@@ -305,6 +352,27 @@ So that users can view and manage their login sessions.
 - Add relationship to User model
 - File: `backend/app/models/session.py`
 
+**Architecture Reference:** [Session Model Schema](./architecture/phase-15-additions.md#session-model-p15-22), [ADR-P15-001](./architecture/phase-15-additions.md#adr-p15-001-session-based-authentication-with-jwt)
+
+**Database Schema (from Architecture):**
+```sql
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,                    -- UUID
+    user_id TEXT NOT NULL,                  -- FK to users.id
+    token_hash TEXT NOT NULL,               -- SHA-256 hash of JWT
+    device_info TEXT,                       -- Parsed from User-Agent
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX idx_sessions_token_hash ON sessions(token_hash);
+```
+
 ---
 
 ### Story P15-2.3: User CRUD API Endpoints
@@ -335,6 +403,20 @@ So that I can manage user accounts programmatically.
 - Log to audit trail (use existing logging infrastructure)
 - Schemas in `backend/app/schemas/user.py`
 
+**Architecture Reference:** [User Management API](./architecture/phase-15-additions.md#user-management-api-p15-23)
+
+**API Contract (from Architecture):**
+```yaml
+POST /api/v1/users - Create user (Admin only)
+  Request: { email, role, send_email? }
+  Response: { id, email, role, temporary_password?, created_at }
+
+GET /api/v1/users - List all users (Admin only)
+PUT /api/v1/users/{id} - Update user
+DELETE /api/v1/users/{id} - Delete user (204)
+POST /api/v1/users/{id}/reset - Reset password
+```
+
 ---
 
 ### Story P15-2.4: Password Hashing and Validation
@@ -363,6 +445,24 @@ So that my account is protected from unauthorized access.
 - Use passlib with bcrypt backend
 - Return structured validation errors
 - File: `backend/app/services/password_service.py`
+
+**Architecture Reference:** [PasswordService](./architecture/phase-15-additions.md#passwordservice-p15-24), [ADR-P15-002](./architecture/phase-15-additions.md#adr-p15-002-bcrypt-with-cost-factor-12)
+
+**Implementation Pattern (from Architecture):**
+```python
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+
+class PasswordService:
+    COMPLEXITY_RULES = {
+        "min_length": 8,
+        "require_upper": True,
+        "require_lower": True,
+        "require_digit": True,
+        "require_special": True,
+        "special_chars": "!@#$%^&*()_+-=[]{}|;:,.<>?"
+    }
+```
 
 ---
 
@@ -444,6 +544,22 @@ So that I can monitor and secure my account access.
 - Invalidate by removing session from DB
 - File: `backend/app/api/v1/auth.py`
 
+**Architecture Reference:** [Session Management API](./architecture/phase-15-additions.md#session-management-api-p15-27)
+
+**API Contract (from Architecture):**
+```yaml
+GET /api/v1/auth/sessions - List active sessions
+  Response: [{ id, device_info, ip_address, created_at, last_active_at, is_current }]
+
+DELETE /api/v1/auth/sessions/{id} - Revoke specific session (204)
+DELETE /api/v1/auth/sessions - Revoke all except current
+  Response: { revoked_count }
+
+POST /api/v1/auth/change-password
+  Request: { current_password?, new_password }
+  Response: { success, message }
+```
+
 ---
 
 ### Story P15-2.8: Session Expiration and Limits
@@ -468,6 +584,21 @@ So that abandoned sessions don't pose security risks.
 - Create background task for cleanup (run hourly)
 - Update last_active_at on each authenticated request
 - File: `backend/app/services/session_service.py`
+
+**Architecture Reference:** [SessionService](./architecture/phase-15-additions.md#sessionservice-p15-27-p15-28)
+
+**Implementation Pattern (from Architecture):**
+```python
+class SessionService:
+    def __init__(self, db: Session, settings: Settings):
+        self.max_sessions = settings.MAX_SESSIONS_PER_USER  # Default: 5
+        self.expiry_hours = settings.SESSION_EXPIRY_HOURS   # Default: 24
+
+    def create_session(self, user_id: str, token: str, request: Request):
+        # Enforce max sessions - remove oldest if at limit
+        if len(user_sessions) >= self.max_sessions:
+            self.db.delete(user_sessions[0])  # Remove oldest
+```
 
 ---
 
@@ -495,6 +626,31 @@ So that users only access resources appropriate to their role.
 - Add role checks to existing routers
 - Document permission matrix in code comments
 - File: `backend/app/core/permissions.py`
+
+**Architecture Reference:** [RBAC Permissions](./architecture/phase-15-additions.md#rbac-permissions-p15-29), [ADR-P15-003](./architecture/phase-15-additions.md#adr-p15-003-three-role-rbac-adminoperatorviewer)
+
+**Implementation Pattern (from Architecture):**
+```python
+def require_role(*allowed_roles: Role):
+    async def check_role(current_user: User = Depends(get_current_user)):
+        if current_user.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        return current_user
+    return check_role
+
+# Usage:
+@router.get("/users")
+async def list_users(user: User = Depends(require_role(Role.ADMIN))):
+    ...
+```
+
+**Permission Matrix:**
+| Endpoint | Admin | Operator | Viewer |
+|----------|-------|----------|--------|
+| GET /events/* | Yes | Yes | Yes |
+| POST/PUT/DELETE /events/* | Yes | Yes | No |
+| */users/* | Yes | No | No |
+| PUT /system/* | Yes | No | No |
 
 ---
 
@@ -584,6 +740,25 @@ So that all settings sections can use consistent save patterns.
 - Integrate with existing React Query patterns
 - Support both sync and async save functions
 
+**Architecture Reference:** [Settings Form Hook](./architecture/phase-15-additions.md#settings-form-hook-p15-32), [ADR-P15-005](./architecture/phase-15-additions.md#adr-p15-005-explicit-save-pattern-for-settings)
+
+**Implementation Pattern (from Architecture):**
+```tsx
+export function useSettingsForm<T extends object>(
+  initialData: T,
+  saveFn: (data: T) => Promise<void>,
+  queryKey: string[]
+) {
+  const [formData, setFormData] = useState<T>(initialData);
+
+  const isDirty = useMemo(() => {
+    return JSON.stringify(formData) !== JSON.stringify(initialData);
+  }, [formData, initialData]);
+
+  return { formData, setFormData, updateField, isDirty, save, reset, isLoading, error };
+}
+```
+
 ---
 
 ### Story P15-3.3: Unsaved Changes Indicator
@@ -635,6 +810,31 @@ So that I don't accidentally lose my settings modifications.
 - Add beforeunload listener for browser close/refresh
 - Use existing Dialog component for confirmation
 - File: `frontend/hooks/useUnsavedChangesWarning.ts`
+
+**Architecture Reference:** [Unsaved Changes Warning](./architecture/phase-15-additions.md#unsaved-changes-warning-p15-34)
+
+**Implementation Pattern (from Architecture):**
+```tsx
+export function useUnsavedChangesWarning(isDirty: boolean) {
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';  // Required for Chrome
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
+
+  const confirmNavigation = useCallback(() => {
+    if (!isDirty) return true;
+    return window.confirm('You have unsaved changes. Discard changes?');
+  }, [isDirty]);
+
+  return { confirmNavigation };
+}
+```
 
 ---
 
@@ -694,6 +894,21 @@ So that events can accurately represent multi-person/vehicle scenarios.
 - Ensure EntityEvent many-to-many is properly configured
 - Update entity_service.py matching logic
 - File: `backend/app/services/entity_service.py`
+
+**Architecture Reference:** [Multi-Entity Events API](./architecture/phase-15-additions.md#multi-entity-events-api-p15-41), [ADR-P15-006](./architecture/phase-15-additions.md#adr-p15-006-multi-entity-via-entityevent-junction-table)
+
+**API Contract (from Architecture):**
+```yaml
+GET /api/v1/events/{id}
+  Response:
+    matched_entity_ids: string[]  # Array instead of single ID
+    matched_entities:             # Populated entity objects
+      - { id, name, type, avatar_url }
+
+PUT /api/v1/events/{id}/entities - Assign multiple entities
+  Request: { entity_ids: string[] }
+  Response: { id, matched_entity_ids, matched_entities }
+```
 
 ---
 
@@ -828,6 +1043,23 @@ So that we can draw annotations on frames.
 - Claude needs prompt engineering or returns null
 - File: `backend/app/schemas/ai.py`, `backend/app/services/ai_service.py`
 
+**Architecture Reference:** [AI Bounding Boxes API](./architecture/phase-15-additions.md#ai-bounding-boxes-api-p15-51), [ADR-P15-007](./architecture/phase-15-additions.md#adr-p15-007-provider-specific-bounding-box-support)
+
+**Bounding Boxes JSON Schema (from Architecture):**
+```json
+[
+  {
+    "x": 0.25,           // Normalized 0-1 (left edge)
+    "y": 0.30,           // Normalized 0-1 (top edge)
+    "width": 0.15,       // Normalized 0-1
+    "height": 0.40,      // Normalized 0-1
+    "entity_type": "person",
+    "confidence": 0.92,
+    "label": "Person walking toward door"
+  }
+]
+```
+
 ---
 
 ### Story P15-5.2: Frame Annotation Service
@@ -854,6 +1086,31 @@ So that annotated versions can be stored alongside originals.
 - Use Pillow or OpenCV for drawing
 - Store both original and annotated in thumbnails directory
 - File: `backend/app/services/frame_annotation_service.py`
+
+**Architecture Reference:** [FrameAnnotationService](./architecture/phase-15-additions.md#frameannotationservice-p15-52)
+
+**Color Palette (from Architecture):**
+| Entity Type | Color (RGB) | Hex |
+|-------------|-------------|-----|
+| person | (59, 130, 246) | #3B82F6 (Blue) |
+| vehicle | (34, 197, 94) | #22C55E (Green) |
+| package | (249, 115, 22) | #F97316 (Orange) |
+| animal | (168, 85, 247) | #A855F7 (Purple) |
+| other | (156, 163, 175) | #9CA3AF (Gray) |
+
+**Implementation Pattern:**
+```python
+class FrameAnnotationService:
+    def annotate_frame(self, frame_path: str, bounding_boxes: list[dict]) -> str:
+        img = Image.open(frame_path)
+        draw = ImageDraw.Draw(img)
+        for box in bounding_boxes:
+            x1, y1 = int(box["x"] * width), int(box["y"] * height)
+            draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
+        annotated_path = frame_path.replace(".jpg", "_annotated.jpg")
+        img.save(annotated_path, quality=90)
+        return annotated_path
+```
 
 ---
 
@@ -1021,6 +1278,36 @@ So that I understand what the colors and labels mean.
 
 ---
 
+## Architecture Integration Complete
+
+**Date:** 2025-12-30
+
+This document has been updated with architecture decisions from [Phase 15 Architecture](./architecture/phase-15-additions.md):
+
+### Added to Stories:
+- Database schemas (User, Session models)
+- API contracts with request/response examples
+- Implementation patterns (services, hooks, components)
+- ADR references for key decisions
+- Color palettes and technical constants
+
+### Key Files to Create:
+| Backend | Frontend |
+|---------|----------|
+| `models/user.py` | `hooks/useSettingsForm.ts` |
+| `models/session.py` | `hooks/useUnsavedChangesWarning.ts` |
+| `services/password_service.py` | `components/settings/UserManagement.tsx` |
+| `services/session_service.py` | `components/settings/SessionList.tsx` |
+| `services/frame_annotation_service.py` | `components/events/AnnotationLegend.tsx` |
+| `api/v1/users.py` | `app/change-password/page.tsx` |
+| `core/permissions.py` | |
+
+### Dependencies to Add:
+- **Backend:** passlib (bcrypt), python-jose (JWT)
+- **Frontend:** @tanstack/react-virtual (if not already present)
+
+---
+
 _For implementation: Use the `create-story` workflow to generate individual story implementation plans from this epic breakdown._
 
-_This document will be updated after UX Design and Architecture workflows to incorporate interaction details and technical decisions._
+_Architecture workflow completed 2025-12-30. Ready for implementation._
