@@ -58,12 +58,17 @@ export default function ChangePasswordPage() {
 
   // Redirect if not authenticated or doesn't need password change
   useEffect(() => {
+    console.log('change-password useEffect:', { authLoading, isAuthenticated, user: user ? { id: user.id, must_change_password: user.must_change_password } : null });
     if (!authLoading) {
       if (!isAuthenticated) {
+        console.log('change-password: Not authenticated, redirecting to /login');
         router.push('/login');
       } else if (user && !user.must_change_password) {
         // Already changed password or doesn't need to
+        console.log('change-password: user.must_change_password is false, redirecting to /');
         router.push('/');
+      } else {
+        console.log('change-password: Staying on page, must_change_password is true');
       }
     }
   }, [isAuthenticated, authLoading, user, router]);
