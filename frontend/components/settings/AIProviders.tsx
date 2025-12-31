@@ -133,6 +133,12 @@ function SortableProviderRow({
 
   const provider = PROVIDER_DATA[providerId];
 
+  // Skip rendering if provider is not in PROVIDER_DATA (defensive check)
+  if (!provider) {
+    console.warn(`Unknown provider ID: ${providerId}`);
+    return null;
+  }
+
   return (
     <div
       ref={setNodeRef}
@@ -215,14 +221,19 @@ export function AIProviders({
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ valid: boolean; error?: string } | null>(null);
+  // Filter to only valid provider IDs that exist in PROVIDER_DATA
+  const filterValidProviders = (order: AIProvider[]): AIProvider[] => {
+    return order.filter((id) => id in PROVIDER_DATA);
+  };
+
   const [providerOrder, setProviderOrder] = useState<AIProvider[]>(
-    initialOrder || DEFAULT_PROVIDER_ORDER
+    filterValidProviders(initialOrder || DEFAULT_PROVIDER_ORDER)
   );
 
   // Update order when prop changes
   useEffect(() => {
     if (initialOrder) {
-      setProviderOrder(initialOrder);
+      setProviderOrder(filterValidProviders(initialOrder));
     }
   }, [initialOrder]);
 
