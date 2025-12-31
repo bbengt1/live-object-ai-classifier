@@ -138,7 +138,11 @@ class User(Base):
         """Check if temporary password has expired"""
         if self.password_expires_at is None:
             return False
-        return datetime.now(timezone.utc) > self.password_expires_at
+        # Handle both naive and aware datetimes (SQLite stores naive)
+        expires_at = self.password_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) > expires_at
 
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username}, role={self.role.value}, active={self.is_active})>"
