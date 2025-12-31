@@ -37,6 +37,29 @@ Doorbell ring events have a distinct appearance:
 - "Doorbell Ring" label
 - Same event details as other events
 
+### Video Playback
+
+Events from UniFi Protect cameras can include full motion video clips (when video storage is enabled in Settings):
+
+| Element | Description |
+|---------|-------------|
+| **Video Icon** | Blue video icon appears on events with stored video |
+| **Play** | Click the icon to open the video player modal |
+| **Download** | Download button to save the video file locally |
+
+#### Video Player Controls
+
+The video player modal provides:
+
+- **Play/Pause**: Start or stop video playback
+- **Mute/Unmute**: Toggle audio on/off
+- **Fullscreen**: Expand video to full screen
+- **Download**: Save the video as an MP4 file
+
+:::tip
+Enable **Store Motion Videos** in Settings > Analysis Settings to capture video clips from your Protect cameras.
+:::
+
 ## Filtering Events
 
 ### Filter Panel

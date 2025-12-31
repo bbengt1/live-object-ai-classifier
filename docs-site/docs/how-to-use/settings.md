@@ -68,6 +68,25 @@ Configure how events are analyzed:
 | **Frame Count** | 5, 10, 15, 20 (for multi-frame) |
 | **Sampling Strategy** | Uniform, Adaptive, Hybrid |
 
+### Video Storage
+
+Store full motion video clips for complete event review:
+
+| Setting | Description |
+|---------|-------------|
+| **Store Motion Videos** | Download and save video clips from Protect cameras |
+| **Video Retention** | How long to keep videos (7, 14, 30, 60, 90 days) |
+
+When enabled:
+- Motion clips are automatically downloaded from UniFi Protect cameras
+- Videos appear with a blue video icon on event cards
+- Click the icon to play or download the video
+- Storage usage is shown in the Storage section
+
+:::note
+Video storage only works with UniFi Protect cameras. RTSP and USB cameras do not support video clip downloads.
+:::
+
 ### Custom Prompts
 
 Customize the AI prompt:
