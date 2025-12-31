@@ -1005,17 +1005,18 @@ development_status:
   # Priority: P2
   # Focus: Multi-user support, session management, RBAC
   # FRs Covered: FR1-FR22
-  epic-p15-2: contexted  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P15-2.md
-  p15-2-1-user-model-and-database-schema: backlog
-  p15-2-2-session-model-and-tracking: backlog
-  p15-2-3-user-crud-api-endpoints: backlog
-  p15-2-4-password-hashing-and-validation: backlog
-  p15-2-5-user-invitation-flow: backlog
-  p15-2-6-force-password-change-on-first-login: backlog
-  p15-2-7-session-management-api: backlog
-  p15-2-8-session-expiration-and-limits: backlog
-  p15-2-9-role-based-access-control-backend: backlog
-  p15-2-10-user-management-ui: backlog
+  # Status: COMPLETE 2025-12-31
+  epic-p15-2: done  # Tech spec: docs/sprint-artifacts/tech-spec-epic-P15-2.md
+  p15-2-1-user-model-and-database-schema: done
+  p15-2-2-session-model-and-tracking: done
+  p15-2-3-user-crud-api-endpoints: done
+  p15-2-4-password-hashing-and-validation: done
+  p15-2-5-user-invitation-flow: done
+  p15-2-6-force-password-change-on-first-login: done
+  p15-2-7-session-management-api: done
+  p15-2-8-session-expiration-and-limits: done
+  p15-2-9-role-based-access-control-backend: done
+  p15-2-10-user-management-ui: done
   epic-p15-2-retrospective: optional
 
   # Epic P15-3: Settings UX Consolidation
