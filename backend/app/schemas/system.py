@@ -157,6 +157,19 @@ class SystemSettings(BaseModel):
     primary_model: Literal["gpt-4o-mini", "claude-3-haiku", "gemini-flash"] = Field(default="gpt-4o-mini")
     primary_api_key: str = Field(default="")  # Encrypted in storage
     fallback_model: Optional[Literal["gpt-4o-mini", "claude-3-haiku", "gemini-flash"]] = Field(default=None)
+
+    # Claude Model Selection
+    claude_model: Literal[
+        "claude-3-haiku-20240307",
+        "claude-3-5-haiku-20241022",
+        "claude-3-5-sonnet-20241022",
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514"
+    ] = Field(
+        default="claude-3-haiku-20240307",
+        description="Anthropic Claude model to use. Haiku is fastest/cheapest, Opus is most capable."
+    )
+
     description_prompt: str = Field(default="Describe what you see in this image in one concise sentence. Focus on objects, people, and actions.")
     multi_frame_description_prompt: str = Field(
         default="",
@@ -262,6 +275,16 @@ class SystemSettingsUpdate(BaseModel):
     primary_model: Optional[Literal["gpt-4o-mini", "claude-3-haiku", "gemini-flash"]] = None
     primary_api_key: Optional[str] = None
     fallback_model: Optional[Literal["gpt-4o-mini", "claude-3-haiku", "gemini-flash"]] = None
+
+    # Claude Model Selection
+    claude_model: Optional[Literal[
+        "claude-3-haiku-20240307",
+        "claude-3-5-haiku-20241022",
+        "claude-3-5-sonnet-20241022",
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514"
+    ]] = Field(None, description="Anthropic Claude model to use")
+
     description_prompt: Optional[str] = None
     multi_frame_description_prompt: Optional[str] = Field(
         None,

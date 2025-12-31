@@ -703,6 +703,7 @@ export default function SettingsPage() {
                 <AIProviders
                   configuredProviders={configuredProviders}
                   providerOrder={providerOrder}
+                  claudeModel={form.watch('claude_model') || 'claude-3-haiku-20240307'}
                   onProviderConfigured={(provider) => {
                     setConfiguredProviders((prev) => new Set([...prev, provider]));
                   }}
@@ -715,6 +716,16 @@ export default function SettingsPage() {
                   }}
                   onProviderOrderChanged={(order) => {
                     setProviderOrder(order);
+                  }}
+                  onClaudeModelChange={async (model) => {
+                    try {
+                      await apiClient.settings.update({ claude_model: model });
+                      form.setValue('claude_model', model, { shouldDirty: false });
+                      toast.success(`Claude model changed to ${model.replace(/-/g, ' ').replace(/\d+/g, '')}`);
+                    } catch (error) {
+                      console.error('Failed to update Claude model:', error);
+                      toast.error('Failed to update Claude model');
+                    }
                   }}
                 />
               </ErrorBoundary>

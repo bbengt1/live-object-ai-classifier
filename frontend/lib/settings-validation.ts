@@ -32,6 +32,14 @@ export const aiModelsSettingsSchema = z.object({
     .enum(['gpt-4o-mini', 'claude-3-haiku', 'gemini-flash'])
     .nullable()
     .optional(),
+  // Claude Model Selection
+  claude_model: z.enum([
+    'claude-3-haiku-20240307',
+    'claude-3-5-haiku-20241022',
+    'claude-3-5-sonnet-20241022',
+    'claude-sonnet-4-20250514',
+    'claude-opus-4-20250514',
+  ]).optional(),
   description_prompt: z.string().min(10, 'Prompt must be at least 10 characters'),
   // Story P9-3.5: Summary Prompt Customization
   summary_prompt: z.string().max(2000, 'Summary prompt must be less than 2000 characters').optional(),

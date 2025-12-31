@@ -65,7 +65,15 @@ import {
 } from '@/components/ui/alert-dialog';
 
 import { apiClient } from '@/lib/api-client';
-import type { AIProvider } from '@/types/settings';
+import type { AIProvider, ClaudeModel } from '@/types/settings';
+import { CLAUDE_MODELS } from '@/types/settings';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // Provider configuration data
 const PROVIDER_DATA: Record<
@@ -201,17 +209,21 @@ function SortableProviderRow({
 interface AIProvidersProps {
   configuredProviders: Set<AIProvider>;
   providerOrder?: AIProvider[];
+  claudeModel?: ClaudeModel;
   onProviderConfigured: (provider: AIProvider) => void;
   onProviderRemoved: (provider: AIProvider) => void;
   onProviderOrderChanged?: (order: AIProvider[]) => void;
+  onClaudeModelChange?: (model: ClaudeModel) => void;
 }
 
 export function AIProviders({
   configuredProviders,
   providerOrder: initialOrder,
+  claudeModel = 'claude-3-haiku-20240307',
   onProviderConfigured,
   onProviderRemoved,
   onProviderOrderChanged,
+  onClaudeModelChange,
 }: AIProvidersProps) {
   const [selectedProvider, setSelectedProvider] = useState<AIProvider | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -416,6 +428,38 @@ export function AIProviders({
               ))}
             </SortableContext>
           </DndContext>
+
+          {/* Claude Model Selector - only show when Claude is configured */}
+          {configuredProviders.has('anthropic') && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label htmlFor="claude-model">Claude Model</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Select which Claude model to use for analysis
+                  </p>
+                </div>
+                <Select
+                  value={claudeModel}
+                  onValueChange={(value) => onClaudeModelChange?.(value as ClaudeModel)}
+                >
+                  <SelectTrigger id="claude-model" className="w-[280px]">
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CLAUDE_MODELS.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        <div className="flex flex-col">
+                          <span>{model.label}</span>
+                          <span className="text-xs text-muted-foreground">{model.description}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

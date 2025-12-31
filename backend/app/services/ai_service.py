@@ -1150,14 +1150,27 @@ class OpenAIProvider(AIProviderBase):
 
 
 class ClaudeProvider(AIProviderBase):
-    """Anthropic Claude 3 Haiku vision provider"""
+    """Anthropic Claude vision provider with model selection"""
 
-    def __init__(self, api_key: str):
+    # Pricing per 1K tokens for each model (as of Jan 2025)
+    MODEL_PRICING = {
+        "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
+        "claude-3-5-haiku-20241022": {"input": 0.001, "output": 0.005},
+        "claude-3-5-sonnet-20241022": {"input": 0.003, "output": 0.015},
+        "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
+        "claude-opus-4-20250514": {"input": 0.015, "output": 0.075},
+    }
+
+    DEFAULT_MODEL = "claude-3-haiku-20240307"
+
+    def __init__(self, api_key: str, model: str = None):
         super().__init__(api_key)
         self.client = anthropic.AsyncAnthropic(api_key=api_key)
-        self.model = "claude-3-haiku-20240307"
-        self.cost_per_1k_input_tokens = 0.00025
-        self.cost_per_1k_output_tokens = 0.00125
+        self.model = model if model in self.MODEL_PRICING else self.DEFAULT_MODEL
+        pricing = self.MODEL_PRICING.get(self.model, self.MODEL_PRICING[self.DEFAULT_MODEL])
+        self.cost_per_1k_input_tokens = pricing["input"]
+        self.cost_per_1k_output_tokens = pricing["output"]
+        logger.info(f"Claude provider initialized with model: {self.model}")
 
     async def generate_description(
         self,
@@ -2634,12 +2647,18 @@ class AIService:
                 gemini_key = decrypt_password(keys['ai_api_key_gemini'])
                 logger.info("Gemini API key loaded from database")
 
+            # Load Claude model selection
+            claude_model = keys.get('settings_claude_model', None)
+            if claude_model:
+                logger.info(f"Claude model setting loaded: {claude_model}")
+
             # Configure providers with decrypted keys
             self.configure_providers(
                 openai_key=openai_key,
                 grok_key=grok_key,
                 claude_key=claude_key,
-                gemini_key=gemini_key
+                gemini_key=gemini_key,
+                claude_model=claude_model
             )
 
             logger.info(f"AI providers configured: {len(self.providers)} providers loaded")
@@ -2656,7 +2675,8 @@ class AIService:
         openai_key: Optional[str] = None,
         grok_key: Optional[str] = None,
         claude_key: Optional[str] = None,
-        gemini_key: Optional[str] = None
+        gemini_key: Optional[str] = None,
+        claude_model: Optional[str] = None
     ):
         """
         Configure AI providers with API keys.
@@ -2669,6 +2689,7 @@ class AIService:
             grok_key: xAI Grok API key (plaintext)
             claude_key: Anthropic API key (plaintext)
             gemini_key: Google API key (plaintext)
+            claude_model: Claude model to use (e.g., "claude-opus-4-20250514")
         """
         if openai_key:
             self.providers[AIProvider.OPENAI] = OpenAIProvider(openai_key)
@@ -2679,8 +2700,8 @@ class AIService:
             logger.info("Grok provider configured")
 
         if claude_key:
-            self.providers[AIProvider.CLAUDE] = ClaudeProvider(claude_key)
-            logger.info("Claude provider configured")
+            self.providers[AIProvider.CLAUDE] = ClaudeProvider(claude_key, model=claude_model)
+            logger.info(f"Claude provider configured with model: {claude_model or ClaudeProvider.DEFAULT_MODEL}")
 
         if gemini_key:
             self.providers[AIProvider.GEMINI] = GeminiProvider(gemini_key)

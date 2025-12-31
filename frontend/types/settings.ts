@@ -65,7 +65,26 @@ export interface SystemSettings {
 
   // Story P9-2.1: Frame Extraction Offset
   frame_extraction_offset_ms?: number;  // Milliseconds to skip from clip start (0-10000, default: 2000)
+
+  // Claude Model Selection
+  claude_model?: ClaudeModel;  // Selected Claude model (default: claude-3-haiku-20240307)
 }
+
+// Claude model options
+export type ClaudeModel =
+  | 'claude-3-haiku-20240307'
+  | 'claude-3-5-haiku-20241022'
+  | 'claude-3-5-sonnet-20241022'
+  | 'claude-sonnet-4-20250514'
+  | 'claude-opus-4-20250514';
+
+export const CLAUDE_MODELS: { value: ClaudeModel; label: string; description: string }[] = [
+  { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku', description: 'Fastest, lowest cost ($0.25/$1.25 per 1M tokens)' },
+  { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku', description: 'Faster, low cost ($1/$5 per 1M tokens)' },
+  { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet', description: 'Balanced ($3/$15 per 1M tokens)' },
+  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', description: 'Advanced ($3/$15 per 1M tokens)' },
+  { value: 'claude-opus-4-20250514', label: 'Claude Opus 4', description: 'Most capable ($15/$75 per 1M tokens)' },
+];
 
 export interface StorageStats {
   total_events: number;
