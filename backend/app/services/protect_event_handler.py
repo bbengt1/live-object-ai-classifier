@@ -241,13 +241,12 @@ class ProtectEventHandler:
             is_animal = getattr(new_obj, 'is_animal_currently_detected', None)
             last_smart_event_ids = getattr(new_obj, 'last_smart_detect_event_ids', None)
             active_smart_types = getattr(new_obj, 'active_smart_detect_types', None)
-            # DEBUG: Temporarily log at INFO level to diagnose missing events
-            logger.info(
+            logger.debug(
                 f"WebSocket update for {model_type} {protect_camera_id[:8]}...: "
                 f"motion={is_motion}, smart={is_smart_detected}, "
                 f"person={is_person}, vehicle={is_vehicle}, package={is_package}, animal={is_animal}",
                 extra={
-                    "event_type": "protect_ws_update_debug",
+                    "event_type": "protect_ws_update",
                     "model_type": model_type,
                     "protect_camera_id": protect_camera_id,
                     "is_motion_currently_detected": is_motion,
@@ -264,14 +263,6 @@ class ProtectEventHandler:
             # Parse event types from the message (AC2)
             event_types = self._parse_event_types(new_obj, model_type)
             if not event_types:
-                logger.info(
-                    f"No event types parsed from {model_type} update - no motion/smart detection active",
-                    extra={
-                        "event_type": "protect_no_event_types_debug",
-                        "model_type": model_type,
-                        "protect_camera_id": protect_camera_id,
-                    }
-                )
                 return False
 
             # Look up camera in database (AC3)
@@ -625,25 +616,12 @@ class ProtectEventHandler:
             event_start = getattr(event_obj, 'start', None)
             protect_event_id = getattr(event_obj, 'id', None)
 
-            # DEBUG: Log all native Event objects to verify handler is being called
-            logger.info(
-                f"Native Event object received: type={event_type}, camera_id={protect_camera_id}",
-                extra={
-                    "event_type": "protect_native_event_debug_entry",
-                    "controller_id": controller_id,
-                    "protect_event_type": str(event_type) if event_type else None,
-                    "protect_camera_id": str(protect_camera_id) if protect_camera_id else None,
-                    "smart_detect_types": [str(t) for t in smart_detect_types] if smart_detect_types else [],
-                    "protect_event_id": str(protect_event_id) if protect_event_id else None,
-                }
-            )
-
             # Only process motion, smart detection, and ring events
             if event_type not in (ProtectEventType.MOTION, ProtectEventType.SMART_DETECT, ProtectEventType.RING):
-                logger.info(
+                logger.debug(
                     f"Native Event type {event_type} not processable - skipping",
                     extra={
-                        "event_type": "protect_native_event_skipped_type",
+                        "event_type": "protect_native_event_skipped",
                         "protect_event_type": str(event_type) if event_type else None,
                     }
                 )
