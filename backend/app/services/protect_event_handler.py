@@ -625,8 +625,28 @@ class ProtectEventHandler:
             event_start = getattr(event_obj, 'start', None)
             protect_event_id = getattr(event_obj, 'id', None)
 
+            # DEBUG: Log all native Event objects to verify handler is being called
+            logger.info(
+                f"Native Event object received: type={event_type}, camera_id={protect_camera_id}",
+                extra={
+                    "event_type": "protect_native_event_debug_entry",
+                    "controller_id": controller_id,
+                    "protect_event_type": str(event_type) if event_type else None,
+                    "protect_camera_id": str(protect_camera_id) if protect_camera_id else None,
+                    "smart_detect_types": [str(t) for t in smart_detect_types] if smart_detect_types else [],
+                    "protect_event_id": str(protect_event_id) if protect_event_id else None,
+                }
+            )
+
             # Only process motion, smart detection, and ring events
             if event_type not in (ProtectEventType.MOTION, ProtectEventType.SMART_DETECT, ProtectEventType.RING):
+                logger.info(
+                    f"Native Event type {event_type} not processable - skipping",
+                    extra={
+                        "event_type": "protect_native_event_skipped_type",
+                        "protect_event_type": str(event_type) if event_type else None,
+                    }
+                )
                 return False
 
             if not protect_camera_id:
