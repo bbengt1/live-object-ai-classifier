@@ -1,4 +1,4 @@
-"""User management API endpoints (Story P15-2.3, P16-1.2, P16-1.7)
+"""User management API endpoints (Story P15-2.3, P16-1.2, P16-1.6, P16-1.7)
 
 Admin-only endpoints for managing user accounts.
 
@@ -7,9 +7,10 @@ Permission Matrix:
 - Regular users can only manage their own profile via /auth endpoints
 
 Story P16-1.2: Added invited_by/invited_at tracking for user creation.
+Story P16-1.6: Added audit logging for all user management actions.
 Story P16-1.7: Added email invitation flow.
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from typing import List
 import logging
@@ -28,6 +29,20 @@ from app.services.user_service import UserService
 from app.services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
+
+
+def get_client_ip(request: Request) -> str:
+    """Extract client IP address from request (P16-1.6)"""
+    # Check for forwarded IP (behind proxy)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
+def get_user_agent(request: Request) -> str:
+    """Extract User-Agent from request (P16-1.6)"""
+    return request.headers.get("User-Agent", "")
 
 router = APIRouter(prefix="/users", tags=["User Management"])
 
@@ -57,6 +72,7 @@ async def create_user(
     - Generates secure temporary password
     - Sets must_change_password flag
     - Password expires in 72 hours if not changed
+    - Logs creation to audit trail (P16-1.6)
     - Optionally sends invitation email (Story P16-1.7)
     """
     service = UserService(db)
@@ -67,6 +83,7 @@ async def create_user(
 
     try:
         # Story P16-1.2: Track who created this user
+        # Story P16-1.6: Pass request info for audit logging
         # Story P16-1.7: Send invitation email if requested
         user, temp_password, email_sent = service.create_user(
             username=user_data.username,
@@ -76,6 +93,8 @@ async def create_user(
             invited_by=current_user.id,
             login_url=login_url,
             inviter_name=current_user.username,
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
         )
     except ValueError as e:
         raise HTTPException(
@@ -184,6 +203,7 @@ async def get_user(
 async def update_user(
     user_id: str,
     user_data: UserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
@@ -196,6 +216,9 @@ async def update_user(
             email=user_data.email,
             role=user_data.role,
             is_active=user_data.is_active,
+            updated_by=current_user.id,
+            ip_address=get_client_ip(request),
+            user_agent=get_user_agent(request),
         )
     except ValueError as e:
         raise HTTPException(
@@ -236,6 +259,7 @@ async def update_user(
 )
 async def delete_user(
     user_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
@@ -248,7 +272,12 @@ async def delete_user(
         )
 
     service = UserService(db)
-    if not service.delete_user(user_id):
+    if not service.delete_user(
+        user_id,
+        deleted_by=current_user.id,
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
@@ -270,12 +299,18 @@ async def delete_user(
 )
 async def reset_password(
     user_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     """Reset user password (Admin only)"""
     service = UserService(db)
-    temp_password, expires_at = service.reset_password(user_id)
+    temp_password, expires_at = service.reset_password(
+        user_id,
+        reset_by=current_user.id,
+        ip_address=get_client_ip(request),
+        user_agent=get_user_agent(request),
+    )
 
     if not temp_password:
         raise HTTPException(
