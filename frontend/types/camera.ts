@@ -196,3 +196,78 @@ export interface IApiError {
     message: string;
   }>;
 }
+
+// ============================================================================
+// Live Streaming Types (Story P16-2.3)
+// ============================================================================
+
+/**
+ * Stream quality levels for live viewing
+ */
+export type StreamQuality = 'low' | 'medium' | 'high';
+
+/**
+ * Stream quality option (matches backend StreamQualityOption)
+ */
+export interface IStreamQualityOption {
+  id: StreamQuality;
+  label: string;
+  resolution: string;
+  fps: number;
+}
+
+/**
+ * Stream info response (matches backend StreamInfoResponse)
+ */
+export interface IStreamInfo {
+  camera_id: string;
+  type: string;
+  websocket_path: string;
+  snapshot_path: string;
+  quality_options: IStreamQualityOption[];
+  default_quality: StreamQuality;
+  current_clients: number;
+  max_clients_available: number;
+  is_available: boolean;
+}
+
+/**
+ * Stream snapshot response (matches backend StreamSnapshotResponse)
+ */
+export interface IStreamSnapshot {
+  success: boolean;
+  timestamp: string;
+  quality: StreamQuality;
+  image_base64?: string;
+  error?: string;
+}
+
+/**
+ * Stream metrics response (matches backend StreamMetricsResponse)
+ */
+export interface IStreamMetrics {
+  active_streams: number;
+  total_clients: number;
+  max_concurrent: number;
+  streams_started_total: number;
+  streams_stopped_total: number;
+  connection_errors_total: number;
+}
+
+/**
+ * WebSocket control message from client
+ */
+export interface IStreamWebSocketMessage {
+  type: 'quality_change' | 'ping';
+  quality?: StreamQuality;
+}
+
+/**
+ * WebSocket control response from server
+ */
+export interface IStreamWebSocketResponse {
+  type: 'quality_changed' | 'pong' | 'error' | 'info';
+  quality?: StreamQuality;
+  message?: string;
+  timestamp?: string;
+}
