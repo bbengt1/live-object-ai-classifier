@@ -47,12 +47,15 @@ class MockWebSocket {
   onerror: ((e: Event) => void) | null = null;
   onclose: ((e: CloseEvent) => void) | null = null;
 
-  constructor(_url: string) {
-    mockWsInstance = this;
+  constructor(url: string) {
+    void url; // Satisfy unused var lint
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const instance = this;
+    mockWsInstance = instance;
     // Auto-connect after a brief delay
     setTimeout(() => {
-      this.readyState = MockWebSocket.OPEN;
-      this.onopen?.(new Event('open'));
+      instance.readyState = MockWebSocket.OPEN;
+      instance.onopen?.(new Event('open'));
     }, 5);
   }
 }
