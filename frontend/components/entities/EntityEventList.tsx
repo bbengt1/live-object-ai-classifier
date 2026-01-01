@@ -90,7 +90,7 @@ function convertToIEvent(entityEvent: {
 export function EntityEventList({ entityId, onEventClick }: EntityEventListProps) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
   const [page, setPage] = useState(1);
-  const limit = 100; // Fetch more at once for virtual scrolling
+  const limit = 50; // Max allowed by API, fetch more at once for virtual scrolling
 
   // P15-1.2: Ref for virtual scroll container
   const parentRef = useRef<HTMLDivElement>(null);
