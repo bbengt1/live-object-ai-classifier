@@ -8,6 +8,10 @@ import type {
   ICameraCreate,
   ICameraUpdate,
   ICameraTestResponse,
+  IStreamInfo,
+  IStreamSnapshot,
+  IStreamMetrics,
+  StreamQuality,
 } from '@/types/camera';
 import type {
   IEvent,
@@ -356,6 +360,50 @@ export const apiClient = {
       return apiFetch(`/cameras/${id}/analyze`, {
         method: 'POST',
       });
+    },
+
+    // ============================================================================
+    // Live Streaming (Story P16-2.3)
+    // ============================================================================
+
+    /**
+     * Get stream info for a camera
+     * Returns stream URL, quality options, and client count
+     * @param cameraId Camera ID
+     */
+    getStreamInfo: async (cameraId: string): Promise<IStreamInfo> => {
+      return apiFetch(`/cameras/${encodeURIComponent(cameraId)}/stream/info`);
+    },
+
+    /**
+     * Get current snapshot from camera stream
+     * @param cameraId Camera ID
+     * @param quality Optional quality level (low, medium, high)
+     */
+    getStreamSnapshot: async (cameraId: string, quality?: StreamQuality): Promise<IStreamSnapshot> => {
+      const params = new URLSearchParams();
+      if (quality) params.set('quality', quality);
+      const queryString = params.toString();
+      return apiFetch(`/cameras/${encodeURIComponent(cameraId)}/stream/snapshot${queryString ? `?${queryString}` : ''}`);
+    },
+
+    /**
+     * Get WebSocket URL for live stream
+     * @param cameraId Camera ID
+     * @param quality Optional quality level
+     */
+    getStreamWebSocketUrl: (cameraId: string, quality?: StreamQuality): string => {
+      const wsProtocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const baseUrl = API_BASE_URL.replace(/^https?:/, wsProtocol);
+      const params = quality ? `?quality=${quality}` : '';
+      return `${baseUrl}${API_V1_PREFIX}/cameras/${encodeURIComponent(cameraId)}/stream${params}`;
+    },
+
+    /**
+     * Get server-wide streaming metrics
+     */
+    getStreamMetrics: async (): Promise<IStreamMetrics> => {
+      return apiFetch('/cameras/stream/metrics');
     },
   },
 
