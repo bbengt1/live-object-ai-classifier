@@ -268,6 +268,10 @@ All open backlog items have been created as GitHub issues for tracking:
 | FF-039 | [#336](https://github.com/project-argusai/ArgusAI/issues/336) | Live Camera Feeds via Protect API |
 | IMP-070 | [#337](https://github.com/project-argusai/ArgusAI/issues/337) | Entity Assignment Re-classification Warning |
 | IMP-071 | [#338](https://github.com/project-argusai/ArgusAI/issues/338) | Edit Entity Metadata |
+| IMP-063 | [#339](https://github.com/project-argusai/ArgusAI/issues/339) | MCP: Implement Context A/B Testing |
+| IMP-064 | [#340](https://github.com/project-argusai/ArgusAI/issues/340) | MCP: Track False Positive Frequency Patterns |
+| IMP-065 | [#341](https://github.com/project-argusai/ArgusAI/issues/341) | MCP: Enable External MCP Client Support |
+| FF-037 | [#342](https://github.com/project-argusai/ArgusAI/issues/342) | Active User Sessions List |
 
 **GitHub Labels Created:**
 - `technical-debt`, `testing`, `frontend`, `backend`, `performance`, `feature`, `integration`
