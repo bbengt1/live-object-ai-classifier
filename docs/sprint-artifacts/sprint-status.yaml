@@ -1149,7 +1149,7 @@ development_status:
   # FRs Covered: FR30-FR35
   epic-p16-4: contexted
   p16-4-1-create-entity-assignment-confirmation-dialog: done
-  p16-4-2-add-dont-show-again-preference: backlog
+  p16-4-2-add-dont-show-again-preference: done
   p16-4-3-display-re-classification-status: backlog
   epic-p16-4-retrospective: optional
 
