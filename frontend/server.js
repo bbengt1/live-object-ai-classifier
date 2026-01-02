@@ -194,12 +194,22 @@ server.on('upgrade', (req, socket, head) => {
     socket.pipe(backendSocket);
 
     console.log('Pipe established, socket writable:', socket.writable, 'backendSocket writable:', backendSocket.writable);
+    console.log('Socket destroyed:', socket.destroyed, 'readable:', socket.readable, 'readableEnded:', socket.readableEnded);
   });
 
-  // Handle cleanup
-  socket.on('close', () => backendSocket.destroy());
-  backendSocket.on('close', () => socket.destroy());
-  socket.on('error', () => backendSocket.destroy());
+  // Handle cleanup with logging
+  socket.on('close', (hadError) => {
+    console.log(`Client socket closed (hadError: ${hadError})`);
+    backendSocket.destroy();
+  });
+  backendSocket.on('close', (hadError) => {
+    console.log(`Backend socket closed (hadError: ${hadError})`);
+    socket.destroy();
+  });
+  socket.on('error', (err) => {
+    console.error(`Client socket error: ${err.message}`);
+    backendSocket.destroy();
+  });
   backendSocket.on('error', (err) => {
     console.error(`WebSocket proxy error: ${err.message} (code: ${err.code})`);
     socket.destroy();
