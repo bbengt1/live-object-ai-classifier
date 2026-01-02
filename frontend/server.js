@@ -67,25 +67,13 @@ const wsProxy = httpProxy.createProxyServer({
   changeOrigin: true,
 });
 
-// Log proxy errors and events for debugging
+// Log proxy errors
 wsProxy.on('error', (err, req, res) => {
-  console.error('WebSocket proxy error:', err.message, err.stack);
+  console.error('WebSocket proxy error:', err.message);
   if (res && res.writeHead) {
     res.writeHead(502);
     res.end('Proxy error');
   }
-});
-
-wsProxy.on('proxyReqWs', (proxyReq, req, socket) => {
-  console.log(`WebSocket proxy: ${req.url} -> ${backendUrl}`);
-});
-
-wsProxy.on('open', (proxySocket) => {
-  console.log('WebSocket proxy: connection opened to backend');
-});
-
-wsProxy.on('close', (res, socket, head) => {
-  console.log('WebSocket proxy: connection closed');
 });
 
 // Initialize Next.js app
@@ -120,22 +108,12 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
 
-  console.log(`WebSocket upgrade: ${pathname} -> backend`);
-
-  // Add socket event handlers for debugging
+  // Handle socket errors
   socket.on('error', (err) => {
-    console.error(`WebSocket incoming socket error: ${err.message}`);
+    console.error(`WebSocket socket error: ${err.message}`);
   });
 
-  socket.on('close', (hadError) => {
-    console.log(`WebSocket incoming socket closed, hadError: ${hadError}`);
-  });
-
-  socket.on('end', () => {
-    console.log('WebSocket incoming socket ended');
-  });
-
-  // Use http-proxy for proper WebSocket proxying
+  // Proxy to backend
   wsProxy.ws(req, socket, head);
 });
 
