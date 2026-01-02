@@ -328,6 +328,46 @@ class StreamProxyService:
 
             return self._encode_frame(stream.last_frame, quality)
 
+    def get_client_frame(self, camera_id: str, client_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the latest frame for a specific client at their quality level.
+
+        Args:
+            camera_id: Camera UUID
+            client_id: Client UUID
+
+        Returns:
+            Dict with 'data' (JPEG bytes) and 'timestamp' (unix time), or None
+        """
+        with self._lock:
+            stream = self._streams.get(camera_id)
+            if not stream or stream.last_frame is None:
+                return None
+
+            client = stream.clients.get(client_id)
+            if not client:
+                return None
+
+            # Get frame timestamp
+            timestamp = 0
+            if stream.last_frame_time:
+                timestamp = stream.last_frame_time.timestamp()
+
+            # Encode at client's quality level
+            jpeg_bytes = self._encode_frame(stream.last_frame, client.quality)
+            if not jpeg_bytes:
+                return None
+
+            # Update client stats
+            client.last_frame_at = stream.last_frame_time
+            client.frames_sent += 1
+            stream.total_frames_sent += 1
+
+            return {
+                "data": jpeg_bytes,
+                "timestamp": timestamp
+            }
+
     async def get_snapshot_from_rtsp(
         self,
         camera_id: str,

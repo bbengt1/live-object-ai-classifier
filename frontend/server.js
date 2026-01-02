@@ -122,6 +122,19 @@ server.on('upgrade', (req, socket, head) => {
 
   console.log(`WebSocket upgrade: ${pathname} -> backend`);
 
+  // Add socket event handlers for debugging
+  socket.on('error', (err) => {
+    console.error(`WebSocket incoming socket error: ${err.message}`);
+  });
+
+  socket.on('close', (hadError) => {
+    console.log(`WebSocket incoming socket closed, hadError: ${hadError}`);
+  });
+
+  socket.on('end', () => {
+    console.log('WebSocket incoming socket ended');
+  });
+
   // Use http-proxy for proper WebSocket proxying
   wsProxy.ws(req, socket, head);
 });
