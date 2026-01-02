@@ -2241,6 +2241,8 @@ def _build_rtsp_url_for_stream(camera: Camera, db: "Session" = None) -> str:
     Returns:
         RTSP/RTSPS URL with embedded credentials, or empty string if unavailable
     """
+    from urllib.parse import quote
+
     # Handle Protect cameras - build RTSPS URL from controller
     if camera.source_type == "protect" and camera.protect_controller_id and camera.protect_camera_id:
         from app.models.protect_controller import ProtectController
@@ -2258,9 +2260,9 @@ def _build_rtsp_url_for_stream(camera: Camera, db: "Session" = None) -> str:
             ).first()
 
             if controller:
-                # Get controller credentials
-                username = controller.username
-                password = controller.get_decrypted_password() if controller.password else ""
+                # Get controller credentials (URL-encode to handle special chars like @ and !)
+                username = quote(controller.username, safe='')
+                password = quote(controller.get_decrypted_password(), safe='') if controller.password else ""
 
                 # Build RTSPS URL: rtsps://<user>:<pass>@<host>:7441/<camera_id>
                 creds = username
@@ -2280,10 +2282,12 @@ def _build_rtsp_url_for_stream(camera: Camera, db: "Session" = None) -> str:
         return ""
 
     if camera.username:
-        password = camera.get_decrypted_password() if camera.password else ""
+        # URL-encode credentials to handle special characters
+        username = quote(camera.username, safe='')
+        password = quote(camera.get_decrypted_password(), safe='') if camera.password else ""
         if "://" in rtsp_url:
             protocol, rest = rtsp_url.split("://", 1)
-            creds = camera.username
+            creds = username
             if password:
                 creds += f":{password}"
             rtsp_url = f"{protocol}://{creds}@{rest}"
