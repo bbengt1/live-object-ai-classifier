@@ -110,13 +110,22 @@ app.prepare().then(() => {
         }
         httpRequest += '\r\n';
 
+        console.log(`WebSocket proxy: sending ${httpRequest.length} bytes HTTP request`);
+
         // Send the upgrade request to backend
         backendSocket.write(httpRequest);
 
         // Also send any buffered data from client
         if (head.length > 0) {
+          console.log(`WebSocket proxy: sending ${head.length} bytes head data`);
           backendSocket.write(head);
         }
+
+        // Debug: log first data from backend
+        backendSocket.once('data', (chunk) => {
+          console.log(`WebSocket proxy: backend first data ${chunk.length} bytes`);
+          console.log(`WebSocket proxy: starts with: ${chunk.slice(0, Math.min(100, chunk.length)).toString('utf8').replace(/\r\n/g, '\\r\\n')}`);
+        });
 
         // Pipe data between sockets bidirectionally
         backendSocket.pipe(socket);
