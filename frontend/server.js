@@ -69,6 +69,10 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
   const server = createServer(httpsOptions, async (req, res) => {
+    // Debug: check if WebSocket requests come through the normal handler
+    if (req.headers.upgrade === 'websocket') {
+      console.log(`DEBUG: WebSocket request in normal handler! ${req.url}`);
+    }
     try {
       const parsedUrl = parse(req.url, true);
       await handle(req, res, parsedUrl);
