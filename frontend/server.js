@@ -21,7 +21,7 @@ const { createServer } = require('https');
 const { parse } = require('url');
 const next = require('next');
 const fs = require('fs');
-const http = require('http');
+const net = require('net');
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOSTNAME || '0.0.0.0';
@@ -80,7 +80,7 @@ app.prepare().then(() => {
   });
 
   // Handle WebSocket upgrade requests for streaming endpoints (Story P16-2)
-  // Uses raw socket piping to avoid http-proxy frame corruption issues
+  // Uses raw socket connection to backend for proper byte-level proxying
   server.on('upgrade', (req, socket, head) => {
     const { pathname } = parse(req.url, true);
 
@@ -89,73 +89,44 @@ app.prepare().then(() => {
         pathname === '/ws' || pathname.startsWith('/ws/')) {
       console.log(`WebSocket upgrade: ${pathname} -> ${backendHost}:${backendPort}${pathname}`);
 
-      // Create connection to backend
-      // Strip compression-related headers to avoid frame corruption through proxy
-      const filteredHeaders = { ...req.headers };
-      delete filteredHeaders['sec-websocket-extensions'];
-      filteredHeaders.host = `${backendHost}:${backendPort}`;
-
-      const proxyReq = http.request({
-        hostname: backendHost,
-        port: backendPort,
-        path: req.url,
-        method: 'GET',
-        headers: filteredHeaders,
-      });
-
-      proxyReq.on('response', (proxyRes) => {
-        // Backend returned a non-upgrade response (error case)
-        console.log('Backend returned non-upgrade response:', proxyRes.statusCode);
-
-        // Forward the error response to client
-        let response = `HTTP/${proxyRes.httpVersion} ${proxyRes.statusCode} ${proxyRes.statusMessage}\r\n`;
-        for (const [key, value] of Object.entries(proxyRes.headers)) {
-          response += `${key}: ${value}\r\n`;
-        }
-        response += '\r\n';
-        socket.write(response);
-        proxyRes.pipe(socket);
-      });
-
-      proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
-        console.log('WebSocket upgrade successful');
-
-        // Forward the backend's 101 response to the client
-        let response = `HTTP/${proxyRes.httpVersion} 101 Switching Protocols\r\n`;
-        for (const [key, value] of Object.entries(proxyRes.headers)) {
-          // Filter out compression headers to avoid frame issues
-          if (key.toLowerCase() !== 'sec-websocket-extensions') {
-            response += `${key}: ${value}\r\n`;
+      // Create raw TCP connection to backend
+      const backendSocket = net.connect(backendPort, backendHost, () => {
+        // Build the HTTP upgrade request to send to backend
+        // Filter out compression headers to avoid frame issues
+        let httpRequest = `${req.method} ${req.url} HTTP/1.1\r\n`;
+        for (const [key, value] of Object.entries(req.headers)) {
+          // Skip compression extensions and update host
+          if (key.toLowerCase() === 'sec-websocket-extensions') continue;
+          if (key.toLowerCase() === 'host') {
+            httpRequest += `Host: ${backendHost}:${backendPort}\r\n`;
+          } else {
+            httpRequest += `${key}: ${value}\r\n`;
           }
         }
-        response += '\r\n';
-        socket.write(response);
+        httpRequest += '\r\n';
 
-        // Write any buffered data from upgrade
-        if (proxyHead.length > 0) {
-          socket.write(proxyHead);
-        }
+        // Send the upgrade request to backend
+        backendSocket.write(httpRequest);
+
+        // Also send any buffered data from client
         if (head.length > 0) {
-          proxySocket.write(head);
+          backendSocket.write(head);
         }
 
-        // Pipe data between sockets (raw, no frame manipulation)
-        proxySocket.pipe(socket);
-        socket.pipe(proxySocket);
-
-        // Handle cleanup
-        socket.on('close', () => proxySocket.destroy());
-        proxySocket.on('close', () => socket.destroy());
-        socket.on('error', () => proxySocket.destroy());
-        proxySocket.on('error', () => socket.destroy());
+        // Now pipe everything bidirectionally - raw bytes, no parsing
+        // The backend's 101 response will flow directly to the client
+        backendSocket.pipe(socket);
+        socket.pipe(backendSocket);
       });
 
-      proxyReq.on('error', (err) => {
+      // Handle cleanup
+      socket.on('close', () => backendSocket.destroy());
+      backendSocket.on('close', () => socket.destroy());
+      socket.on('error', () => backendSocket.destroy());
+      backendSocket.on('error', (err) => {
         console.error('WebSocket proxy error:', err.message);
         socket.destroy();
       });
-
-      proxyReq.end();
     } else {
       // Let Next.js handle other WebSocket connections (e.g., HMR in dev mode)
       socket.destroy();
