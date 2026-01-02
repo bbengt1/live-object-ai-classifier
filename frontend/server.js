@@ -121,24 +121,25 @@ app.prepare().then(() => {
           backendSocket.write(head);
         }
 
-        // Debug: log first few chunks from backend
-        let chunkCount = 0;
-        const dataHandler = (chunk) => {
-          chunkCount++;
-          if (chunkCount <= 3) {
-            console.log(`WebSocket proxy: backend chunk #${chunkCount}: ${chunk.length} bytes`);
-            // Log first 20 bytes as hex to see frame headers
-            const hexBytes = chunk.slice(0, Math.min(20, chunk.length)).toString('hex');
-            console.log(`WebSocket proxy: hex: ${hexBytes}`);
-            if (chunkCount === 1) {
-              console.log(`WebSocket proxy: starts with: ${chunk.slice(0, Math.min(100, chunk.length)).toString('utf8').replace(/\r\n/g, '\\r\\n')}`);
-            }
-          }
-          if (chunkCount >= 3) {
-            backendSocket.removeListener('data', dataHandler);
+        // Debug: log first few chunks from both directions
+        let backendChunks = 0;
+        let clientChunks = 0;
+
+        const backendHandler = (chunk) => {
+          backendChunks++;
+          if (backendChunks <= 3) {
+            console.log(`WS BACKEND->CLIENT #${backendChunks}: ${chunk.length} bytes, hex: ${chunk.slice(0, Math.min(20, chunk.length)).toString('hex')}`);
           }
         };
-        backendSocket.on('data', dataHandler);
+        backendSocket.on('data', backendHandler);
+
+        const clientHandler = (chunk) => {
+          clientChunks++;
+          if (clientChunks <= 3) {
+            console.log(`WS CLIENT->BACKEND #${clientChunks}: ${chunk.length} bytes, hex: ${chunk.slice(0, Math.min(20, chunk.length)).toString('hex')}`);
+          }
+        };
+        socket.on('data', clientHandler);
 
         // Pipe data between sockets bidirectionally
         backendSocket.pipe(socket);
