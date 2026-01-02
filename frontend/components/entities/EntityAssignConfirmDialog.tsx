@@ -62,13 +62,15 @@ export function EntityAssignConfirmDialog({
   // Story P16-4.2: State for "Don't show again" checkbox
   const [dontShowAgain, setDontShowAgain] = useState(false);
 
-  const handleCancel = () => {
+  const handleCancel = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent event bubbling to parent EventCard
     setDontShowAgain(false); // Reset checkbox on cancel
     onCancel();
     onOpenChange(false);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent event bubbling to parent EventCard
     // Story P16-4.2: Save preference to localStorage if checkbox is checked
     if (dontShowAgain) {
       try {
@@ -82,7 +84,7 @@ export function EntityAssignConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
         <AlertDialogHeader>
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
