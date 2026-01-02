@@ -465,9 +465,13 @@ class StreamProxyService:
         try:
             # Connect to RTSP stream
             if PYAV_AVAILABLE and rtsp_url.startswith("rtsps://"):
+                # UniFi Protect uses self-signed certs, need to disable verification
                 av_container = av.open(
                     rtsp_url,
-                    options={'rtsp_transport': 'tcp'},
+                    options={
+                        'rtsp_transport': 'tcp',
+                        'tls_verify': '0',  # Disable SSL verification for self-signed certs
+                    },
                     timeout=30
                 )
                 av_stream = av_container.streams.video[0]
