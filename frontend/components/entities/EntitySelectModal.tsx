@@ -10,6 +10,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Search, User, Car, HelpCircle, Check, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { EntityAssignConfirmDialog } from './EntityAssignConfirmDialog';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,8 @@ interface EntitySelectModalProps {
   description?: string;
   /** Whether the selection is in progress */
   isLoading?: boolean;
+  /** Story P16-4.1: Whether to show confirmation dialog before assignment (default: true) */
+  showConfirmDialog?: boolean;
 }
 
 interface EntityListItem {
@@ -69,9 +72,12 @@ export function EntitySelectModal({
   title = 'Select Entity',
   description = 'Choose an entity to assign this event to',
   isLoading = false,
+  showConfirmDialog = true,
 }: EntitySelectModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
+  // Story P16-4.1: State for confirmation dialog
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   // Fetch entities with search filter (debounced via react-query)
   const { data: entitiesData, isLoading: isLoadingEntities } = useEntities({
@@ -95,19 +101,39 @@ export function EntitySelectModal({
     setSelectedEntityId((prev) => (prev === entityId ? null : entityId));
   }, []);
 
-  // Handle confirm button
+  // Handle confirm button - Story P16-4.1: Show confirmation dialog if enabled
   const handleConfirm = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (selectedEntity) {
+      if (showConfirmDialog) {
+        // Show confirmation dialog before assignment
+        setShowConfirmation(true);
+      } else {
+        // Skip confirmation and assign directly
+        onSelect(selectedEntity.id, selectedEntity.name);
+      }
+    }
+  }, [selectedEntity, onSelect, showConfirmDialog]);
+
+  // Story P16-4.1: Handle confirmation dialog confirm
+  const handleConfirmDialogConfirm = useCallback(() => {
+    if (selectedEntity) {
       onSelect(selectedEntity.id, selectedEntity.name);
+      setShowConfirmation(false);
     }
   }, [selectedEntity, onSelect]);
+
+  // Story P16-4.1: Handle confirmation dialog cancel
+  const handleConfirmDialogCancel = useCallback(() => {
+    setShowConfirmation(false);
+  }, []);
 
   // Reset state when modal closes
   const handleOpenChange = useCallback((newOpen: boolean) => {
     if (!newOpen) {
       setSearchQuery('');
       setSelectedEntityId(null);
+      setShowConfirmation(false);
     }
     onOpenChange(newOpen);
   }, [onOpenChange]);
@@ -132,6 +158,7 @@ export function EntitySelectModal({
   }, [onCreateNew]);
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md" onClick={(e) => e.stopPropagation()}>
         <DialogHeader>
@@ -255,5 +282,18 @@ export function EntitySelectModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Story P16-4.1: Confirmation dialog for entity assignment */}
+    {selectedEntity && (
+      <EntityAssignConfirmDialog
+        open={showConfirmation}
+        onOpenChange={setShowConfirmation}
+        entityName={getEntityDisplayName(selectedEntity)}
+        onConfirm={handleConfirmDialogConfirm}
+        onCancel={handleConfirmDialogCancel}
+        isLoading={isLoading}
+      />
+    )}
+    </>
   );
 }
