@@ -115,15 +115,23 @@ app.prepare().then(() => {
           backendSocket.write(head);
         }
 
-        // Debug: log data being sent from client to backend
-        socket.on('data', (chunk) => {
-          console.log(`  Client -> Backend: ${chunk.length} bytes, first: ${chunk.slice(0, 50).toString('utf8').replace(/\r?\n/g, '\\n')}`);
+        // Log what comes from backend before sending to client
+        let backendBuffer = '';
+        backendSocket.on('data', (chunk) => {
+          const text = chunk.toString('utf8');
+          backendBuffer += text;
+          console.log(`  Backend -> Client: ${chunk.length} bytes`);
+          if (text.includes('101')) {
+            console.log(`  >> Contains 101: ${text.substring(0, 100).replace(/\r?\n/g, '\\n')}`);
+          }
+          socket.write(chunk);
         });
 
-        // Now pipe everything bidirectionally - raw bytes, no parsing
-        // The backend's 101 response will flow directly to the client
-        backendSocket.pipe(socket);
-        socket.pipe(backendSocket);
+        // Handle client data manually to avoid any buffering issues
+        socket.on('data', (chunk) => {
+          console.log(`  Client -> Backend: ${chunk.length} bytes`);
+          backendSocket.write(chunk);
+        });
       });
 
       // Handle cleanup
