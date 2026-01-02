@@ -95,8 +95,8 @@ app.prepare().then(() => {
     const { pathname } = parse(req.url, true);
 
     // Proxy WebSocket connections for camera streams and other WS endpoints
-    if (pathname.startsWith('/api/v1/cameras/') && pathname.endsWith('/stream') ||
-        pathname.startsWith('/ws/')) {
+    if ((pathname.startsWith('/api/v1/cameras/') && pathname.endsWith('/stream')) ||
+        pathname === '/ws' || pathname.startsWith('/ws/')) {
       console.log(`WebSocket upgrade: ${pathname} -> ${wsBackendUrl}${pathname}`);
       wsProxy.ws(req, socket, head);
     } else {
