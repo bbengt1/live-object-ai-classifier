@@ -111,6 +111,7 @@ server.on('upgrade', (req, socket, head) => {
       return originalWrite(data, encoding, callback);
     }
     // Block writes until we're ready (after connecting to backend)
+    console.log(`BLOCKED socket.write: ${data.slice(0, 50).toString()}`);
     if (typeof encoding === 'function') {
       callback = encoding;
     }
