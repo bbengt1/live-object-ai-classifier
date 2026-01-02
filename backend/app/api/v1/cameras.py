@@ -2227,8 +2227,54 @@ async def get_stream_info(
     )
 
 
-def _build_rtsp_url_for_stream(camera: Camera) -> str:
-    """Build RTSP URL with credentials for streaming"""
+def _build_rtsp_url_for_stream(camera: Camera, db: "Session" = None) -> str:
+    """
+    Build RTSP/RTSPS URL with credentials for streaming.
+
+    For RTSP cameras: Uses camera.rtsp_url with camera credentials
+    For Protect cameras: Builds RTSPS URL from controller host and camera ID
+
+    Args:
+        camera: Camera model instance
+        db: Optional database session (required for Protect cameras)
+
+    Returns:
+        RTSP/RTSPS URL with embedded credentials, or empty string if unavailable
+    """
+    # Handle Protect cameras - build RTSPS URL from controller
+    if camera.source_type == "protect" and camera.protect_controller_id and camera.protect_camera_id:
+        from app.models.protect_controller import ProtectController
+        from app.core.database import SessionLocal
+
+        # Use provided session or create new one
+        close_db = False
+        if db is None:
+            db = SessionLocal()
+            close_db = True
+
+        try:
+            controller = db.query(ProtectController).filter(
+                ProtectController.id == camera.protect_controller_id
+            ).first()
+
+            if controller:
+                # Get controller credentials
+                username = controller.username
+                password = controller.get_decrypted_password() if controller.password else ""
+
+                # Build RTSPS URL: rtsps://<user>:<pass>@<host>:7441/<camera_id>
+                creds = username
+                if password:
+                    creds += f":{password}"
+
+                return f"rtsps://{creds}@{controller.host}:7441/{camera.protect_camera_id}"
+        finally:
+            if close_db:
+                db.close()
+
+        return ""
+
+    # Handle RTSP cameras - use camera.rtsp_url
     rtsp_url = camera.rtsp_url
     if not rtsp_url:
         return ""
@@ -2285,14 +2331,14 @@ async def get_stream_snapshot(
 
     stream_service = get_stream_proxy_service()
 
-    # Build RTSP URL
-    rtsp_url = _build_rtsp_url_for_stream(camera)
+    # Build RTSP/RTSPS URL (handles both RTSP and Protect cameras)
+    rtsp_url = _build_rtsp_url_for_stream(camera, db)
     if not rtsp_url:
         return StreamSnapshotResponse(
             success=False,
             timestamp=datetime.utcnow(),
             quality=quality,
-            error="Camera does not have an RTSP URL configured"
+            error="Camera does not have a stream URL configured"
         )
 
     # Get snapshot (uses active stream if available, otherwise captures directly)
@@ -2360,8 +2406,8 @@ async def stream_camera(
             await websocket.close(code=4004, reason="Camera not found")
             return
 
-        # Build RTSP URL
-        rtsp_url = _build_rtsp_url_for_stream(camera)
+        # Build RTSP/RTSPS URL (handles both RTSP and Protect cameras)
+        rtsp_url = _build_rtsp_url_for_stream(camera, db)
         if not rtsp_url:
             await websocket.send_json({
                 "type": "error",
