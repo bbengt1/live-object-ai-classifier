@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
   },
   // Proxy API requests to backend to avoid CORS issues
   // Uses BACKEND_URL (server-side only) for internal proxying
+  // NOTE: WebSocket paths (/ws, /api/v1/cameras/*/stream) are handled by
+  // custom server.js upgrade handler, NOT by Next.js rewrites
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     return [
@@ -19,10 +21,8 @@ const nextConfig: NextConfig = {
         source: '/api/v1/:path*',
         destination: `${backendUrl}/api/v1/:path*`,
       },
-      {
-        source: '/ws/:path*',
-        destination: `${backendUrl}/ws/:path*`,
-      },
+      // NOTE: /ws is intentionally NOT included here - WebSocket upgrades
+      // don't work through Next.js rewrites. They're handled in server.js
     ];
   },
 };

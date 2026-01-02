@@ -69,10 +69,6 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
   const server = createServer(httpsOptions, async (req, res) => {
-    // Debug: check if WebSocket requests come through the normal handler
-    if (req.headers.upgrade === 'websocket') {
-      console.log(`DEBUG: WebSocket request in normal handler! ${req.url}`);
-    }
     try {
       const parsedUrl = parse(req.url, true);
       await handle(req, res, parsedUrl);
@@ -91,21 +87,45 @@ app.prepare().then(() => {
     // Proxy WebSocket connections for camera streams and other WS endpoints
     if ((pathname.startsWith('/api/v1/cameras/') && pathname.endsWith('/stream')) ||
         pathname === '/ws' || pathname.startsWith('/ws/')) {
-      console.log(`WebSocket upgrade: ${pathname} -> ${backendHost}:${backendPort}${pathname}`);
-      console.log(`  Head buffer length: ${head.length}`);
+      console.log(`WebSocket upgrade: ${pathname} -> ${backendHost}:${backendPort}`);
 
-      // TEST: Just send a fake 101 response, don't connect to backend
-      // This is to see if Next.js is also sending a 101
-      console.log(`  TEST: Sending fake 101 to client`);
-      socket.write('HTTP/1.1 101 Switching Protocols\r\n');
-      socket.write('X-Test: from-our-handler\r\n');
-      socket.write('\r\n');
+      // Create raw TCP connection to backend
+      const backendSocket = net.connect(backendPort, backendHost, () => {
+        // Build the HTTP upgrade request to send to backend
+        // Filter out compression headers to avoid frame issues
+        let httpRequest = `${req.method} ${req.url} HTTP/1.1\r\n`;
+        for (const [key, value] of Object.entries(req.headers)) {
+          // Skip compression extensions and update host
+          if (key.toLowerCase() === 'sec-websocket-extensions') continue;
+          if (key.toLowerCase() === 'host') {
+            httpRequest += `Host: ${backendHost}:${backendPort}\r\n`;
+          } else {
+            httpRequest += `${key}: ${value}\r\n`;
+          }
+        }
+        httpRequest += '\r\n';
 
-      // Keep socket open for a moment
-      setTimeout(() => {
-        console.log(`  TEST: Closing socket`);
+        // Send the upgrade request to backend
+        backendSocket.write(httpRequest);
+
+        // Also send any buffered data from client
+        if (head.length > 0) {
+          backendSocket.write(head);
+        }
+
+        // Pipe data between sockets bidirectionally
+        backendSocket.pipe(socket);
+        socket.pipe(backendSocket);
+      });
+
+      // Handle cleanup
+      socket.on('close', () => backendSocket.destroy());
+      backendSocket.on('close', () => socket.destroy());
+      socket.on('error', () => backendSocket.destroy());
+      backendSocket.on('error', (err) => {
+        console.error('WebSocket proxy error:', err.message);
         socket.destroy();
-      }, 2000);
+      });
     } else {
       // Let Next.js handle other WebSocket connections (e.g., HMR in dev mode)
       socket.destroy();
