@@ -103,35 +103,41 @@ app.prepare().then(() => {
         headers: filteredHeaders,
       });
 
-      proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
-        // Debug: log response headers
-        console.log('Backend response headers:', proxyRes.headers);
-        console.log('proxyHead length:', proxyHead.length);
+      proxyReq.on('response', (proxyRes) => {
+        // Backend returned a non-upgrade response (error case)
+        console.log('Backend returned non-upgrade response:', proxyRes.statusCode);
 
-        // Send the upgrade response back to client
-        // Filter out compression headers to ensure client doesn't expect compressed frames
-        socket.write('HTTP/1.1 101 Switching Protocols\r\n');
+        // Forward the error response to client
+        let response = `HTTP/${proxyRes.httpVersion} ${proxyRes.statusCode} ${proxyRes.statusMessage}\r\n`;
         for (const [key, value] of Object.entries(proxyRes.headers)) {
+          response += `${key}: ${value}\r\n`;
+        }
+        response += '\r\n';
+        socket.write(response);
+        proxyRes.pipe(socket);
+      });
+
+      proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
+        console.log('WebSocket upgrade successful');
+
+        // Forward the backend's 101 response to the client
+        let response = `HTTP/${proxyRes.httpVersion} 101 Switching Protocols\r\n`;
+        for (const [key, value] of Object.entries(proxyRes.headers)) {
+          // Filter out compression headers to avoid frame issues
           if (key.toLowerCase() !== 'sec-websocket-extensions') {
-            socket.write(`${key}: ${value}\r\n`);
+            response += `${key}: ${value}\r\n`;
           }
         }
-        socket.write('\r\n');
+        response += '\r\n';
+        socket.write(response);
 
-        // Write any buffered data
+        // Write any buffered data from upgrade
         if (proxyHead.length > 0) {
           socket.write(proxyHead);
         }
         if (head.length > 0) {
           proxySocket.write(head);
         }
-
-        // Debug: log first few bytes of each frame
-        proxySocket.on('data', (data) => {
-          if (data.length > 0) {
-            console.log(`Backend -> Client: ${data.length} bytes, first: 0x${data[0].toString(16).padStart(2, '0')} (RSV bits: ${((data[0] >> 4) & 0x7).toString(2).padStart(3, '0')})`);
-          }
-        });
 
         // Pipe data between sockets (raw, no frame manipulation)
         proxySocket.pipe(socket);
