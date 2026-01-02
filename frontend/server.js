@@ -101,10 +101,22 @@ server.on('upgrade', (req, socket, head) => {
   }
 
   // CRITICAL: Prevent Next.js from also handling this socket
-  // Mark the socket as already upgraded so Node.js HTTP parser won't
-  // process it further and Next.js won't try to send its own 101
-  req.socket = null;  // Disconnect the socket from the request
-  socket._httpMessage = null;  // Clear any pending HTTP response
+  // We override the socket's write method to prevent Next.js from
+  // sending its own 101 response. We store the original for our use.
+  const originalWrite = socket.write.bind(socket);
+  let ourWriteEnabled = false;
+
+  socket.write = function(data, encoding, callback) {
+    if (ourWriteEnabled) {
+      return originalWrite(data, encoding, callback);
+    }
+    // Block writes until we're ready (after connecting to backend)
+    if (typeof encoding === 'function') {
+      callback = encoding;
+    }
+    if (callback) callback();
+    return true;
+  };
 
   console.log(`WebSocket upgrade: ${pathname} -> ${backendHost}:${backendPort}`);
 
@@ -131,6 +143,10 @@ server.on('upgrade', (req, socket, head) => {
     if (head.length > 0) {
       backendSocket.write(head);
     }
+
+    // Re-enable our socket writes and restore original method
+    ourWriteEnabled = true;
+    socket.write = originalWrite;
 
     // Pipe data between sockets bidirectionally
     backendSocket.pipe(socket);
