@@ -90,22 +90,27 @@ app.prepare().then(() => {
       console.log(`WebSocket upgrade: ${pathname} -> ${backendHost}:${backendPort}${pathname}`);
 
       // Create connection to backend
+      // Strip compression-related headers to avoid frame corruption through proxy
+      const filteredHeaders = { ...req.headers };
+      delete filteredHeaders['sec-websocket-extensions'];
+      filteredHeaders.host = `${backendHost}:${backendPort}`;
+
       const proxyReq = http.request({
         hostname: backendHost,
         port: backendPort,
         path: req.url,
         method: 'GET',
-        headers: {
-          ...req.headers,
-          host: `${backendHost}:${backendPort}`,
-        },
+        headers: filteredHeaders,
       });
 
       proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
         // Send the upgrade response back to client
+        // Filter out compression headers to ensure client doesn't expect compressed frames
         socket.write('HTTP/1.1 101 Switching Protocols\r\n');
         for (const [key, value] of Object.entries(proxyRes.headers)) {
-          socket.write(`${key}: ${value}\r\n`);
+          if (key.toLowerCase() !== 'sec-websocket-extensions') {
+            socket.write(`${key}: ${value}\r\n`);
+          }
         }
         socket.write('\r\n');
 
