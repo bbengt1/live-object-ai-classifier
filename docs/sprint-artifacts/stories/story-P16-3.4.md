@@ -1,6 +1,6 @@
 # Story P16-3.4: Add Edit Button to Entity Detail Modal
 
-Status: drafted
+Status: done
 
 ## Story
 
@@ -18,21 +18,21 @@ So that **I can make changes while viewing entity details**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add Edit button to EntityDetail component header (AC: 1, 4, 5)
-  - [ ] Import Pencil icon from lucide-react
-  - [ ] Import Tooltip components from shadcn/ui
-  - [ ] Import EntityEditModal component
-  - [ ] Add Edit button in DialogHeader area
-  - [ ] Add tooltip with "Edit entity" text
-- [ ] Task 2: Wire up EntityEditModal integration (AC: 2, 3)
-  - [ ] Add state for edit modal open/close
-  - [ ] Add onClick handler for edit button
-  - [ ] Pass entity data to EntityEditModal
-  - [ ] Handle onUpdated callback to refetch entity data
-- [ ] Task 3: Write tests for Edit button functionality (AC: all)
-  - [ ] Test Edit button renders in EntityDetail header
-  - [ ] Test clicking Edit opens EntityEditModal
-  - [ ] Test tooltip appears on hover
+- [x] Task 1: Add Edit button to EntityDetail component header (AC: 1, 4, 5)
+  - [x] Import Pencil icon from lucide-react
+  - [x] Import Tooltip components from shadcn/ui
+  - [x] Import EntityEditModal component
+  - [x] Add Edit button in DialogHeader area
+  - [x] Add tooltip with "Edit entity" text
+- [x] Task 2: Wire up EntityEditModal integration (AC: 2, 3)
+  - [x] Add state for edit modal open/close
+  - [x] Add onClick handler for edit button
+  - [x] Pass entity data to EntityEditModal
+  - [x] Handle onUpdated callback to refetch entity data
+- [x] Task 3: Write tests for Edit button functionality (AC: all)
+  - [x] Test Edit button renders in EntityDetail header
+  - [x] Test clicking Edit opens EntityEditModal
+  - [x] Test tooltip appears on hover
 
 ## Dev Notes
 
